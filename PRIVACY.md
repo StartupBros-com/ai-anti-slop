@@ -4,14 +4,15 @@ AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to replies.
 This policy covers the extension and the userscript, version 0.7.1. Last
-updated 2026-11-14.
+updated 2026-11-16.
 
 ## In short
 
 - AI Anti-Slop has no account, no server, no analytics and no telemetry. Its
   developers receive none of the data described here.
 - The extension's own code makes one kind of network request: it downloads the
-  public list from `clankwall.vogel.dev`, without cookies.
+  public list from `clankwall.vogel.dev` (or from a list address set by hand),
+  without cookies.
 - Everything it keeps is in your browser profile's extension storage, on your
   computer.
 - If you turn muting on (it is off by default), the extension opens x.com pages
@@ -30,6 +31,8 @@ in the page:
 - your own handle, from X's profile link in the navigation bar, so that hiding
   posts which tag a hidden bot never hides your own posts, and so that muting
   runs only as the account you turned it on from;
+- with hiding posts that tag a bot turned on, the @-links in each post's own
+  text, to see whether it tags a bot set to Hide or Mute;
 - with labels turned on, the text of a reply when you click **Slop** or
   **Not slop** under it.
 
@@ -44,7 +47,7 @@ Sync does not copy it to other devices.
 |---|---|---|
 | `xsh:list` | The list of handles, when it was fetched and last tried, the address it was fetched from, and the last error, if any. | Always. |
 | `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, and an optional list address (the popup has no setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
-| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list, and the number of attempts. For each UTC day: the number of mutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
+| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the reply's own text, the address of the page you labelled it on, whether the author was on the list, in **Also hide** or in **Always show**, and whether the reply was hidden. At most 2,000 labels. | Only when labels are on and you click **Slop** or **Not slop**. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
 
@@ -63,7 +66,9 @@ manager's storage. It does not mute and has no labels.
 start when a refresh is due, every 6 hours, and when you click **Refresh list
 now** in the popup. The request carries no cookies, no identifiers and no body. Like any
 web request, it reaches that server with your IP address and your browser's
-standard request headers. clankwall is run by a third party, not by
+standard request headers. If a list address was set by hand in
+`xsh:settings`, the list is downloaded from that address instead, the same
+way. clankwall is run by a third party, not by
 AI Anti-Slop's developers; see its site for how it handles requests. The
 userscript downloads the same file through your userscript manager, marked
 anonymous so no cookies are sent.
@@ -104,8 +109,9 @@ no remotely hosted code.
 
 Labels keep the text of replies written by other people, so you can review or
 share your own record of what you marked. That text stays in your browser
-profile until you click **Delete all labels** (it asks for a second click) or
-remove the extension. A file you exported stays where you saved it.
+profile until you delete its label (click the reply's saved label again), click
+**Delete all labels** (it asks for a second click), or remove the extension. A
+file you exported stays where you saved it.
 
 ## Selling and sharing
 
@@ -123,8 +129,9 @@ including the Limited Use requirements.
   keeps the muting record (`xsh:mutes`) until you remove the extension. Mutes
   already made stay on your X account; undo them at
   `https://x.com/settings/muted/all`.
-- Turning labels off removes the buttons. **Delete all labels** deletes every
-  saved label and the label count. Accounts a label added to **Also hide** or
+- Turning labels off removes the buttons. Clicking a reply's saved label again
+  deletes that one label. **Delete all labels** deletes every saved label and
+  the label count. Accounts a label added to **Also hide** or
   **Always show** stay there; remove them in the popup.
 - Removing the extension deletes everything it stored in the browser.
 
