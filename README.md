@@ -65,18 +65,28 @@ because the mutes are X's own.
 
 ### Extension (Chrome or another Chromium browser, desktop)
 
+Install it from the Chrome Web Store:
+<https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha>.
+The store updates it by itself.
+
+Then open x.com and click the extension's icon: a red square with a
+crossed-out speech bubble. If it is not on the toolbar, open the puzzle-piece
+**Extensions** button and click the pin next to AI Anti-Slop. The popup shows
+how many accounts are listed and when the list was last updated.
+
+#### Unpacked
+
+To run the code on `main`, which can be ahead of the store copy, or a release
+from GitHub instead of the store, load the extension unpacked:
+
 1. Download the `.zip` from the
    [latest release](https://github.com/StartupBros-com/ai-anti-slop/releases/latest)
    and unzip it. Or `git clone https://github.com/StartupBros-com/ai-anti-slop`
-   for the code on `main`, which can be ahead of the release.
+   for the code on `main`.
 2. Open `chrome://extensions` (`brave://extensions` in Brave) and turn on
    **Developer mode**.
 3. Click **Load unpacked** and pick the folder that contains `manifest.json`.
-4. Open x.com, then click the extension's icon: a red square with a
-   crossed-out speech bubble. If it is not on the toolbar, open the
-   puzzle-piece **Extensions** button and click the pin next to AI Anti-Slop.
-   The popup shows how many accounts are listed and when the list was last
-   updated.
+4. Open x.com and click the extension's icon, as above.
 
 An unpacked extension does not update itself. To get a new version, copy its
 files into the folder you loaded before, replacing the old ones (or `git pull`
@@ -89,13 +99,14 @@ Human Replies Only from. The list
 itself refreshes without any of this: on install, on browser start when it is due,
 and every 6 hours.
 
-#### Moving to a web store copy
+#### Moving from an unpacked copy to the store copy
 
-AI Anti-Slop is not in a web store yet. When it is, a store copy will be a
-different extension to the browser, with its own id and its own storage, so
-nothing carries over from an unpacked copy: not your settings, your **Always
-show** and **Also hide** boxes, the mute record or your labels. Both copies run
-until you remove one, and with muting on in both, both mute. To switch:
+The [store copy](https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha)
+is a different extension to the browser, with its own id and its own storage,
+so nothing carries over from an unpacked copy: not your settings, your
+**Always show** and **Also hide** boxes, the mute record or your labels. Both
+copies run until you remove one, and with muting on in both, both mute. To
+switch:
 
 1. In the unpacked copy's popup, open **Your accounts**, click **Export or
    import**, then **Export settings** (0.6.0 or later; in an older copy, copy
