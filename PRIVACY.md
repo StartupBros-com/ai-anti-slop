@@ -3,8 +3,8 @@
 AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to replies.
-This policy covers the extension and the userscript, version 0.7.1. Last
-updated 2026-11-16.
+This policy covers the extension and the userscript, version 0.8.0. Last
+updated 2026-11-17.
 
 ## In short
 
@@ -47,7 +47,7 @@ Sync does not copy it to other devices.
 |---|---|---|
 | `xsh:list` | The list of handles, when it was fetched and last tried, the address it was fetched from, and the last error, if any. | Always. |
 | `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, and an optional list address (the popup has no setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
-| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
+| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the reply's own text, the address of the page you labelled it on, whether the author was on the list, in **Also hide** or in **Always show**, and whether the reply was hidden. At most 2,000 labels. | Only when labels are on and you click **Slop** or **Not slop**. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
 
@@ -125,9 +125,10 @@ including the Limited Use requirements.
 
 - **Pause hiding** shows every post again, on every tab. It does not stop
   muting.
-- Turning muting off stops visits and removes the handle muting ran as. It
-  keeps the muting record (`xsh:mutes`) until you remove the extension. Mutes
-  already made stay on your X account; undo them at
+- Turning muting off stops visits, mutes and unmutes, and removes the handle
+  muting ran as from your settings. It keeps the muting record (`xsh:mutes`),
+  which names that handle on each mute it made, until you remove the extension.
+  Mutes already made stay on your X account; undo them at
   `https://x.com/settings/muted/all`.
 - Turning labels off removes the buttons. Clicking a reply's saved label again
   deletes that one label. **Delete all labels** deletes every saved label and

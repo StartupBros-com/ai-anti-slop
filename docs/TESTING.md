@@ -260,7 +260,10 @@ page. For the 0.7.0 and 0.7.1 renames: whether a userscript manager updates an
 installed 0.6.x or 0.7.0 script in place (the script keeps its `@name` and
 `@namespace` for that) and shows the `@name:en` name. For muting: a bot row set to **Mute on X** and accounts from **Also hide
 these accounts** on real x.com, more than two days in a row, how X responds to
-this pace over weeks, and X in other languages. For export and import: Brave
+this pace over weeks, and X in other languages. For unmuting (0.8.0): no
+unmute has been clicked on real x.com. The "Unmute" item is the label X's
+post menu showed for a muted account on 2026-11-06; X's notice after clicking
+it, and whether X ever asks to confirm an unmute, are not known. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.

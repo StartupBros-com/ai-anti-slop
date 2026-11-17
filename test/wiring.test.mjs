@@ -1717,7 +1717,7 @@ test('settings page: settings that change after the preview are shown again, not
   assert.equal(p.$('muteNote').className, 'warn');
   assert.equal(
     p.$('muteNote').textContent,
-    'Muting is on as @me_here. After this import it can also mute 1 more account: @spam_b. It mutes up to 50 a day, skips accounts you follow, and never unmutes.',
+    'Muting is on as @me_here. After this import it can also mute 1 more account: @spam_b. It mutes up to 50 a day and skips accounts you follow.',
   );
   p.click('confirm');
   await settle();
@@ -1734,7 +1734,7 @@ test('settings page: a bot set to Mute on X is named in the muting note', async 
   assert.equal(
     p.$('muteNote').textContent,
     'Muting is on as @me_here. After this import it can also mute 1 more account: @askperplexity. Bots among them: @AskPerplexity. ' +
-      'It mutes up to 25 a day, skips accounts you follow, and never unmutes.',
+      'It mutes up to 25 a day and skips accounts you follow.',
   );
 });
 
@@ -1756,7 +1756,7 @@ test('settings page: a line with more than 12 accounts lists all of them under S
   assert.equal(
     mute.firstChild.textContent,
     `Muting is on as @me_here. After this import it can also mute 14 more accounts: ${at(hs.slice(0, 12))} and 2 more. ` +
-      'It mutes up to 25 a day, skips accounts you follow, and never unmutes.',
+      'It mutes up to 25 a day and skips accounts you follow.',
   );
   assert.equal(mute.querySelector('details summary').textContent, 'Show all 14 accounts');
   assert.equal(mute.querySelector('details p').textContent, at(hs));
@@ -1836,4 +1836,129 @@ test('popup: Export or import opens the options page', async () => {
   p.document.getElementById('files').dispatchEvent(new p.window.Event('click'));
   await settle();
   assert.equal(opened, 1);
+});
+
+// ------------------------------------------------------------ unmuting
+
+const mutedAs = (account, at = Date.now() - 86400000) => ({ status: 'muted', at, account, toast: null, confirmed: true });
+
+test('background: an account it muted that left the list is unmuted before any new mute, against the same cap', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  await alarm(bg);
+  const tab = lastTab(bg);
+  assert.equal(tab.url, 'https://x.com/gone');
+  assert.equal(tab.active, false);
+  const job = await send(bg, { type: 'xsh:job' }, tab.id);
+  assert.deepEqual([job.kind, job.handle, job.account], ['unmute', 'gone', ME]);
+  assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), true);
+  await send(bg, { type: 'xsh:job-result', result: { id: job.id, status: 'unmuted', toast: '@gone has been unmuted.' } }, tab.id);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.handles.gone.status, 'unmuted');
+  assert.deepEqual([m.days[today()].unmutes, m.days[today()].mutes, m.days[today()].visits], [1, 0, 1]);
+  assert.deepEqual(m.sinceCheck, [], 'an unmute waits for no check of the muted list');
+  assert.deepEqual(bg.chrome.tabs.removed, [tab.id]);
+  due(bg);
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_b', 'then the mutes');
+});
+
+test('background: unmutes stop at the daily cap, shared with mutes', async () => {
+  const day = { mutes: 20, unmutes: 5, visits: 25, stopped: null };
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) }, days: { [today()]: day } } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+});
+
+test('background: moving a muted account to Always show unmutes it', async () => {
+  const bg = await muteBackground({
+    handles: ['friend', 'slop_b'],
+    settings: { muteEnabled: true, muteAccount: ME, allowlist: 'friend' },
+    mutes: { ...lib.emptyMutes(), handles: { friend: mutedAs(ME) } },
+  });
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/friend');
+  assert.equal((await send(bg, { type: 'xsh:job' }, lastTab(bg).id)).kind, 'unmute');
+});
+
+// Planted negative: only mutes it made as this account are undone. An account
+// the user muted (recorded `already`) that left the list is never visited, so
+// nothing can click its Unmute; neither are followed or skipped accounts, a
+// mute made as another account, or anything while the stored list is empty.
+test('background: never unmutes what the user muted, what another account muted, or while the list is empty', async () => {
+  const handles = {
+    mine: { status: 'already', at: 1 },
+    fol: { status: 'followed', at: 1 },
+    np: { status: 'no-post', at: 1, attempts: 2 },
+    other: mutedAs('someone_else'),
+  };
+  let bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened.map((t) => t.url), ['https://x.com/slop_b']);
+  bg = await muteBackground({ handles: [], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+});
+
+test('background: a mute recorded before 0.8.0 is stamped with the account muting is on for, then unmuted once it leaves the list', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: { status: 'muted', at: 1, confirmed: true } } } });
+  await alarm(bg);
+  assert.equal(bg.chrome.store['xsh:mutes'].handles.gone.account, ME);
+  assert.equal(lastTab(bg).url, 'https://x.com/gone');
+});
+
+// Planted negatives: back on the list, or added to Also hide, between the visit
+// starting and the click: the job is dropped and the mute stays recorded.
+test('background: an unmute job is dropped at the claim or just before the click when the account is wanted muted again', async () => {
+  for (const when of ['claim', 'click']) {
+    for (const change of ['list', 'extra']) {
+      const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+      await alarm(bg);
+      const tab = lastTab(bg);
+      assert.equal(tab.url, 'https://x.com/gone');
+      const job = when === 'click' ? await send(bg, { type: 'xsh:job' }, tab.id) : null;
+      if (change === 'list') bg.chrome.store['xsh:list'] = { ...bg.chrome.store['xsh:list'], handles: ['gone', 'slop_b'] };
+      else await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME, extraList: 'gone' } });
+      await settle();
+      if (when === 'claim') assert.equal(await send(bg, { type: 'xsh:job' }, tab.id), null, `${when} ${change}`);
+      else assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), false, `${when} ${change}`);
+      assert.deepEqual(bg.chrome.tabs.removed, [tab.id]);
+      assert.equal(bg.chrome.store['xsh:mutes'].handles.gone.status, 'muted', 'dropped unrecorded');
+    }
+  }
+});
+
+test('background: a failed unmute keeps the mute recorded, is tried once more, then left muted', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  for (const attempt of [1, 2]) {
+    await alarm(bg);
+    const tab = lastTab(bg);
+    assert.equal(tab.url, 'https://x.com/gone');
+    const job = await send(bg, { type: 'xsh:job' }, tab.id);
+    await send(bg, { type: 'xsh:job-result', result: { id: job.id, status: 'error', reason: 'the ⋯ menu did not open' } }, tab.id);
+    const e = bg.chrome.store['xsh:mutes'].handles.gone;
+    assert.deepEqual([e.status, e.unmuteAttempts], ['muted', attempt]);
+    due(bg);
+  }
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_b', 'given up on: the mutes go on');
+  assert.equal(bg.chrome.store['xsh:mutes'].days[today()].unmutes, 0);
+});
+
+test("popup: today's line and the totals count unmutes once there are some", async () => {
+  const p = loadPopup({
+    'xsh:list': { handles: ['a'], fetchedAt: Date.now(), source: 's' },
+    'xsh:settings': { muteEnabled: true, muteAccount: 'startupbros' },
+    'xsh:mutes': {
+      ...lib.emptyMutes(),
+      handles: { a: { status: 'muted', confirmed: true }, g: { status: 'unmuted' } },
+      days: { [lib.utcDay(Date.now())]: { mutes: 2, unmutes: 1, visits: 4, stopped: null } },
+    },
+  });
+  await settle();
+  assert.equal(p.document.getElementById('muteToday').textContent, 'Today (UTC): 3 of 25 (2 mutes, 1 unmute), 4 of 50 visits');
+  assert.equal(p.document.getElementById('muteBar').getAttribute('value'), '3');
+  assert.equal(
+    p.document.getElementById('muteTotals').textContent,
+    'So far: 1 muted (1 seen on your muted list, 0 not found there), 1 unmuted, 0 already muted, 0 you follow, 0 skipped.',
+  );
 });

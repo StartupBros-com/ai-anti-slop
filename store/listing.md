@@ -4,14 +4,16 @@ The live listing is
 <https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha>
 (item id `apchbmongdogokfagedphbkempkhccha`). AI Anti-Slop 0.7.1 passed review
 and was published automatically on 2026-11-17. That day the live page showed
-version 0.7.1, the description below word for word, the category Social
+version 0.7.1, the description below word for word except for one line that
+0.8.0 changes (0.7.1's muting section said "It never blocks, never unmutes,
+and does not use the X API."), the category Social
 Networking, and the three data types ticked under **Data usage**. The package
 it served was byte for byte the v0.7.1 release's extension files, except that
 the store added an `update_url` to `manifest.json` and a
 `_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.7.1,
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.8.0,
 field by field. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
@@ -64,7 +66,7 @@ SETTINGS FILES
 
 MUTING (optional, off until you turn it on)
 - When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open.
-- It skips accounts you follow and accounts in Always show. It never blocks, never unmutes, and does not use the X API.
+- It skips accounts you follow and accounts in Always show. If an account it muted leaves the list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY

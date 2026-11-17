@@ -1,6 +1,7 @@
 // AI Anti-Slop background service worker: keeps the handle list fresh in
 // chrome.storage.local, and, when the user has turned muting on, mutes listed
-// accounts one at a time in background tabs it opens and closes itself. Its
+// accounts one at a time in background tabs it opens and closes itself, and
+// unmutes accounts it muted once muting no longer picks them. Its
 // only network request is the feed URL; muting goes through X's own page.
 importScripts('lib.js');
 
@@ -146,9 +147,10 @@ async function userHasXOpen() {
   }
 }
 
-// Open one job's tab in the background. The tab is never made active.
+// Open one job's tab in the background. The tab is never made active. A mute
+// or unmute job opens the account's profile; a check opens the muted list.
 async function startJob(kind, handle, account, now) {
-  const url = kind === 'mute' ? `https://x.com/${handle}` : 'https://x.com/settings/muted/all';
+  const url = kind === 'check' ? 'https://x.com/settings/muted/all' : `https://x.com/${handle}`;
   const tab = await chrome.tabs.create({ url, active: false });
   await noteJobTab(tab.id);
   const job = {
@@ -166,16 +168,20 @@ async function startJob(kind, handle, account, now) {
   return job;
 }
 
-// Whether a job may still go ahead. Settings can change while its tab loads
-// and waits for a post: muting turned off, another account, a bot's row moved
-// off Mute on X, an account added to Always show. A mute job must still be for
-// an account muting may visit.
+// Whether a job may still go ahead. Settings and the list can change while
+// its tab loads and waits for a post: muting turned off, another account, a
+// bot's row moved off Mute on X, an account added to Always show, an account
+// back on the list. A mute job must still be for an account muting may visit;
+// an unmute job, for one it would still unmute.
 async function stillWanted(job) {
   const s = await settings();
   if (!muting(s) || s.muteAccount !== job.account) return false;
-  if (job.kind !== 'mute') return true;
+  if (job.kind === 'check') return true;
   const list = await stored();
-  return L.muteEligible(list && list.handles, s).includes(job.handle);
+  const handles = list && list.handles;
+  if (job.kind === 'mute') return L.muteEligible(handles, s).includes(job.handle);
+  if (job.kind === 'unmute') return L.unmuteCandidates(handles, s, await mutesRec()).includes(job.handle);
+  return false;
 }
 
 // Drop a job unrecorded and close its tab. The visit it cost stays counted.
@@ -200,7 +206,9 @@ async function finishJob(job, result) {
   const now = Date.now();
   let rec = await mutesRec();
   if (job.kind === 'mute') {
-    rec = L.recordOutcome(rec, job.handle, result, now);
+    rec = L.recordOutcome(rec, job.handle, result, now, job.account);
+  } else if (job.kind === 'unmute') {
+    rec = L.recordUnmute(rec, job.handle, result, now);
   } else if (result.status === 'checked') {
     rec = L.recordCheck(rec, result.rows, now).rec;
   } else {
@@ -253,15 +261,22 @@ async function tickWith(xOpen) {
     return;
   }
   if (!muting(s)) return;
-  let rec = await mutesRec();
+  const got = await mutesRec();
+  let rec = L.stampAccount(got, s.muteAccount);
+  if (rec !== got) await saveMutes(rec);
   if (now < (rec.nextAt || 0)) return;
   const cap = L.muteCap(s);
   const b = L.muteBudget(rec, L.utcDay(now), cap);
   if (b.stopped) return;
   const list = await stored();
-  const candidates = L.muteCandidates(list && list.handles, s, rec);
+  const handles = list && list.handles;
+  // Unmutes go first: an account that left the list was most likely listed
+  // by mistake. Both share today's cap.
+  const unmutes = L.unmuteCandidates(handles, s, rec);
+  const candidates = L.muteCandidates(handles, s, rec);
+  const next = unmutes.length ? { kind: 'unmute', handle: unmutes[0] } : candidates.length ? { kind: 'mute', handle: candidates[0] } : null;
   const pending = (rec.sinceCheck || []).length;
-  let canVisit = b.mutesLeft > 0 && b.visitsLeft > 0 && candidates.length > 0;
+  let canVisit = b.mutesLeft > 0 && b.visitsLeft > 0 && next !== null;
   if (pending >= L.DEFAULTS.muteCheckEvery) {
     await startJob('check', null, s.muteAccount, now);
     return;
@@ -275,7 +290,7 @@ async function tickWith(xOpen) {
     return;
   }
   if (!canVisit) return;
-  await startJob('mute', candidates[0], s.muteAccount, now);
+  await startJob(next.kind, next.handle, s.muteAccount, now);
   rec = L.countVisit(rec, now);
   await saveMutes(rec);
 }

@@ -455,13 +455,13 @@
   }
 
   // On x.com/<handle>: open the ⋯ menu of a post the account wrote (reposts
-  // and quoted posts do not count) and click X's own Mute item. Tested with
-  // synthetic clicks on 2026-11-06, including in a background tab that drew no
-  // frames. A menu we decline stays open: the worker closes the tab.
-  async function muteJob(job) {
+  // and quoted posts do not count). Returns { items }, the menu's items, or
+  // { result } to report instead. X shows a muted account's posts on its own
+  // profile, and their menu offers Unmute (seen 2026-11-06).
+  async function openPostMenu(job) {
     const h = job.handle;
     const bad = await wrongAccount(job);
-    if (bad) return bad;
+    if (bad) return { result: bad };
     // A post appears a few seconds before its ⋯ button does (seen on 3 of 4
     // profiles on 2026-11-06), so wait for one that has the button.
     const own = () => [...document.querySelectorAll(ARTICLE)].filter((a) => L.authorHandleOf(a) === h);
@@ -473,22 +473,26 @@
       return null;
     }, waitMs(job));
     if (!caret) {
-      return { status: 'no-post', reason: own().length ? 'its posts have no ⋯ button' : 'no post by the account on its profile' };
+      return {
+        result: { status: 'no-post', reason: own().length ? 'its posts have no ⋯ button' : 'no post by the account on its profile' },
+      };
     }
     caret.click();
     const menu = await waitFor(() => document.querySelector('[role="menu"]'), 5000, 300);
-    if (!menu) return { status: 'error', reason: 'the ⋯ menu did not open' };
+    if (!menu) return { result: { status: 'error', reason: 'the ⋯ menu did not open' } };
     await sleep(300); // the items arrive just after the menu node
-    const items = [...menu.querySelectorAll('[role="menuitem"]')];
-    const pick = L.chooseMuteItem(items.map(textOf), h);
-    if (pick.action === 'done') return { status: pick.status };
-    if (pick.action === 'refuse') return { status: pick.status, reason: pick.reason };
-    // Settings may have changed since this tab claimed the job; the worker
-    // answers no (and closes this tab) if the account is no longer to be muted.
+    return { items: [...menu.querySelectorAll('[role="menuitem"]')] };
+  }
+
+  // Click one menu item once the worker says the job still stands, then read
+  // what X shows: a confirmation sheet (left unanswered) or a toast. Settings
+  // or the list may have changed since this tab claimed the job; the worker
+  // answers no (and closes this tab) if the click is no longer wanted.
+  async function clickConfirmed(job, item, status) {
     if (!adapter.confirmJob || !(await adapter.confirmJob(job))) {
-      return { status: 'error', reason: 'the worker did not confirm the mute' };
+      return { status: 'error', reason: `the worker did not confirm the ${job.kind}` };
     }
-    items[pick.index].click();
+    item.click();
     const sheet = () => document.querySelector('[data-testid="confirmationSheetDialog"]');
     const toast = () => {
       const t = document.querySelector('[data-testid="toast"]');
@@ -497,7 +501,30 @@
     await waitFor(() => sheet() || toast(), 4000, 250);
     if (sheet()) return { status: 'refused', reason: 'X asked for a confirmation; left it unanswered' };
     const t = toast();
-    return { status: 'muted', toast: t ? textOf(t) : null };
+    return { status, toast: t ? textOf(t) : null };
+  }
+
+  // Click X's own Mute item in a post's menu. Tested with synthetic clicks on
+  // 2026-11-06, including in a background tab that drew no frames. A menu we
+  // decline stays open: the worker closes the tab.
+  async function muteJob(job) {
+    const open = await openPostMenu(job);
+    if (open.result) return open.result;
+    const pick = L.chooseMuteItem(open.items.map(textOf), job.handle);
+    if (pick.action === 'done') return { status: pick.status };
+    if (pick.action === 'refuse') return { status: pick.status, reason: pick.reason };
+    return clickConfirmed(job, open.items[pick.index], 'muted');
+  }
+
+  // Click X's own Unmute item in a post's menu, for an account AI Anti-Slop
+  // muted that muting no longer picks.
+  async function unmuteJob(job) {
+    const open = await openPostMenu(job);
+    if (open.result) return open.result;
+    const pick = L.chooseUnmuteItem(open.items.map(textOf), job.handle);
+    if (pick.action === 'done') return { status: pick.status };
+    if (pick.action === 'refuse') return { status: pick.status, reason: pick.reason };
+    return clickConfirmed(job, open.items[pick.index], 'unmuted');
   }
 
   function mutedRows() {
@@ -530,7 +557,8 @@
   }
 
   async function runJob(job) {
-    const work = job.kind === 'mute' ? muteJob(job) : job.kind === 'check' ? checkJob(job) : null;
+    const k = job.kind;
+    const work = k === 'mute' ? muteJob(job) : k === 'unmute' ? unmuteJob(job) : k === 'check' ? checkJob(job) : null;
     if (!work) return;
     let timer = null;
     const timeout = new Promise((r) => {
