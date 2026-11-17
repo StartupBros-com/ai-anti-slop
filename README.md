@@ -328,6 +328,9 @@ nothing is clicked.
   pace, and muted again if a later update brings it back. An update that drops
   more than half the list is refused, and while no list has been fetched
   nothing is unmuted.
+- A visit that fails (no post on the profile, or the ⋯ menu did not open) is
+  tried once more. After a second failure the account is left muted; unmute
+  it by hand at `x.com/settings/muted/all`.
 - Turning muting off stops unmuting too. The mutes it made stay.
 - Mutes recorded before 0.8.0 count as made by the account muting is on for
   the first time muting runs on 0.8.0.

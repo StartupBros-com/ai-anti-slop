@@ -675,3 +675,32 @@ test('muteBudget: mutes and unmutes share the daily cap', () => {
   rec.days[DAY].unmutes = 5;
   assert.equal(lib.muteBudget(rec, DAY).mutesLeft, 0);
 });
+
+test('muteCandidates: an account it unmuted that is listed again goes with the new accounts, and a mute replaces the entry', () => {
+  const rec = {
+    ...lib.emptyMutes(),
+    handles: {
+      tried: { status: 'error', at: NOW, attempts: 1 },
+      back: { status: 'unmuted', at: NOW, mutedAt: NOW - 1, account: ACCT, toast: 't' },
+      back2: { status: 'not-muted', at: NOW, mutedAt: NOW - 1, account: ACCT },
+    },
+  };
+  assert.deepEqual(lib.muteCandidates(['tried', 'back', 'new', 'back2'], onAcct, rec), ['back', 'new', 'back2', 'tried']);
+  const r = lib.recordOutcome(rec, 'back', { status: 'muted', toast: '@back has been muted.' }, NOW + 5, ACCT);
+  assert.deepEqual(r.handles.back, { status: 'muted', at: NOW + 5, account: ACCT, toast: '@back has been muted.', confirmed: null });
+  assert.deepEqual(r.sinceCheck, ['back']);
+});
+
+test('recordUnmute: an account unmuted before its muted-list check leaves the check list; a failed visit does not', () => {
+  const rec = { ...lib.emptyMutes(), handles: { a: mutedBy(ACCT), b: mutedBy(ACCT) }, sinceCheck: ['a', 'b'] };
+  assert.deepEqual(lib.recordUnmute(rec, 'a', { status: 'unmuted' }, NOW).sinceCheck, ['b']);
+  assert.deepEqual(lib.recordUnmute(rec, 'a', { status: 'not-muted' }, NOW).sinceCheck, ['b']);
+  assert.deepEqual(lib.recordUnmute(rec, 'a', { status: 'error' }, NOW).sinceCheck, ['a', 'b']);
+});
+
+test('recordCheck: a handle on the check list that is no longer muted is not missing', () => {
+  const rec = { ...lib.emptyMutes(), handles: { a: { status: 'unmuted', at: NOW }, b: mutedBy(ACCT) }, sinceCheck: ['a', 'b'] };
+  const { rec: r, missing } = lib.recordCheck(rec, ['b'], NOW);
+  assert.deepEqual(missing, []);
+  assert.equal(r.days[DAY], undefined);
+});

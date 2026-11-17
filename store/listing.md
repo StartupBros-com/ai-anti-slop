@@ -152,7 +152,7 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 
 | Box | Tick | Why |
 |---|---|---|
-| Personally identifiable information | Yes | X handles: the user's own handle while muting is on (`xsh:settings`), and other people's handles in the user's lists, the muting record (`xsh:mutes`) and labels (`xsh:label:<post id>`). |
+| Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
 | Website content | Yes | Labels keep up to 1,000 characters of the labelled reply's text. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. A narrow case, but ticking it is the safer reading. |
 | User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Slop and Not slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |

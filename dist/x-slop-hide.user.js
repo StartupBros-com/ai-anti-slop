@@ -476,7 +476,10 @@
       if (!ok.has(h)) continue;
       const st = entryOf(r, h);
       if (isSettled(st)) continue;
-      (st ? retry : fresh).push(h);
+      // An account it unmuted cleanly that is wanted again is not a failed
+      // try, so it goes with the accounts not visited yet.
+      const cleared = st && (st.status === 'unmuted' || st.status === 'not-muted');
+      (st && !cleared ? retry : fresh).push(h);
     }
     return [...fresh, ...retry];
   }
@@ -624,6 +627,8 @@
         if (prev.account) e.account = prev.account;
         if (status === 'unmuted') e.toast = outcome.toast ? String(outcome.toast).slice(0, 120) : null;
         setEntry(r, handle, e);
+        // No longer muted, so the next check of the muted list has nothing to find.
+        r.sinceCheck = (r.sinceCheck || []).filter((x) => x !== handle);
       } else if (status === 'error' || status === 'no-post') {
         prev.unmuteAttempts = (prev.unmuteAttempts || 0) + 1;
         prev.unmuteAt = now;

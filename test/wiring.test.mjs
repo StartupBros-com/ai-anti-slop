@@ -1962,3 +1962,30 @@ test("popup: today's line and the totals count unmutes once there are some", asy
     'So far: 1 muted (1 seen on your muted list, 0 not found there), 1 unmuted, 0 already muted, 0 you follow, 0 skipped.',
   );
 });
+
+test('background: muted, moved to Always show, unmuted, moved back: muted again ahead of an account never visited', async () => {
+  const bg = await muteBackground({ handles: ['slop_a', 'slop_b'] });
+  const visit = async (url, kind, status, verb) => {
+    if (bg.chrome.store['xsh:mutes']) due(bg);
+    await alarm(bg);
+    const tab = lastTab(bg);
+    assert.equal(tab.url, url);
+    const job = await send(bg, { type: 'xsh:job' }, tab.id);
+    assert.equal(job.kind, kind);
+    assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), true);
+    await send(bg, { type: 'xsh:job-result', result: { id: job.id, status, toast: `@slop_a has been ${verb}.` } }, tab.id);
+    return bg.chrome.store['xsh:mutes'];
+  };
+  let m = await visit('https://x.com/slop_a', 'mute', 'muted', 'muted');
+  assert.deepEqual(m.sinceCheck, ['slop_a']);
+  await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME, allowlist: 'slop_a' } });
+  await settle();
+  m = await visit('https://x.com/slop_a', 'unmute', 'unmuted', 'unmuted');
+  assert.equal(m.handles.slop_a.status, 'unmuted');
+  assert.deepEqual(m.sinceCheck, [], 'nothing left for the muted-list check to find');
+  await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME } });
+  await settle();
+  m = await visit('https://x.com/slop_a', 'mute', 'muted', 'muted');
+  assert.deepEqual([m.handles.slop_a.status, m.handles.slop_a.account], ['muted', ME]);
+  assert.deepEqual([m.days[today()].mutes, m.days[today()].unmutes, m.days[today()].visits, m.days[today()].stopped], [2, 1, 3, null]);
+});
