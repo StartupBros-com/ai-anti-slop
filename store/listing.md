@@ -1,5 +1,16 @@
 # Chrome Web Store listing
 
+The live listing is
+<https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha>
+(item id `apchbmongdogokfagedphbkempkhccha`). AI Anti-Slop 0.7.1 passed review
+and was published automatically on 2026-11-17. That day the live page showed
+version 0.7.1, the description below word for word, the category Social
+Networking, and the three data types ticked under **Data usage**. The package
+it served was byte for byte the v0.7.1 release's extension files, except that
+the store added an `update_url` to `manifest.json` and a
+`_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
+`README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
+
 What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.7.1,
 field by field. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
@@ -69,8 +80,9 @@ The MUTING paragraph is the one to cut, with the muting UI, if a hide-only
 store build is ever made. It has no such build today: the store zip is the
 same extension as the GitHub release.
 
-**Category:** Social Media & Networking ("extensions designed to enhance
-social media platforms", in Google's category list).
+**Category:** Social Networking, as the dashboard and the live listing name it.
+Google's category list calls it Social Media & Networking ("extensions designed
+to enhance social media platforms").
 
 **Language:** English.
 
@@ -116,7 +128,9 @@ system one.
 Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or on lists the user keeps, with an optional mute of the same accounts on the user's X account that is off until the user turns it on.
 ```
 
-**Permission justifications:**
+**Permission justifications:** the dashboard takes all host access, the
+clankwall host and the x.com content scripts, in a single **Host permission
+justification** field, which holds the last two rows of this table joined.
 
 | Permission | Justification |
 |---|---|
@@ -125,8 +139,10 @@ Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or o
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on, it adds Slop and Not slop buttons under replies and reads a reply's text when the user clicks one. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
-**Remote code:** No. All JavaScript ships in the package. The list it downloads
-is plain text, one handle per line, read as data and never run.
+**Remote code:** the dashboard asked no remote-code question when 0.7.1 was
+submitted, so nothing was entered. If it asks, the answer is No: all
+JavaScript ships in the package, and the list it downloads is plain text, one
+handle per line, read as data and never run.
 
 **Data usage.** The docs show the checkbox labels only in a screenshot, so the
 names below may differ from the dashboard's; tick the dashboard's nearest box
