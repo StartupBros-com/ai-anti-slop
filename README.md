@@ -601,9 +601,9 @@ reads (see [Limits](#limits)). Please open an issue.
   escapes until the list catches up, and a handle that is released and
   re-registered would hide its new owner, and with muting on, mute it.
 - The name is the aim, not a promise. Only posts by accounts on the list or in
-  **Also hide these accounts**, or by a bot set to Hide or Mute, are hidden,
-  plus, if you turn that on, posts that tag such a bot. A reply by any other
-  account stays, however it was written.
+  **Also hide these accounts**, or by a bot set to Hide or Mute, are hidden. A
+  reply by any other account stays, however it was written, unless it tags
+  such a bot and you turned on hiding posts that tag one.
 - The list is someone else's judgement. If the feed goes away, the last good
   list stays in use.
 - Hiding only works in a browser where it is installed, so it never covers the
