@@ -57,13 +57,18 @@
     const t = L.muteSummary(m);
     const next = m.nextAt && m.nextAt > now ? ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min` : '';
     setText($('muteWho'), `Muting as @${s.muteAccount}`);
+    // Mutes and unmutes share the daily cap; unmutes are named only once there are some.
+    const used = b.mutes + b.unmutes;
+    const actions = b.unmutes
+      ? `${used} of ${b.cap} (${b.mutes} ${b.mutes === 1 ? 'mute' : 'mutes'}, ${b.unmutes} ${b.unmutes === 1 ? 'unmute' : 'unmutes'})`
+      : `${b.mutes} of ${b.cap} mutes`;
     $('muteBar').setAttribute('max', String(b.cap));
-    $('muteBar').setAttribute('value', String(Math.min(b.mutes, b.cap)));
-    setText($('muteToday'), `Today (UTC): ${b.mutes} of ${b.cap} mutes, ${b.visits} of ${b.visitCap} visits${next}`);
+    $('muteBar').setAttribute('value', String(Math.min(used, b.cap)));
+    setText($('muteToday'), `Today (UTC): ${actions}, ${b.visits} of ${b.visitCap} visits${next}`);
     setText(
       $('muteTotals'),
       `So far: ${t.muted} muted (${t.confirmed} seen on your muted list, ${t.notFound} not found there), ` +
-        `${t.already} already muted, ${t.followed} you follow, ${t.skipped} skipped.`,
+        `${t.unmuted ? `${t.unmuted} unmuted, ` : ''}${t.already} already muted, ${t.followed} you follow, ${t.skipped} skipped.`,
     );
     setHidden($('muteStop'), !b.stopped);
     setHidden($('muteNext'), !b.stopped);

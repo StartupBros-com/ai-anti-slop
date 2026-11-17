@@ -151,7 +151,7 @@ export const meLink = (me) => `<nav><a data-testid="AppTabBar_Profile_Link" href
 // menu did on 2026-11-06; clicking the item labelled "Mute" (or "Mute @h")
 // shows X's toast, or a confirmation sheet when `confirmSheet` is set.
 // `clicks` records each menu item clicked, by label.
-export function wireMenu(document, { items, handle, confirmSheet = false, clicks = [] }) {
+export function wireMenu(document, { items, handle, confirmSheet = false, clicks = [], toastText = `@${handle} has been muted.Undo` }) {
   for (const caret of document.querySelectorAll('[data-testid="caret"]')) {
     caret.addEventListener('click', () => {
       const menu = document.createElement('div');
@@ -167,7 +167,7 @@ export function wireMenu(document, { items, handle, confirmSheet = false, clicks
             out.setAttribute('data-testid', 'confirmationSheetDialog');
           } else {
             out.setAttribute('data-testid', 'toast');
-            out.textContent = `@${handle} has been muted.Undo`;
+            out.textContent = toastText;
           }
           document.body.appendChild(out);
         });

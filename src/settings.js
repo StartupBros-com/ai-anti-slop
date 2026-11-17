@@ -140,7 +140,7 @@
         ? ''
         : p.muting
           ? `Muting is on as @${p.muteAccount}. After this import it can also mute ${plural(t.length, 'more account', 'more accounts')}: ` +
-            `${names(t)}.${bots} It mutes up to ${p.muteCap} a day, skips accounts you follow, and never unmutes.`
+            `${names(t)}.${bots} It mutes up to ${p.muteCap} a day and skips accounts you follow.`
           : `Muting is off. If you turn it on, it can also mute ${plural(t.length, 'account', 'accounts')} from this file: ${names(t)}.${bots}`,
       t,
     );
