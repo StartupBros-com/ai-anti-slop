@@ -166,9 +166,18 @@ carries the Limited Use statement on the project's own page.
   have the same policy requirements and will go through the same review
   process."
 - Regions: all.
-- Under **Submit for review**, untick automatic publishing to publish by hand
-  after approval. An approved item not published within 30 days goes back to
-  draft and needs resubmitting.
+- **Submit for review** opens a dialog with one checkbox, ticked by default,
+  that publishes the item automatically once it passes review. Untick it to
+  publish by hand after approval; an approved item not published within 30
+  days goes back to draft and needs resubmitting. AI Anti-Slop leaves it
+  ticked.
+- Decide before submitting. As the dashboard stood on 2026-11-17: while a
+  review was pending with automatic publishing on, the item's ⋮ menu (in the
+  header of its Store listing page; the Status page has none) offered **Defer
+  publish**. With automatic publishing off, that menu had no way to turn it
+  back on, so the only route was **Cancel review** and a new submit. After
+  **Cancel review**, the **Submit for review** button stayed greyed out until
+  the page was reloaded.
 
 ## Test instructions tab
 
