@@ -36,10 +36,10 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). It hides only accounts on that list or on your own lists; a reply by any other account stays, however it was written. The list refreshes every 6 hours. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity.
+AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
-- A post is hidden when its author is on the list or in your Also hide box. Quotes and mentions of a listed account stay visible.
+- A post is hidden when its author is on the list, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
 - On an x.com tab, the popup counts what that tab hid. Pause hiding shows every post again.
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
@@ -174,10 +174,9 @@ carries the Limited Use statement on the project's own page.
 
 Optional. Google says the tab is useful when an item needs restricted
 credentials for full access; seeing AI Anti-Slop work needs an X login, so fill
-it in (no credentials are given):
+in Additional instructions (no credentials are given; the box takes at most
+500 characters):
 
 ```
-AI Anti-Slop needs no account of its own. To see hiding: log in to any X account, open a reply thread on x.com, open the extension's popup, and add the handle of one replier under Your accounts > Also hide these accounts, then Save. That reply disappears; the popup counts it; Pause hiding brings it back. Accounts on the downloaded list (shown as "N accounts on the list" in the popup) are hidden the same way.
-
-Muting is off by default. To turn it on, open x.com logged in, keep that tab active, open the popup and tick "Mute listed accounts on X". It then mutes at most 25, 50 or 100 accounts a day (50 and 100 only while an x.com tab is open) by clicking X's own Mute item in background tabs. It does not use the X API, block anyone or unmute anyone. Testing it mutes real accounts on the reviewer's X account; they can be unmuted at x.com/settings/muted/all.
+Needs an X login, no account of its own. Hiding: open a reply thread on x.com, open the popup, add one replier's handle under Your accounts > Also hide these accounts, then Save. That reply disappears and the popup counts it; Pause hiding brings it back. Muting is off by default: with a logged-in x.com tab in front, turn on "Mute listed accounts on X". It mutes real accounts on your X account (25, 50 or 100 a day) via X's own Mute item, no X API; unmute at x.com/settings/muted/all.
 ```

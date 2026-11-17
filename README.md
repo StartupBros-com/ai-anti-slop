@@ -600,8 +600,10 @@ reads (see [Limits](#limits)). Please open an issue.
 - The feed lists handles, not accounts. An account that renames itself
   escapes until the list catches up, and a handle that is released and
   re-registered would hide its new owner, and with muting on, mute it.
-- The name is the aim, not a promise. Only accounts on the list are hidden;
-  a reply by an account that is not on it stays, however it was written.
+- The name is the aim, not a promise. Only posts by accounts on the list or in
+  **Also hide these accounts**, or by a bot set to Hide or Mute, are hidden,
+  plus, if you turn that on, posts that tag such a bot. A reply by any other
+  account stays, however it was written.
 - The list is someone else's judgement. If the feed goes away, the last good
   list stays in use.
 - Hiding only works in a browser where it is installed, so it never covers the
