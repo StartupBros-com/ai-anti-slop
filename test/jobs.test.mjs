@@ -259,3 +259,39 @@ test('content: sendMessage throwing synchronously raises no rejection, clicks no
     process.off('unhandledRejection', onUnhandled);
   }
 });
+
+// chrome.storage throws the same way. The label read runs from a timer, where
+// a throw is an uncaught exception, not a rejection.
+test('content: a label read throwing synchronously after an update raises nothing', async () => {
+  const thrown = [];
+  const onThrown = (e) => thrown.push(e);
+  process.on('uncaughtException', onThrown);
+  process.on('unhandledRejection', onThrown);
+  try {
+    const labelReads = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: {
+        local: {
+          // The page loaded while the extension was there; the label read comes after it was cut off.
+          get(keys) {
+            if (keys.includes('xsh:list')) return Promise.resolve({ 'xsh:list': { handles: [], fetchedAt: 1 }, 'xsh:settings': { labeling: true } });
+            labelReads.push(keys);
+            throw new Error('Extension context invalidated.');
+          },
+        },
+        onChanged: { addListener() {} },
+      },
+      runtime: { id: 'xshtest', onMessage: { addListener() {} }, sendMessage: async () => null },
+    };
+    const t = runContent(page([post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2' })]), { pathname: '/op/status/1', chrome });
+    for (let i = 0; i < 8; i++) await tick();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(t.document.querySelector('[data-xsh-bar="2"]'), 'the label pair rendered, so labels were read');
+    assert.equal(labelReads.length, 1, 'the label read was tried and threw');
+    assert.deepEqual(thrown, [], 'nothing uncaught');
+  } finally {
+    process.off('uncaughtException', onThrown);
+    process.off('unhandledRejection', onThrown);
+  }
+});

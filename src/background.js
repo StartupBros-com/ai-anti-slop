@@ -12,7 +12,7 @@ const MUTE_ALARM = 'xsh-mute';
 const JOB_ALARM = 'xsh-job-timeout';
 const JOB_KEY = 'xsh:job'; // chrome.storage.session: the one job in flight
 const JOB_TABS_KEY = 'xsh:jobTabs'; // chrome.storage.session: tabs opened for jobs
-const VISIT_KEY = 'xsh:visit'; // chrome.storage.local: { tabId, startedAt } of the visit in progress, to close its tab after an update
+const VISIT_KEY = 'xsh:visit'; // chrome.storage.local: { tabId, windowId, startedAt } of the visit in progress, to close its tab after an update
 const PRESENT_TIMEOUT_MS = 1500;
 
 async function settings() {
@@ -70,16 +70,22 @@ const clearJob = async () => {
 // An update or reload clears session storage but leaves the visit's tab open.
 // Called inside serial(). Closes the tab the previous worker opened, only if
 // the visit is younger than the tab timeout and this worker has no job on that
-// tab; the key goes either way. Only an id the worker itself created is ever
-// passed to tabs.remove.
+// tab; the key goes either way. Without the "tabs" permission a tab's address
+// is hidden, so what is checked is what can be seen: the tab still exists, in
+// the window the visit opened it in, and is not the tab in front of the user.
+// Not ruled out: a browser quit and reopened within the tab timeout of a visit,
+// with an update installing on that launch, can hand the same id and window to
+// another tab.
 async function sweepStrandedVisit(closeTab) {
   const rec = (await chrome.storage.local.get(VISIT_KEY))[VISIT_KEY];
   if (!rec) return;
   const job = await getJob();
   if (job && job.tabId === rec.tabId) return; // this worker's own visit
   await chrome.storage.local.remove(VISIT_KEY);
-  const fresh = Number.isFinite(rec.startedAt) && Date.now() - rec.startedAt < L.DEFAULTS.muteTabTimeoutMs;
-  if (closeTab && fresh && Number.isInteger(rec.tabId)) await chrome.tabs.remove(rec.tabId).catch(() => {});
+  const age = Date.now() - rec.startedAt; // NaN, or below 0 once the clock went back, is not fresh
+  if (!closeTab || !(age >= 0 && age < L.DEFAULTS.muteTabTimeoutMs)) return;
+  const tab = await chrome.tabs.get(rec.tabId).catch(() => null); // a malformed id throws; serial() catches it
+  if (tab && tab.windowId === rec.windowId && !tab.active) await chrome.tabs.remove(rec.tabId).catch(() => {});
 }
 
 // Every read-modify-write of the mute record and the job goes through this
@@ -184,7 +190,7 @@ async function startJob(kind, handle, account, now) {
     claimed: false,
     pageTimeoutMs: L.DEFAULTS.muteTabTimeoutMs - 20000,
   };
-  await chrome.storage.local.set({ [VISIT_KEY]: { tabId: tab.id, startedAt: now } });
+  await chrome.storage.local.set({ [VISIT_KEY]: { tabId: tab.id, windowId: tab.windowId, startedAt: now } });
   await setJob(job);
   chrome.alarms.create(JOB_ALARM, { when: now + L.DEFAULTS.muteTabTimeoutMs });
   return job;

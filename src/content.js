@@ -577,15 +577,17 @@
 
   function extensionAdapter() {
     const K = L.STORAGE_KEYS;
-    // sendMessage throws synchronously once the extension context is gone
-    // (reload or update), before any promise exists: make it a rejection.
-    const send = (msg) => {
+    // Once the extension context is gone (reload or update), chrome.runtime and
+    // chrome.storage calls throw synchronously, before any promise exists: make
+    // that a rejection.
+    const safe = (call) => {
       try {
-        return Promise.resolve(chrome.runtime.sendMessage(msg));
+        return Promise.resolve(call());
       } catch (e) {
         return Promise.reject(e);
       }
     };
+    const send = (msg) => safe(() => chrome.runtime.sendMessage(msg));
     const read = () =>
       chrome.storage.local.get([K.list, K.settings]).then((o) => ({ list: o[K.list], settings: o[K.settings] }));
     return {
@@ -624,7 +626,7 @@
           .catch((e) => ({ ok: false, reason: String((e && e.message) || e) })),
       getLabels(ids) {
         const keys = ids.map((id) => L.LABEL_PREFIX + id);
-        return chrome.storage.local.get(keys).then((o) => {
+        return safe(() => chrome.storage.local.get(keys)).then((o) => {
           const out = {};
           for (const id of ids) {
             const r = o[L.LABEL_PREFIX + id];
