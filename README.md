@@ -675,8 +675,10 @@ reads (see [Limits](#limits)). Please open an issue.
   tab on 2026-11-06, X drew its first 7 to 9 rows. Mutes made elsewhere between
   checks (by hand, in the X app, or by another tool) push the extension's
   newest mutes down that list, and a mute that is there but not drawn reads as missing
-  and stops the day. Don't mute by hand or run another muting tool while
-  AI Anti-Slop is muting.
+  and stops the day. On 2026-11-18 an account muted again 16 s after an unmute
+  stayed below an account muted after its first mute, so the extension's
+  re-mute of an account it unmuted earlier may read as missing the same way.
+  Don't mute by hand or run another muting tool while AI Anti-Slop is muting.
 - Muting runs only while the browser is open with the extension loaded and
   logged in to x.com. It picks up again the next time the browser runs.
 - At 50 or 100 a day, any x.com tab of yours counts as "x.com open", including
@@ -786,7 +788,8 @@ author's post is left showing.
 Hiding was checked on real x.com on 2026-11-03 (four pages, 0 mismatches), and
 versions 0.2.0 to 0.5.0 ran in headless Chromium against fixture pages. Muting
 has run in Brave on the maintainer's own account since 2026-11-07; 0.5.0's
-labels and daily setting have not run in Brave yet.
+labels and daily setting have not run in Brave yet. One unmute from 0.8.0's
+page code ran on real x.com on 2026-11-18.
 [docs/TESTING.md](docs/TESTING.md) has each run, its method and results, and
 what has not been tested.
 
