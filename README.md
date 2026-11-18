@@ -157,7 +157,7 @@ whenever the tab comes back into view. The userscript does not mute.
 | Mute listed accounts on your X account | Tick **Mute listed accounts on X** (see [Muting](#muting)) | Not available |
 | Mute more accounts a day | Pick 50 or 100 under **Mutes a day** (see [How many a day](#how-many-a-day)) | Not available |
 | Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
-| Hide a reply as slop | Click **Hide as slop**, the speech bubble with an × at the end of the reply's row of icons. It is there unless you untick **Show a Hide as slop button on replies on x.com** under **Label replies** (see [Labels](#labels)) | Not available |
+| Hide a reply as slop | Click **Hide as slop**, the speech bubble with an × at the reply's top right, just left of Grok's icon and ⋯. It is there unless you untick **Show a Hide as slop button on replies on x.com** under **Label replies** (see [Labels](#labels)) | Not available |
 | Back up or move your settings | Under **Your accounts**, click **Export or import**, then **Export settings**; import the file on the same page (see [Export and import](#export-and-import)) | Not available |
 | Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export Also hide as a list**, or pick their file under **Import** | Not available |
 
@@ -461,12 +461,13 @@ Labels are in the extension only, and on unless you untick **Show a Hide as
 slop button on replies on x.com** under **Label replies** in the popup. Before
 0.9.0 they were off until ticked; if you turned the switch off, it stays off.
 On a post's own page (`x.com/handle/status/...`), each post below it gets one
-button, **Hide as slop**: a speech bubble with an ×, at the end of the post's
-row of icons, after Share. A post without that row gets the button on a line
-of its own under it. The buttons go on the replies and any other posts X lists
-after them. The post the page is about and the posts above it, which it
-replies to, get none, and nothing appears on its quotes or likes pages, the
-home timeline, profiles or search.
+button, **Hide as slop**: a speech bubble with an ×, at the post's top right,
+just left of Grok's icon and ⋯ (More), or of ⋯ alone where X shows no Grok
+icon (in a narrow window, say). None of X's icons moves to make room for it.
+A post without ⋯ gets the button on a line of its own under it. The buttons go
+on the replies and any other posts X lists after them. The post the page is
+about and the posts above it, which it replies to, get none, and nothing
+appears on its quotes or likes pages, the home timeline, profiles or search.
 
 - **Hide as slop** labels the reply slop and adds the account to **Also hide
   these accounts**, so its posts on the page hide at once and, with muting on,

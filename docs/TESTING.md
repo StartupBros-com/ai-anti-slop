@@ -364,8 +364,42 @@ later one 0.6 ms after, both before the next paint.
 Before the code was written, the icon was injected by hand into one live x.com
 thread, in X's dark theme, for a screenshot. That page is where the 8-pixel
 margin before the button comes from: X's row has a 4-pixel gap, and Bookmark
-and Share sit 12 pixels apart. The extension itself has not drawn the button on
-x.com yet.
+and Share sit 12 pixels apart. The code itself on x.com is the next entry.
+
+## Hide as slop icon on x.com
+
+On 2026-11-18 `src/lib.js` and `src/content.js` ran on one live public x.com
+thread in Brave on Windows (Chromium 157), in X's dark theme and in English,
+injected into the page with a stand-in for the extension's storage: its list
+was empty, so nothing hid, and it saved nothing. Nothing was clicked. The
+loaded extension's own injection was not part of these runs.
+
+- The icon at the end of each reply's row of action icons, as merged in #60:
+  in a first run all 8 replies got it and the post the page is about did not,
+  each named "Hide as slop" with no text, 19 by 20 pixels, in the row's grey,
+  rgb(113, 118, 123), with no exceptions. A second run measured the row before
+  and after the icon went in: on both replies, X's icons moved left by 4 pixels
+  (Reply), 11 (Repost), 19 (Like), 27 (Views) and 31 (Bookmark and Share), and
+  the icon sat where Share had been. With the extension loaded in Brave, the
+  owner saw the icon there on replies, and its place in the row is why it
+  moved.
+- The icon in each reply's header, as it is now, at 1,024 pixels wide: 3 of 3
+  replies got it, first in the group of icons at the top right, just left of
+  Grok's and More's, and the post the page is about got none. The space after
+  it measured 8.1 pixels, as between Grok and More (8.0): X spaces that group
+  with an 8-pixel column gap, so the icon adds no margin of its own there. It
+  was level with Grok and More, in More's grey, rgb(113, 118, 123), and clear
+  of the date. Grok, More and the 6 icons of each action row moved 0 pixels. A
+  click at the icon's centre or right edge would land on it; one in the gap or
+  just left of Grok, on Grok.
+- The same page at 420 pixels wide: X drew no Grok icon on the replies, and 9
+  of 9 got the icon just left of More, 8.1 pixels from it. More and the action
+  rows moved 0 pixels between the icons shown and hidden.
+- The page loaded at 420 pixels and then widened to 1,024: the 2 replies X
+  kept drawn gained Grok, and both icons moved first in the group, 8.1 pixels
+  before Grok. A first draft of this placement, which counted the icon among
+  X's own nodes, left both between Grok and More in the same run.
+- No exceptions, and nothing hid.
 
 ## Popup layout in Chromium
 
@@ -440,8 +474,14 @@ used a stand-in for the worker), and whether X ever asks to confirm an unmute
 only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
 where X could not be reached), so how X responds to visits a few seconds apart,
 and how long a run of hundreds of accounts takes, are not known.
-For the Hide as slop icon (0.9.0): the extension drawing it on real x.com, X's
-light and dim themes, a narrow window and Brave. For the shorter popup (0.9.0):
+For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
+header on x.com, in Brave or any browser (the runs above injected its scripts),
+X's light and dim themes, a theme switched with a thread open (the icon keeps
+the grey it read when placed, as the one in the row did), X in other languages
+(Grok's button is found by its shape, not its name), widths other than 1,024
+and 420 pixels, how X nests More when it draws no Grok (only where the icon
+landed was read), the line of its own under a post without More, and a long
+name or handle, which the icon's 27 pixels now cut short sooner. For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
 measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on
