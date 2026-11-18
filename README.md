@@ -828,8 +828,8 @@ Hiding was checked on real x.com on 2026-11-03 (four pages, 0 mismatches), and
 versions 0.2.0 to 0.5.0 ran in headless Chromium against fixture pages. Muting
 has run in Brave on the maintainer's own account since 2026-11-07; 0.5.0's
 labels and daily setting have not run in Brave yet. One unmute from 0.8.0's
-page code ran on real x.com on 2026-11-18. 0.9.0's **Run now** has run only
-against the fakes in the automated tests.
+page code ran on real x.com on 2026-11-18. 0.9.0's **Run now** has run against the
+real worker and popup in Chromium with x.com unreachable, not yet on x.com.
 [docs/TESTING.md](docs/TESTING.md) has each run, its method and results, and
 what has not been tested.
 

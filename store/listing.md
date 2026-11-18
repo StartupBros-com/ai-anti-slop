@@ -45,7 +45,7 @@ Upload that zip under **Package**.
 changing either takes a new upload:
 
 - Name: `AI Anti-Slop – Hide AI spam accounts on X`
-- Summary: `Hides x.com posts by accounts on a self-updating AI-reply spam list, and can mute them on X at a capped daily pace. No X API.`
+- Summary: `Hides x.com posts by accounts on a self-updating AI-reply spam list, and can mute them on X, daily or all at once. No X API.`
 
 **Description** (plain text; the store shows line breaks but no formatting):
 

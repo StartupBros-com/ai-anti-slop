@@ -148,8 +148,10 @@
     setText($('tabMore'), more || '');
   }
 
-  async function render() {
-    const o = await chrome.storage.local.get([K.list, K.settings, K.mutes, K.labelCount]);
+  // The muting section alone: what a visit or a run changes. It writes no
+  // field the user types in, so it can run while the popup is in use.
+  async function renderMutingPart() {
+    const o = await chrome.storage.local.get([K.list, K.settings, K.mutes]);
     const rec = o[K.list] || { handles: [] };
     const s = o[K.settings] || {};
     const m = o[K.mutes] || L.emptyMutes();
@@ -157,6 +159,13 @@
     renderMuting(s, m, run);
     renderRun(s, m, rec.handles, run);
     renderCap(s, m, rec.handles);
+  }
+
+  async function render() {
+    await renderMutingPart();
+    const o = await chrome.storage.local.get([K.list, K.settings, K.labelCount]);
+    const rec = o[K.list] || { handles: [] };
+    const s = o[K.settings] || {};
     const n = o[K.labelCount];
     renderLabels(s, Number.isInteger(n) && n > 0 ? n : 0);
     let host = '';
@@ -326,11 +335,12 @@
       runAsked = false;
     }
     runNote(r && r.ok ? '' : `Not ${on ? 'started' : 'stopped'}: ${(r && r.reason) || 'no answer'}`);
-    render();
+    redraw();
   });
 
   // While the popup is open, visits change the mute record and a run starts
-  // or ends: draw again. Renders do not overlap; a change during one draws once more.
+  // or ends: draw the muting section again, never the boxes the user may be
+  // typing in. Draws do not overlap; a change during one draws once more.
   let drawing = null;
   let drawAgain = false;
   function redraw() {
@@ -338,7 +348,7 @@
       drawAgain = true;
       return;
     }
-    drawing = render()
+    drawing = renderMutingPart()
       .catch(() => {})
       .finally(() => {
         drawing = null;

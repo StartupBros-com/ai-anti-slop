@@ -2445,3 +2445,40 @@ test('popup: past the daily number the today line gives counts, not "of", and re
   await settle();
   assert.equal($('muteToday').textContent, 'Today (UTC): 63 (61 mutes, 2 unmutes; over 25 a day), 71 visits');
 });
+
+test('background: a visit reporting a status it does not know counts as a failed try, so a run still ends', async () => {
+  assert.deepEqual({ ...lib.jobResult('mute', { status: 'unmuted' }) }, { status: 'error', reason: 'unknown result: unmuted' });
+  assert.deepEqual({ ...lib.jobResult('unmute', {}) }, { status: 'error', reason: 'unknown result: undefined' });
+  assert.deepEqual({ ...lib.jobResult('mute', { status: 'already' }) }, { status: 'already' });
+  const t = fakeTimers();
+  const bg = await muteBackground({ handles: ['slop_a'], mutes: capUsed({ gone: mutedAs(ME) }), timers: t });
+  await runOn(bg);
+  await settle();
+  for (const status of ['already', 'muted', 'weird', undefined]) {
+    await answer(bg, { status });
+    await nextStep(bg, t);
+  }
+  assert.deepEqual(
+    bg.chrome.tabs.opened.map((tab) => tab.url),
+    ['gone', 'gone', 'slop_a', 'slop_a'].map((h) => 'https://x.com/' + h),
+  );
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.handles.gone.unmuteAttempts, 2);
+  assert.equal(m.handles.slop_a.status, 'failed');
+});
+
+test('popup: a visit landing, or pressing Run now, leaves what the user typed but has not saved', async () => {
+  const p = runPopup(popupStore(capUsed()));
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  $('allow').value = 'typed_not_saved';
+  $('extra').value = 'also_typed';
+  await p.chrome.storage.local.set({ 'xsh:mutes': { ...capUsed(), days: { [today()]: { mutes: 26, unmutes: 0, visits: 31 } } } });
+  await settle();
+  assert.equal($('muteToday').textContent.startsWith('Today (UTC): 26 mutes (over 25 a day)'), true);
+  $('runNow').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.equal($('allow').value, 'typed_not_saved');
+  assert.equal($('extra').value, 'also_typed');
+});

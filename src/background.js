@@ -292,8 +292,9 @@ async function closeJobTab(id) {
 }
 
 // Fold a job's result into the record, close its tab and set the next visit.
-async function finishJob(job, result) {
+async function finishJob(job, reported) {
   const now = Date.now();
+  const result = L.jobResult(job.kind, reported);
   let rec = await mutesRec();
   if (job.kind === 'mute') {
     rec = L.recordOutcome(rec, job.handle, result, now, job.account);

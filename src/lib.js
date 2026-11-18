@@ -490,6 +490,20 @@
     return out.sort((a, b) => (entryOf(r, a).at || 0) - (entryOf(r, b).at || 0) || (a < b ? -1 : 1));
   }
 
+  // The outcomes a visit's page can report, by job kind. Any other status
+  // counts as an error, one of the account's muteMaxAttempts, so no reply can
+  // keep an account waiting for ever; Run now has no visit cap to bound that.
+  const JOB_STATUSES = Object.freeze({
+    mute: Object.freeze(['muted', 'already', 'followed', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
+    unmute: Object.freeze(['unmuted', 'not-muted', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
+  });
+  function jobResult(kind, result) {
+    const r = result || {};
+    const known = JOB_STATUSES[kind];
+    if (!known || known.includes(r.status)) return r;
+    return { status: 'error', reason: `unknown result: ${String(r.status).slice(0, 40)}` };
+  }
+
   // How many accounts Run now would visit: every unmute and mute waiting.
   // Each visit settles its account, counts one of its muteMaxAttempts, or
   // stops the day, so a run over these ends.
@@ -1024,6 +1038,7 @@
     unmuteCandidates,
     runWaiting,
     RUN_KEY,
+    jobResult,
     stampAccount,
     muteCap,
     capNeedsXOpen,
