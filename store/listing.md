@@ -59,7 +59,7 @@ HIDING
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
 LABELS
-- A Hide as slop button on each post, on the home timeline and in replies alike, hides it and adds the account to Also hide, with 6 seconds to undo. Turn the button off in the popup.
+- A Hide as slop icon in the header of each post, just left of X's Grok and More icons, wherever X lists posts: the home timeline, search, profiles, lists and post pages. One click hides the post and adds the account to Also hide, and nothing is saved until the 6 seconds to undo have passed. Your own posts and posts by the account whose page is open have no icon. Turn it off in the popup.
 - Labels stay in this browser. Export labels saves them to a file.
 
 SETTINGS FILES
@@ -67,7 +67,7 @@ SETTINGS FILES
 - Import a settings file or a shared list. Import adds accounts and never removes any, shows what will change before it changes anything, and never turns muting on.
 
 MUTING (optional, off until you turn it on)
-- When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open. Run now visits every account waiting at once, a few seconds apart, until none are left or you press Stop.
+- When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open. Run now visits every account waiting at once, a few seconds apart, until none are left, you press Stop or muting stops for the day.
 - It skips accounts you follow and accounts in Always show. If an account it muted leaves the list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
@@ -138,10 +138,10 @@ justification** field, which holds the last two rows of this table joined.
 
 | Permission | Justification |
 |---|---|
-| `storage` | Keeps the downloaded list, the user's settings and account lists, and, only if the user turns them on, the muting record and saved labels. All of it stays in the browser's extension storage. |
+| `storage` | Keeps the downloaded list, the user's settings and account lists, the labels the user saves by clicking Hide as slop on a post (labels are on unless the user turns them off, and nothing is saved until a click), and, only if the user turns muting on, the muting record. All of it stays in the browser's extension storage. |
 | `alarms` | Refreshes the list every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
-| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop button to each reply on a post's page and reads a reply's text when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
+| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to the header of each post X lists, except the user's own posts and posts by the account whose page is open, and reads the post's text and link when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
 **Remote code:** the dashboard asked no remote-code question when 0.7.1 was
 submitted, so nothing was entered. If it asks, the answer is No: all
