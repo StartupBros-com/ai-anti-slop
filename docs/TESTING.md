@@ -276,6 +276,14 @@ listed accounts and a day already at 25 of 25 mutes.
 - Writing and removing the run in session storage from the worker's side
   turned the open popup's button to **Stop** and back.
 
+A second run the same day, with 6 accounts waiting, closed nothing by hand, so
+each visit waited out the worker's 90 s limit. Visits started 92.2 to 93.3 s
+apart. After the fifth, the run stopped muting for the day with "Run now: 5
+visits in a row did nothing, the last @listed_4: error (no answer from the tab
+in 90 s)", 461 s after the click. Each of the 5 accounts it visited had one
+failed try and none was given up on; the sixth was not visited, and nothing
+opened in the next 10 s. The open popup showed the stop and hid **Run now**.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the

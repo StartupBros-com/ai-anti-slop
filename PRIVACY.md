@@ -56,7 +56,8 @@ While a mute visit is running, the extension also keeps, in `chrome.storage.sess
 the account being visited, the handle muting runs as, and the id of the tab it
 opened (`xsh:job`), plus the ids of tabs it opened for visits that are still open
 (`xsh:jobTabs`). While a **Run now** is going, it keeps there the time the run
-started and the handle muting runs as (`xsh:run`). Chrome clears session
+started, the handle muting runs as and how many visits in a row did nothing
+(`xsh:run`). Chrome clears session
 storage when the browser closes and when the extension is reloaded or updated,
 which ends a run.
 

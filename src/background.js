@@ -306,7 +306,19 @@ async function finishJob(job, reported) {
     // An unreadable muted list means mutes cannot be confirmed: stop for the day.
     rec = L.stopDay(rec, now, `settings/muted/all check: ${result.status}${result.reason ? ` (${result.reason})` : ''}`);
   }
-  const run = await getRun();
+  let run = await getRun();
+  if (run && job.kind !== 'check') {
+    const misses = L.runMissed(result) ? (run.misses || 0) + 1 : 0;
+    if (misses >= L.DEFAULTS.muteRunMisses) {
+      const why = `${result.status}${result.reason ? ` (${result.reason})` : ''}`;
+      rec = L.stopDay(rec, now, `Run now: ${misses} visits in a row did nothing, the last @${job.handle}: ${why}`);
+      await endRun();
+      run = null;
+    } else if (misses !== (run.misses || 0)) {
+      run = Object.assign({}, run, { misses });
+      await chrome.storage.session.set({ [RUN_KEY]: run });
+    }
+  }
   const gap = run ? runGapMs() : gapMs();
   rec.nextAt = now + gap;
   await saveMutes(rec);

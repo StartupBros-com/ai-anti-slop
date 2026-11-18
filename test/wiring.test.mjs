@@ -2482,3 +2482,64 @@ test('popup: a visit landing, or pressing Run now, leaves what the user typed bu
   assert.equal($('allow').value, 'typed_not_saved');
   assert.equal($('extra').value, 'also_typed');
 });
+
+test('background: in a run, five visits in a row that do nothing stop muting for the day before any account is given up on', async () => {
+  const t = fakeTimers();
+  const handles = ['slop_a', 'slop_b', 'slop_c', 'slop_d', 'slop_e', 'slop_f'];
+  const bg = await muteBackground({ handles, mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  const answers = [
+    { status: 'error', reason: 'no answer from the tab in 90 s' },
+    { status: 'no-post', reason: 'no post by the account on its profile' },
+    { status: 'error', reason: 'the ⋯ menu did not open' },
+    { status: 'no-post', reason: 'no post by the account on its profile' },
+    { status: 'error', reason: 'no answer from the tab in 90 s' },
+  ];
+  for (const [i, result] of answers.entries()) {
+    await answer(bg, result);
+    if (i < answers.length - 1) {
+      assert.equal(bg.chrome.session['xsh:run'].misses, i + 1);
+      await nextStep(bg, t);
+    }
+  }
+  await settle();
+  assert.equal('xsh:run' in bg.chrome.session, false, 'the run ended');
+  assert.equal(t.due.length, 0, 'and set no timer for a next step');
+  assert.deepEqual(
+    bg.chrome.tabs.opened.map((tab) => tab.url),
+    handles.slice(0, 5).map((h) => `https://x.com/${h}`),
+  );
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.days[today()].stopped, 'Run now: 5 visits in a row did nothing, the last @slop_e: error (no answer from the tab in 90 s)');
+  for (const h of handles.slice(0, 5)) {
+    assert.notEqual(m.handles[h].status, 'failed', `@${h} keeps its second try`);
+    assert.equal(lib.muteCandidates(handles, { muteEnabled: true, muteAccount: ME }, m).includes(h), true);
+  }
+  due(bg);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, 5, 'the daily pace visits nothing either, today');
+});
+
+test('background: in a run, a visit that does something starts the count of visits that did nothing again', async () => {
+  const t = fakeTimers();
+  const handles = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9'];
+  const bg = await muteBackground({ handles, mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  const err = { status: 'error', reason: 'no menu' };
+  for (const result of [err, err, err, err, { status: 'muted' }, err, err, err, err]) {
+    await answer(bg, result);
+    await nextStep(bg, t);
+  }
+  assert.equal(bg.chrome.session['xsh:run'].misses, 4, 'four since the mute');
+  assert.equal(bg.chrome.tabs.opened.length, 10);
+  assert.equal(lastTab(bg).url, 'https://x.com/m1', 'a second try once every account had one');
+  await answer(bg, err);
+  await settle();
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.match(m.days[today()].stopped, /^Run now: 5 visits in a row did nothing, the last @m1: error/);
+  assert.equal(m.handles.m1.status, 'failed');
+  assert.equal(m.handles.m5.status, 'muted');
+});

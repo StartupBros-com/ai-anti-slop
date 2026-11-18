@@ -44,6 +44,12 @@
     // next opening, picked at random in this range. A run skips the daily
     // caps and the gap above, not the checks or the reasons to stop the day.
     muteRunGapMs: [2000, 5000],
+    // Visits in a row, inside a run, that end in an error or find no post
+    // before muting stops for the day. X unreachable, or pages X will not
+    // serve, would otherwise spend every account's tries in one sitting; a run
+    // tries each account once before any second try, so this many leaves
+    // none of them given up on.
+    muteRunMisses: 5,
     // A mute tab still open after this long is closed and counted as a failure.
     muteTabTimeoutMs: 90000,
     // Mutes made since the last check of settings/muted/all. A background tab
@@ -502,6 +508,12 @@
     const known = JOB_STATUSES[kind];
     if (!known || known.includes(r.status)) return r;
     return { status: 'error', reason: `unknown result: ${String(r.status).slice(0, 40)}` };
+  }
+
+  // Whether a visit's result, already through jobResult, is a miss for
+  // muteRunMisses: nothing clicked and nothing learned about the account.
+  function runMissed(result) {
+    return !!result && (result.status === 'error' || result.status === 'no-post');
   }
 
   // How many accounts Run now would visit: every unmute and mute waiting.
@@ -1039,6 +1051,7 @@
     runWaiting,
     RUN_KEY,
     jobResult,
+    runMissed,
     stampAccount,
     muteCap,
     capNeedsXOpen,

@@ -15,7 +15,8 @@ the store added an `update_url` to `manifest.json` and a
 
 What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.9.0,
 field by field. 0.8.0 went to review on 2026-11-18 with the description below
-less its Run now sentence, which 0.9.0 adds. Field names and rules are from Google's developer documentation
+less its Run now sentence, which 0.9.0 adds, and with the summary that ended
+"at a capped daily pace" in place of "daily or all at once". Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.

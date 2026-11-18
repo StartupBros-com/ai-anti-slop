@@ -384,7 +384,12 @@ after another:
   everything under [When it stops for the day](#when-it-stops-for-the-day)
   still stops the day, which ends the run.
 - An account that fails twice is left alone, as under [Retries](#retries), so
-  a run always ends.
+  a run never keeps visiting one account.
+- Five visits in a row that end in an error or find no post stop muting for
+  the day. A run tries every account once before it tries any again, so if
+  x.com does not load, or X will not show profiles, it stops after five
+  accounts that each keep their second try, instead of giving up on the whole
+  queue in one sitting.
 - It ends when nothing is left, when you press **Stop** (the same button), when
   muting is turned off or turned on for another account, and when the browser
   closes or the extension is reloaded or updated. It never starts again by
@@ -406,7 +411,9 @@ with the reason, when:
   Unmute item), or X asks for a confirmation (AI Anti-Slop leaves it
   unanswered);
 - a check does not find a new mute on `x.com/settings/muted/all`, or cannot
-  read that page.
+  read that page;
+- during [Run now](#run-now), five visits in a row end in an error or find no
+  post.
 
 [Muting stopped for today](#muting-stopped-for-today) under Troubleshooting
 lists each reason.
@@ -559,8 +566,8 @@ The privacy policy, with what each storage key holds, is
 - `storage` holds the list, your settings, the mute record and your labels, in
   `chrome.storage.local`. During a mute visit it also holds the visit's
   account and tab ids in `chrome.storage.session`, which the browser clears
-  when it closes, and during **Run now** the time the run started and the
-  account it runs as. `alarms` schedules the list refresh, muting's once-a-minute check, and the
+  when it closes, and during **Run now** the time the run started, the
+  account it runs as and how many visits in a row did nothing. `alarms` schedules the list refresh, muting's once-a-minute check, and the
   90 s limit on a visit. Opening and closing its own tabs needs no further permission.
 - The content script runs on x.com, twitter.com and their `mobile.` hosts. In
   your own tabs it makes no network requests and clicks nothing: it reads the
@@ -633,6 +640,7 @@ again on the next UTC day.
 | `@handle: unmute refused (N exact Unmute items … in the menu [...])` | To unmute an account it had muted, the ⋯ menu needed exactly one item labelled "Unmute @handle" and no Mute item. The brackets list the labels it saw. | If they are not in English, set X's language to English. Otherwise unmute the account by hand at `x.com/settings/muted/all`. |
 | `not on settings/muted/all after muting: @handle` | A new mute was not in the top rows of your muted accounts. | Look for it at `x.com/settings/muted/all`, and see [Limits](#limits). |
 | `settings/muted/all check: error (…)` | Your muted accounts page could not be read. | Open `x.com/settings/muted/all` and check that it loads. |
+| `Run now: 5 visits in a row did nothing, the last @handle: error (…)` (or `no-post (…)`) | During Run now, five visits in a row ended in an error or found no post: x.com may not have loaded, or X may not be showing profiles. Each of those accounts keeps its second try. | Open `x.com/handle` and check that its posts load. |
 
 An account refused at its menu is tried again on a later day, and if X still
 shows it the same menu, it stops that day too. Adding it to Always show ends
