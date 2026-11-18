@@ -528,3 +528,16 @@ test('a label stored from elsewhere while a click on the same post waits leaves 
   await settle();
   assert.deepEqual(t.saves, []);
 });
+
+test('a refused click goes back to the stored label, not to an earlier click that was never saved', async () => {
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { answer: () => ({ ok: false, reason: 'labels are off' }) }, clock: true });
+  await settle();
+  // Each click sends the one before it; every save is refused.
+  click(t, button(t, '2', 'slop'));
+  click(t, button(t, '2', 'not_slop'));
+  click(t, button(t, '3', 'slop'));
+  await settle();
+  assert.deepEqual(pressed(t, '2'), [], 'nothing was stored for the post');
+  assert.equal(note(t, '2'), 'not saved: labels are off');
+  assert.equal(toastText(t), 'Labelled Slop. @reply_b added to Also hide.', 'the waiting click keeps its notice');
+});
