@@ -16,12 +16,19 @@ export const tick = () => new Promise((r) => setTimeout(r, 0));
 // [role="link"] card inside the article carrying its own User-Name block.
 // `mention` tags an account in the post's own text; `quoteMention` tags one in
 // the quoted post's text only (an "@grok is this true?" seen through a quote).
-export function post({ author, quote = null, mention = null, quoteMention = null, status = '1', authorBlock = true, actions = false }) {
-  const userName = authorBlock
+//
+// `head` adds the icons at the post's top right beside its User-Name block, as
+// observed live on 2026-11-18 (headIcons). `actions` adds the row of action
+// icons under it.
+export function post({ author, quote = null, mention = null, quoteMention = null, status = '1', authorBlock = true, actions = false, head = null }) {
+  const names = authorBlock
     ? `<div data-testid="User-Name"><div><a href="/${author}" role="link"><span>Name</span></a></div>` +
       `<div><a href="/${author}" role="link" tabindex="-1"><span>@${author}</span></a>` +
       `<a href="/${author}/status/${status}" role="link"><time datetime="2026-11-03T00:00:00.000Z">1h</time></a></div></div>`
     : '';
+  // A button among the names too (a badge, say), so only their links tell them from the icons.
+  const badge = '<span role="button" aria-label="Badge"><svg viewBox="0 0 24 24"></svg></span>';
+  const userName = head ? `<div data-head-row><div>${names}${badge}</div>${headIcons(head)}</div>` : names;
   const text = `<div data-testid="tweetText"><span>hello </span>${mention ? `<a href="/${mention}" role="link">@${mention}</a>` : ''}</div>`;
   const quoteCard = quote
     ? `<div role="link" tabindex="0"><div data-testid="User-Name"><a href="/${quote}"><span>@${quote}</span></a></div>` +
@@ -36,6 +43,15 @@ export function post({ author, quote = null, mention = null, quoteMention = null
     `<div data-testid="cellInnerDiv" data-fixture="${status}"><div><article data-testid="tweet" role="article" tabindex="0">` +
     `${userName}${text}${quoteCard}${row}</article></div></div>`
   );
+}
+
+// The icons at a post's top right, nested as on x.com on 2026-11-18: a group
+// ([data-icons] here) holding Grok's button ('grok') and then More (⋯), or
+// More alone ('more'). The group is the right end of the header row.
+export function headIcons(kind) {
+  const grok = '<div><button aria-label="Grok actions" type="button"><svg viewBox="0 0 24 24"></svg></button></div>';
+  const more = '<div><div><div><button data-testid="caret" aria-label="More" type="button"><svg viewBox="0 0 24 24"></svg></button></div></div></div>';
+  return `<div><div data-icons>${kind === 'grok' ? grok : ''}${more}</div></div>`;
 }
 
 export function page(cells) {
@@ -62,7 +78,10 @@ export function page(cells) {
 //
 // With `clock`, timers longer than 0 ms wait for `advance(ms)` instead of
 // real time; 0 ms timers (the label read batch) still run on their own.
-export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null, clock = false } = {}) {
+//
+// With `styles`, the page has a getComputedStyle (linkedom has none):
+// `styles(el)` returns the computed style to report for that element.
+export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null, clock = false, styles = null } = {}) {
   const { window, document, MutationObserver } = parseHTML(html);
   const fake = clock ? fakeClock() : null;
   const location = { pathname };
@@ -137,6 +156,7 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     console,
     setTimeout: fake ? fake.setTimeout : setTimeout,
     clearTimeout: fake ? fake.clearTimeout : clearTimeout,
+    ...(styles ? { getComputedStyle: styles } : {}),
   });
   vm.runInContext(src('src/lib.js'), ctx, { filename: 'src/lib.js' });
   vm.runInContext(src('src/content.js'), ctx, { filename: 'src/content.js' });

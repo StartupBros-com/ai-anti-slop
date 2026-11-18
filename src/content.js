@@ -7,10 +7,10 @@
 // calls X's API.
 //
 // Labels, unless the user has turned them off (extension only): on a post's
-// own page, each post below it gets one icon button, Hide as slop, at the end
-// of its row of action icons. A click there, and the Undo it offers, are the
-// only things this script acts on in the user's own tabs, and only a click
-// the browser marks as the user's own.
+// own page, each post below it gets one icon button, Hide as slop, in its
+// header, left of X's Grok and More icons. A click there, and the Undo it
+// offers, are the only things this script acts on in the user's own tabs, and
+// only a click the browser marks as the user's own.
 // A click shows on the page at once and is handed to the background worker
 // to save only when its 6-second Undo window ends, so an undone click is
 // never saved and never reaches muting.
@@ -85,18 +85,18 @@
   }
 
   // The button's look, added only while labels are on, so a page with them
-  // off gets nothing beyond the hide rule. It copies X's own action icons: a
-  // 19px glyph in X's grey (taken from the reply icon beside it), red with a
+  // off gets nothing beyond the hide rule. It copies X's own icons: a 19px
+  // glyph in X's grey (More's, read where it goes: headStyle), red with a
   // round tint on hover, filled red once the reply is labelled. The tint
-  // circle is also the hit area, 35x36 px. A post without an action row gets
-  // the button in a row of its own under the text.
+  // circle is 35x36 px. A post without More gets the button in a row of its
+  // own under the text.
   function injectBarStyle() {
     if (document.getElementById('xsh-bar-style')) return;
     const st = document.createElement('style');
     st.id = 'xsh-bar-style';
     st.textContent =
-      // In X's row, 8px on top of the row's 4px gap: the 12px between bookmark and share.
-      `[${BAR}]{display:flex;flex:none;align-items:center;margin-left:8px;color:rgb(113,118,123)}` +
+      // In a post's header, left of Grok and More, with the 8px X leaves between those two.
+      `[${BAR}]{display:flex;flex:none;align-items:center;margin:0 8px 0 0;color:rgb(113,118,123)}` +
       `[${BAR}][data-xsh-own-row]{margin:4px 0 8px 64px}` +
       `[${BAR}] button{position:relative;display:flex;align-items:center;justify-content:center;width:19px;height:20px;margin:0;padding:0;border:0;background:none;color:inherit;cursor:pointer;transition:color .15s ease-out}` +
       `[${BAR}] button::before{content:"";position:absolute;inset:-8px;border-radius:9999px;transition:background-color .15s ease-out}` +
@@ -228,12 +228,39 @@
     return null;
   }
 
-  // The row of action icons (reply, repost, like, ...) that X draws under a
-  // post, found from its reply button, or null.
-  function actionRow(article) {
-    const reply = article.querySelector('[data-testid="reply"]');
-    const row = reply && reply.closest('[role="group"]');
-    return row && row.closest(ARTICLE) === article ? row : null;
+  // X's More (⋯) button at the top right of a post, not one in a post nested
+  // in it, or null.
+  function caretOf(article) {
+    for (const c of article.querySelectorAll('[data-testid="caret"]')) if (c.closest(ARTICLE) === article) return c;
+    return null;
+  }
+
+  // One of the icons beside More: a box holding a button and no link, which
+  // the author's names beside them always hold (Grok's button is named only
+  // in X's own language, so it is found by its shape).
+  const BUTTONISH = 'button, [role="button"]';
+  const isIconBox = (el) => !!(el.matches(BUTTONISH) || el.querySelector(BUTTONISH)) && !el.querySelector('a[href]');
+
+  // Where the button goes in a post's header: first in the group of icons at
+  // its top right (Grok, then More), or just before More when More stands
+  // alone. That group is the right end of the header and grows leftward, so
+  // none of X's icons moves, as each would in the action row. Returns
+  // { parent, before }, or null when the post has no More button (yet).
+  function headSpot(article, bar) {
+    const caret = caretOf(article);
+    if (!caret) return null;
+    // The lowest box holding More and something else of X's (not the button,
+    // which may sit beside More already), and More's branch in it.
+    const xKids = (el) => [...el.children].filter((c) => c !== bar).length;
+    let branch = caret;
+    let box = caret.parentElement;
+    while (box && box !== article && xKids(box) < 2) {
+      branch = box;
+      box = box.parentElement;
+    }
+    const others = box && box !== article ? [...box.children].filter((c) => c !== branch && c !== bar) : [];
+    if (others.length && others.every(isIconBox)) return { parent: box, before: [...box.children].find((c) => c !== bar) };
+    return { parent: caret.parentElement, before: caret };
   }
 
   // X opens a post on a click anywhere in it, and has keyboard shortcuts:
@@ -304,20 +331,31 @@
     if (b.getAttribute('title') !== tip) b.setAttribute('title', tip);
   }
 
-  // Put the button at the end of the post's action row, or under the post
-  // when it has none (yet: X fills a post in over several passes). Its grey
-  // is the reply icon's, read when it moves.
+  // The button's look in the header, read where it goes: More's grey, and the
+  // space after it that makes the 8px X leaves between Grok and More. X's
+  // group of icons spaces them itself (a column gap); More's own box does not.
+  function headStyle(article, parent) {
+    if (typeof getComputedStyle !== 'function') return '';
+    const icon = caretOf(article).querySelector('svg');
+    const color = icon ? getComputedStyle(icon).color : '';
+    const gap = parseFloat(getComputedStyle(parent).columnGap) || 0;
+    return `${color ? `color:${color};` : ''}margin-right:${Math.max(0, 8 - gap)}px`;
+  }
+
+  // Put the button in the post's header, left of Grok and More (headSpot), or
+  // under the post when it has no More button (yet: X fills a post in over
+  // several passes). Never in the action row, where it would move X's icons.
   function placeBar(article, bar) {
-    const row = actionRow(article);
-    const parent = row || article;
-    if (bar.parentNode === parent) return;
-    parent.appendChild(bar);
-    if (row) {
+    const spot = headSpot(article, bar);
+    if (spot ? bar.parentNode === spot.parent && bar.nextElementSibling === spot.before : bar.parentNode === article) return;
+    if (spot) {
+      spot.parent.insertBefore(bar, spot.before);
       bar.removeAttribute('data-xsh-own-row');
-      const icon = row.querySelector('[data-testid="reply"] svg');
-      const color = icon && typeof getComputedStyle === 'function' ? getComputedStyle(icon).color : '';
-      if (color) bar.setAttribute('style', `color:${color}`);
+      const style = headStyle(article, spot.parent);
+      if (style) bar.setAttribute('style', style);
+      else bar.removeAttribute('style');
     } else {
+      article.appendChild(bar);
       bar.setAttribute('data-xsh-own-row', '');
       bar.removeAttribute('style');
     }

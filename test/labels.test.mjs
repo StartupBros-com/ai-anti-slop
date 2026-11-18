@@ -2,15 +2,20 @@
 // shaped like x.com's: the post the page is about first, replies under it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { post, page, meLink, runContent, stateWith, tick } from './helpers.mjs';
+import { post, page, headIcons, meLink, runContent, stateWith, tick } from './helpers.mjs';
 
 const settle = async () => {
   for (let i = 0; i < 5; i++) await tick();
 };
 
 const PAGE = '/op/status/1';
-// Reply 2 has X's row of action icons; reply 3 has none, so its button gets a row of its own.
-const THREAD = [post({ author: 'op', status: '1', actions: true }), post({ author: 'reply_a', status: '2', actions: true }), post({ author: 'reply_b', quote: 'someone', status: '3' })];
+// Reply 2 has X's icons at its top right (Grok, More) and its row of action
+// icons; reply 3 has neither, so its button gets a row of its own.
+const THREAD = [
+  post({ author: 'op', status: '1', actions: true, head: 'grok' }),
+  post({ author: 'reply_a', status: '2', actions: true, head: 'grok' }),
+  post({ author: 'reply_b', quote: 'someone', status: '3' }),
+];
 const on = (settings = {}, handles = []) => stateWith(handles, { labeling: true, ...settings });
 
 // A failing assertion prints its values, and printing a linkedom node walks
@@ -38,7 +43,17 @@ function click(t, el, trusted = true) {
   return e;
 }
 
-test("with labelling on, a post's page gets one Hide as slop button on each reply, at the end of its action row, and none on the post itself", async () => {
+// Every change to the page's nodes and attributes while `ticks` pass.
+async function changesOver(t, ticks = 5) {
+  const seen = [];
+  const mo = new t.window.MutationObserver((records) => seen.push(...records));
+  mo.observe(t.document.body, { childList: true, subtree: true, attributes: true });
+  for (let i = 0; i < ticks; i++) await tick();
+  mo.disconnect();
+  return seen.length;
+}
+
+test("with labelling on, a post's page gets one Hide as slop button on each reply, left of Grok and More at its top right, and none on the post itself", async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {} });
   await settle();
   assert.equal(absent(bar(t, '1')), true, 'the post the page is about');
@@ -51,10 +66,16 @@ test("with labelling on, a post's page gets one Hide as slop button on each repl
     assert.equal(buttons[0].textContent, '', 'an icon, named by aria-label');
     assert.equal(buttons[0].querySelector('svg').getAttribute('aria-hidden'), 'true');
   }
-  const row = t.document.querySelector('[data-fixture="2"] [role="group"]');
-  assert.equal(bar(t, '2').parentNode === row, true, "in X's action row");
-  assert.equal(row.lastElementChild === bar(t, '2'), true, 'after its icons');
+  const icons = t.document.querySelector('[data-fixture="2"] [data-icons]');
+  const kids = [...icons.children];
+  assert.equal(kids.length, 3);
+  assert.equal(kids[0] === bar(t, '2'), true, 'first in the group at the top right');
+  assert.equal(kids[1].querySelector('[aria-label="Grok actions"]') !== null, true, 'then Grok');
+  assert.equal(kids[2].querySelector('[data-testid="caret"]') !== null, true, 'then More');
   assert.equal(bar(t, '2').hasAttribute('data-xsh-own-row'), false);
+  const row = t.document.querySelector('[data-fixture="2"] [role="group"]');
+  assert.equal(row.children.length, 2, "nothing added to X's action row");
+  assert.equal(row.querySelector('[data-xsh-bar]') === null, true);
   const article3 = t.document.querySelector('[data-fixture="3"] article');
   assert.equal(bar(t, '3').parentNode === article3, true, 'no action row: under the post');
   assert.equal(bar(t, '3').hasAttribute('data-xsh-own-row'), true);
@@ -64,6 +85,107 @@ test("with labelling on, a post's page gets one Hide as slop button on each repl
   assert.equal(bars(t), 2);
   assert.ok(t.document.getElementById('xsh-bar-style'), 'the button has its look');
   assert.equal(t.document.getElementById('xsh-style').textContent, '[data-xsh-hidden]{display:none!important}', 'the hide rule is unchanged');
+});
+
+test('with More alone at the top right the button goes just before it; with only an action row it goes under the post, never in the row', async () => {
+  const cells = [
+    post({ author: 'op', status: '1', head: 'more' }),
+    post({ author: 'reply_a', status: '2', actions: true, head: 'more' }),
+    post({ author: 'reply_b', status: '3', actions: true }),
+  ];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {} });
+  await settle();
+  const caret = t.document.querySelector('[data-fixture="2"] [data-testid="caret"]');
+  assert.equal(bar(t, '2').nextElementSibling === caret, true, 'just before More');
+  assert.equal(bar(t, '2').parentNode === caret.parentNode, true);
+  assert.equal(bar(t, '2').hasAttribute('data-xsh-own-row'), false);
+  const article3 = t.document.querySelector('[data-fixture="3"] article');
+  assert.equal(bar(t, '3').parentNode === article3, true, 'no More: under the post');
+  assert.equal(bar(t, '3').hasAttribute('data-xsh-own-row'), true);
+  for (const s of ['2', '3']) {
+    const row = t.document.querySelector(`[data-fixture="${s}"] [role="group"]`);
+    assert.equal(row.children.length, 2, `reply ${s}: nothing added to X's action row`);
+  }
+  assert.equal(await changesOver(t), 0, 'placed once: no node moves again');
+});
+
+test("in the header the button takes More's grey, and leaves X's 8px before the next icon, counting the gap X's group already has", async () => {
+  // X spaces Grok and More by the group's column gap (8px), measured live.
+  const styles = (el) => ({
+    color: el.closest('[data-testid="caret"]') ? 'rgb(113, 118, 123)' : 'rgb(0, 0, 0)',
+    columnGap: el.hasAttribute('data-icons') ? '8px' : 'normal',
+  });
+  const cells = [post({ author: 'op', status: '1', head: 'grok' }), post({ author: 'reply_a', status: '2', head: 'grok' }), post({ author: 'reply_b', status: '3', head: 'more' })];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {}, styles });
+  await settle();
+  assert.equal(bar(t, '2').getAttribute('style'), 'color:rgb(113, 118, 123);margin-right:0px', 'in the group: its gap is the space');
+  assert.equal(bar(t, '3').getAttribute('style'), 'color:rgb(113, 118, 123);margin-right:8px', 'beside More alone: 8px of its own');
+});
+
+test('when X draws the top-right icons after the post, the button moves into them, once', async () => {
+  const cells = [post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2', actions: true })];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {} });
+  await settle();
+  const first = bar(t, '2');
+  assert.equal(first.hasAttribute('data-xsh-own-row'), true, 'no More yet: under the post');
+  const article = t.document.querySelector('[data-fixture="2"] article');
+  article.insertAdjacentHTML('afterbegin', `<div><div><span>Name</span></div>${headIcons('grok')}</div>`);
+  await settle();
+  const icons = t.document.querySelector('[data-fixture="2"] [data-icons]');
+  assert.equal(icons.firstElementChild === first, true, 'the same button, now first in the group');
+  assert.equal(first.hasAttribute('data-xsh-own-row'), false);
+  assert.equal(article.querySelectorAll('[data-xsh-bar]').length, 1);
+  assert.equal(await changesOver(t), 0, 'settled: no node moves again');
+  // X redraws the group: a new one, without the button.
+  icons.parentNode.replaceWith(t.document.createRange().createContextualFragment(headIcons('grok')));
+  await settle();
+  const again = t.document.querySelector('[data-fixture="2"] [data-icons]');
+  assert.equal(again.firstElementChild.hasAttribute('data-xsh-bar'), true, 'back in the redrawn group');
+  assert.equal(article.querySelectorAll('[data-xsh-bar]').length, 1);
+});
+
+test('when X adds Grok beside a More that stood alone, the button moves first in the group, and back beside More when Grok goes', async () => {
+  const cells = [post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2', actions: true, head: 'more' })];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {} });
+  await settle();
+  const caret = t.document.querySelector('[data-fixture="2"] [data-testid="caret"]');
+  const first = bar(t, '2');
+  assert.equal(first.nextElementSibling === caret, true, 'More alone: just before it');
+  // A wider window: X draws Grok first in the group, beside the box holding More.
+  const icons = t.document.querySelector('[data-fixture="2"] [data-icons]');
+  icons.insertAdjacentHTML('afterbegin', '<div data-grok><button aria-label="Grok actions" type="button"><svg viewBox="0 0 24 24"></svg></button></div>');
+  await settle();
+  assert.equal(icons.firstElementChild === first, true, 'the same button, now first in the group');
+  assert.equal(icons.children[1].hasAttribute('data-grok'), true, 'then Grok');
+  assert.equal(await changesOver(t), 0, 'settled: no node moves again');
+  const grok = icons.querySelector('[data-grok]');
+  grok.remove();
+  t.deliverMutations([removed(icons, [grok])]);
+  await settle();
+  assert.equal(first.nextElementSibling === caret, true, 'Grok gone: just before More again');
+  assert.equal(t.document.querySelectorAll('[data-fixture="2"] [data-xsh-bar]').length, 1);
+  assert.equal(await changesOver(t), 0);
+});
+
+test("a post nested in a reply keeps its own More: the reply's button never goes into it", async () => {
+  const cells = [post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2' })];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {} });
+  const article = t.document.querySelector('[data-fixture="2"] article');
+  article.insertAdjacentHTML('beforeend', `<article data-testid="tweet" role="article"><div data-nested>${headIcons('grok')}</div></article>`);
+  await settle();
+  assert.equal(bar(t, '2').parentNode === article, true, 'under the reply');
+  assert.equal(t.document.querySelector('[data-nested] [data-xsh-bar]') === null, true);
+});
+
+test('the page settles: once every button is placed, nothing on the page changes', async () => {
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {} });
+  await settle();
+  assert.equal(bars(t), 2);
+  assert.equal(await changesOver(t), 0);
+  // The count above can see a change: one made while it watches is counted.
+  const watching = changesOver(t);
+  t.document.body.appendChild(t.document.createElement('div'));
+  assert.ok((await watching) > 0, 'a change made while watching is counted');
 });
 
 test('labels are on by default: settings that never had the switch get the buttons', async () => {
