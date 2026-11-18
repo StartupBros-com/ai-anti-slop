@@ -10,7 +10,8 @@ AI Anti-Slop hides posts on x.com whose author is on
 accounts, and can also mute those accounts on your X account. You can add
 accounts of your own, choose Show, Hide or Mute for each of six answer bots
 such as @grok and @AskPerplexity, and hide posts that tag one of those bots.
-In the extension you can also [label replies](#labels) Slop or Not slop.
+In the extension, a button on each reply [hides it as slop](#labels) and adds
+its account to your own Also hide list.
 
 Hiding works on the page in your desktop browser, in this browser profile
 only, and the Pause switch shows the posts again. Muting is off until you turn
@@ -156,7 +157,7 @@ whenever the tab comes back into view. The userscript does not mute.
 | Mute listed accounts on your X account | Tick **Mute listed accounts on X** (see [Muting](#muting)) | Not available |
 | Mute more accounts a day | Pick 50 or 100 under **Mutes a day** (see [How many a day](#how-many-a-day)) | Not available |
 | Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
-| Label replies Slop or Not slop | Under **Label replies**, tick **Show Slop and Not slop buttons under replies on x.com** (see [Labels](#labels)) | Not available |
+| Hide a reply as slop | Click **Hide as slop**, the speech bubble with an × at the end of the reply's row of icons. It is there unless you untick **Show a Hide as slop button on replies on x.com** under **Label replies** (see [Labels](#labels)) | Not available |
 | Back up or move your settings | Under **Your accounts**, click **Export or import**, then **Export settings**; import the file on the same page (see [Export and import](#export-and-import)) | Not available |
 | Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export Also hide as a list**, or pick their file under **Import** | Not available |
 
@@ -451,38 +452,47 @@ found it on your muted list, and, for a mute it made, the account it muted as.
 
 ## Labels
 
-Labels are in the extension only, and off until you tick **Show Slop and Not
-slop buttons under replies on x.com** under **Label replies** in the popup.
-Then, on a post's own page (`x.com/handle/status/...`), each post below it
-gets a **Slop** and a **Not slop** button under it: the replies, and any other
-posts X lists after them. The post the page is about and the posts above it,
-which it replies to, get none, and nothing appears on its quotes or likes
-pages, the home timeline, profiles or search.
+Labels are in the extension only, and on unless you untick **Show a Hide as
+slop button on replies on x.com** under **Label replies** in the popup. Before
+0.9.0 they were off until ticked; if you turned the switch off, it stays off.
+On a post's own page (`x.com/handle/status/...`), each post below it gets one
+button, **Hide as slop**: a speech bubble with an ×, at the end of the post's
+row of icons, after Share. A post without that row gets the button on a line
+of its own under it. The buttons go on the replies and any other posts X lists
+after them. The post the page is about and the posts above it, which it
+replies to, get none, and nothing appears on its quotes or likes pages, the
+home timeline, profiles or search.
 
-- **Slop** labels the reply and adds the account to **Also hide these
-  accounts**, so its posts on the page hide at once and, with muting on, it is
-  muted too once the label is saved (a bot follows its row, as under
+- **Hide as slop** labels the reply slop and adds the account to **Also hide
+  these accounts**, so its posts on the page hide at once and, with muting on,
+  it is muted too once the label is saved (a bot follows its row, as under
   [Bots](#bots)).
-- **Not slop** labels the reply and adds the account to **Always show these
-  accounts**, so it is never hidden or muted.
-- Each click shows on the page at once, and a notice at the bottom of the
-  window says what it did, with an **Undo** button for 6 seconds. **Undo**
-  puts the label and the box back as they were. Nothing is saved until the 6
-  seconds end, so an undone click is never stored and never reaches muting.
-  The click is saved sooner when you click another button, open another page,
-  or switch away from or close the tab. If the save is refused, the page goes
-  back and the pair says why ("not saved: ...").
-- An account already in that box is not added again. Next to the buttons, the
-  pair says when the account is "on the list", "in Also hide" or "in Always
-  show". An account in both boxes is shown: Always show wins.
-- Clicking the other button changes the label; clicking the pressed one again
-  clears it. Clearing a label, or deleting them all, leaves both boxes as they
+- A notice at the bottom of the window says what the click did, with an
+  **Undo** button for 6 seconds. **Undo** puts the label and the box back as
+  they were. Nothing is saved until the 6 seconds end, so an undone click is
+  never stored and never reaches muting. The click is saved sooner when you
+  click another reply's button, open another page, or switch away from or
+  close the tab. If the save is refused, the page goes back and the button's
+  tooltip says why ("not saved: ...").
+- An account already in Also hide is not added again. The button's tooltip
+  says when the account is "on the list", "in Also hide" or "in Always show".
+  An account in both boxes is shown: Always show wins.
+- A reply labelled slop that still shows (hiding is paused, or the account is
+  in Always show) has its button filled red, and clicking it removes the
+  label. Removing a label, or deleting them all, leaves both boxes as they
   are. To take an account out of a box, edit it under **Your accounts**.
-- A hidden reply's buttons are hidden with it, so a **Slop** click moves
-  keyboard focus to **Undo**. To label a hidden reply, tick **Pause hiding**
-  first.
-- Clicking a button does not open the post, and the buttons ignore clicks made
-  by a page's own script.
+- A hidden reply's button is hidden with it, so a click moves keyboard focus
+  to **Undo**. To label a hidden reply, or remove its label, tick **Pause
+  hiding** first.
+- Versions before 0.9.0 also drew a **Not slop** button, which added the
+  account to **Always show these accounts**. To always see an account now, add
+  it to Always show under **Your accounts**. Labels saved as Not slop are kept,
+  counted and exported; on such a reply the button is drawn empty, and
+  clicking it labels the reply slop. The account stays in Always show, where
+  the Not slop click put it, so the reply still shows, and the notice says so,
+  until you take it out of that box.
+- Clicking the button does not open the post, and the button ignores clicks
+  made by a page's own script.
 
 Each reply has one label record, keyed by its post id; the latest click wins.
 A record holds:
@@ -490,7 +500,7 @@ A record holds:
 | Field | What it holds |
 |---|---|
 | `at` | When it was saved, in milliseconds since 1970: when the click's 6-second Undo window ended, or sooner (see above) |
-| `label` | `slop` or `not_slop` |
+| `label` | `slop`, or `not_slop` from a version before 0.9.0 |
 | `handle` | The reply's author, in lower case |
 | `url` | The reply's link, `https://x.com/handle/status/id` |
 | `text` | The first 1,000 characters of the reply's own text (not a post it quotes), with its emoji |
@@ -585,7 +595,7 @@ The privacy policy, with what each storage key holds, is
   account whose post it hid (once per account until the tab reloads), and
   the worker puts the ones
   muting may visit first in line. With labelling on, it adds a second style
-  rule, the Slop / Not slop buttons and the notice that offers **Undo**, and
+  rule, the **Hide as slop** buttons and the notice that offers **Undo**, and
   hands each label you click, with the reply's text, to the background worker
   to store once its Undo window ends.
 - At 50 or 100 mutes a day, before each visit outside **Run now** the worker
@@ -815,7 +825,7 @@ node scripts/store-screenshots.mjs --chrome <chromium>   # redraw store/images/
   the bot rows and tag hiding, and muting's rules (which menu item to click,
   the visit order, the daily caps and the mute record).
 - `src/content.js`: the content script. It watches the page and marks the
-  cells to hide, draws the Slop / Not slop buttons while labelling is on, and
+  cells to hide, draws the **Hide as slop** buttons while labelling is on, and
   tells the worker, when asked, whether its tab is one the worker opened. In a
   tab the background worker opened for a visit, it runs
   that one job (mute the profile's account, or read `settings/muted/all`) and

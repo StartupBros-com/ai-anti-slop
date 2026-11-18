@@ -58,8 +58,8 @@ HIDING
 - On an x.com tab, the popup counts what that tab hid. Pause hiding shows every post again.
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
-LABELS (optional)
-- Turn on Slop and Not slop buttons under replies. Slop adds the account to Also hide; Not slop adds it to Always show.
+LABELS
+- A Hide as slop button on each reply hides it and adds the account to Also hide, with 6 seconds to undo. Turn the button off in the popup.
 - Labels stay in this browser. Export labels saves them to a file.
 
 SETTINGS FILES
@@ -141,7 +141,7 @@ justification** field, which holds the last two rows of this table joined.
 | `storage` | Keeps the downloaded list, the user's settings and account lists, and, only if the user turns them on, the muting record and saved labels. All of it stays in the browser's extension storage. |
 | `alarms` | Refreshes the list every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
-| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on, it adds Slop and Not slop buttons under replies and reads a reply's text when the user clicks one. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
+| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop button to each reply on a post's page and reads a reply's text when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
 **Remote code:** the dashboard asked no remote-code question when 0.7.1 was
 submitted, so nothing was entered. If it asks, the answer is No: all
@@ -157,7 +157,7 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
 | Website content | Yes | Labels keep up to 1,000 characters of the labelled reply's text. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. A narrow case, but ticking it is the safer reading. |
-| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Slop and Not slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
+| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
 | Personal communications | No | Public replies only; no messages or email. |
 | Health, financial and payment, location | No | None handled. |

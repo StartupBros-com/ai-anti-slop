@@ -1,5 +1,5 @@
-// Runs the real src/content.js label pairs against a linkedom post page shaped
-// like x.com's: the post the page is about first, replies under it.
+// Runs the real src/content.js label buttons against a linkedom post page
+// shaped like x.com's: the post the page is about first, replies under it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { post, page, meLink, runContent, stateWith, tick } from './helpers.mjs';
@@ -9,7 +9,8 @@ const settle = async () => {
 };
 
 const PAGE = '/op/status/1';
-const THREAD = [post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2' }), post({ author: 'reply_b', quote: 'someone', status: '3' })];
+// Reply 2 has X's row of action icons; reply 3 has none, so its button gets a row of its own.
+const THREAD = [post({ author: 'op', status: '1', actions: true }), post({ author: 'reply_a', status: '2', actions: true }), post({ author: 'reply_b', quote: 'someone', status: '3' })];
 const on = (settings = {}, handles = []) => stateWith(handles, { labeling: true, ...settings });
 
 // A failing assertion prints its values, and printing a linkedom node walks
@@ -18,7 +19,8 @@ const absent = (el) => el === null;
 const bar = (t, status) => t.document.querySelector(`[data-fixture="${status}"] [data-xsh-bar]`);
 const bars = (t) => t.document.querySelectorAll('[data-xsh-bar]').length;
 const button = (t, status, label) => bar(t, status).querySelector(`[data-xsh-label="${label}"]`);
-const note = (t, status) => bar(t, status).querySelector('[data-xsh-note]').textContent;
+const note = (t, status) => bar(t, status).getAttribute('data-xsh-note');
+const tip = (t, status) => button(t, status, 'slop').getAttribute('title');
 const pressed = (t, status) =>
   [...bar(t, status).querySelectorAll('[data-xsh-label]')].filter((b) => b.getAttribute('aria-pressed') === 'true').map((b) => b.getAttribute('data-xsh-label'));
 
@@ -36,37 +38,58 @@ function click(t, el, trusted = true) {
   return e;
 }
 
-test("with labelling on, a post's page gets a Slop / Not slop pair under each reply and none under the post itself", async () => {
+test("with labelling on, a post's page gets one Hide as slop button on each reply, at the end of its action row, and none on the post itself", async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {} });
   await settle();
   assert.equal(absent(bar(t, '1')), true, 'the post the page is about');
   assert.deepEqual(['2', '3'].map((s) => bar(t, s).getAttribute('data-xsh-bar')), ['2', '3']);
   assert.deepEqual(['2', '3'].map((s) => bar(t, s).getAttribute('data-xsh-author')), ['reply_a', 'reply_b']);
-  assert.deepEqual([...bar(t, '2').querySelectorAll('button')].map((b) => b.textContent), ['Slop', 'Not slop']);
+  for (const s of ['2', '3']) {
+    const buttons = [...bar(t, s).querySelectorAll('button')];
+    assert.equal(buttons.length, 1, 'one button: there is no Not slop');
+    assert.deepEqual(['data-xsh-label', 'aria-label', 'title', 'aria-pressed', 'type'].map((a) => buttons[0].getAttribute(a)), ['slop', 'Hide as slop', 'Hide as slop', 'false', 'button']);
+    assert.equal(buttons[0].textContent, '', 'an icon, named by aria-label');
+    assert.equal(buttons[0].querySelector('svg').getAttribute('aria-hidden'), 'true');
+  }
+  const row = t.document.querySelector('[data-fixture="2"] [role="group"]');
+  assert.equal(bar(t, '2').parentNode === row, true, "in X's action row");
+  assert.equal(row.lastElementChild === bar(t, '2'), true, 'after its icons');
+  assert.equal(bar(t, '2').hasAttribute('data-xsh-own-row'), false);
+  const article3 = t.document.querySelector('[data-fixture="3"] article');
+  assert.equal(bar(t, '3').parentNode === article3, true, 'no action row: under the post');
+  assert.equal(bar(t, '3').hasAttribute('data-xsh-own-row'), true);
+  const masks = [...t.document.querySelectorAll('[data-xsh-bar] mask')].map((m) => m.getAttribute('id'));
+  assert.equal(new Set(masks).size, 2, "each icon's mask has its own id");
   assert.deepEqual(pressed(t, '2'), []);
   assert.equal(bars(t), 2);
-  assert.ok(t.document.getElementById('xsh-bar-style'), 'the pair has its look');
+  assert.ok(t.document.getElementById('xsh-bar-style'), 'the button has its look');
   assert.equal(t.document.getElementById('xsh-style').textContent, '[data-xsh-hidden]{display:none!important}', 'the hide rule is unchanged');
 });
 
-test('no pair off a post page, with labelling off, or without a way to save (the userscript)', async () => {
+test('labels are on by default: settings that never had the switch get the buttons', async () => {
+  const t = runContent(page(THREAD), { pathname: PAGE, state: stateWith([]), labels: {} });
+  await settle();
+  assert.equal(bars(t), 2);
+});
+
+test('no button off a post page, with labelling off, or without a way to save (the userscript)', async () => {
   const home = runContent(page(THREAD), { pathname: '/home', state: on(), labels: {} });
   const profile = runContent(page(THREAD), { pathname: '/op', state: on(), labels: {} });
-  const off = runContent(page(THREAD), { pathname: PAGE, state: stateWith([]), labels: {} });
+  const off = runContent(page(THREAD), { pathname: PAGE, state: stateWith([], { labeling: false }), labels: {} });
   const truthy = runContent(page(THREAD), { pathname: PAGE, state: stateWith([], { labeling: 'true' }), labels: {} });
   const noSave = runContent(page(THREAD), { pathname: PAGE, state: on() });
   await settle();
   for (const t of [home, profile, off, truthy, noSave]) assert.equal(bars(t), 0);
   for (const t of [off, truthy, noSave]) assert.equal(absent(t.document.getElementById('xsh-bar-style')), true, 'no CSS while labelling is off');
   for (const t of [off, truthy, noSave]) assert.equal(absent(toast(t)), true, 'no notice while labelling is off');
-  // Turned on, the pairs appear; turned off, they go.
+  // Turned on, the buttons appear; turned off, they go.
   off.push(on());
   await settle();
   assert.equal(bars(off), 2);
   off.push(stateWith([], { labeling: false }));
   await settle();
   assert.equal(bars(off), 0);
-  assert.equal(absent(toast(off)), true, 'the notice goes with the pairs');
+  assert.equal(absent(toast(off)), true, 'the notice goes with the buttons');
 });
 
 // A post the page's post replies to, shown above it.
@@ -81,7 +104,7 @@ function cellFrom(t, html) {
 const added = (target, nodes) => ({ type: 'childList', target, addedNodes: nodes, removedNodes: [] });
 const removed = (target, nodes) => ({ type: 'childList', target, addedNodes: [], removedNodes: nodes });
 
-test("no pair on the posts above the page's post, nor on its quotes, likes or photo pages", async () => {
+test("no button on the posts above the page's post, nor on its quotes, likes or photo pages", async () => {
   const t = runContent(page([UP, ...THREAD]), { pathname: PAGE, state: on(), labels: {} });
   const slash = runContent(page(THREAD), { pathname: `${PAGE}/`, state: on(), labels: {} });
   const others = ['/quotes', '/likes', '/retweets', '/photo/1'].map((s) => runContent(page(THREAD), { pathname: `${PAGE}${s}`, state: on(), labels: {} }));
@@ -91,7 +114,7 @@ test("no pair on the posts above the page's post, nor on its quotes, likes or ph
   for (const o of others) assert.deepEqual(barIds(o), [], o.location.pathname);
 });
 
-test("a post above the page's post loses its pair when that post mounts after it, and stays without one while that post is unmounted", async () => {
+test("a post above the page's post loses its button when that post mounts after it, and stays without one while that post is unmounted", async () => {
   const t = runContent(page([UP, ...THREAD.slice(1)]), { pathname: PAGE, state: on(), labels: {} });
   await settle();
   assert.deepEqual(barIds(t), ['0', '2', '3'], "with the page's post not mounted, no post is known to be above it");
@@ -116,7 +139,7 @@ test("a post above the page's post loses its pair when that post mounts after it
   assert.deepEqual(barIds(t), ['2', '3']);
 });
 
-test("on another post's page, a post that was above the last page's post gets a pair again", async () => {
+test("on another post's page, a post that was above the last page's post gets a button again", async () => {
   const t = runContent(page([UP, ...THREAD]), { pathname: PAGE, state: on(), labels: {} });
   await settle();
   assert.deepEqual(barIds(t), ['2', '3']);
@@ -130,7 +153,7 @@ test("on another post's page, a post that was above the last page's post gets a 
   assert.deepEqual(barIds(t), ['0']);
 });
 
-test("a click saves the reply's author, link, page and own text when its window ends; the other button switches; a second click clears", async () => {
+test("a click saves the reply's author, link, page and own text when its window ends, and a second click clears the label", async () => {
   const emoji = post({ author: 'reply_c', status: '4' }).replace('<span>hello </span>', '<span>Great insight </span><img alt="🚀" src="e.svg">');
   const t = runContent(page([...THREAD, emoji]), { pathname: PAGE, state: on(), labels: {}, clock: true });
   await settle();
@@ -140,25 +163,45 @@ test("a click saves the reply's author, link, page and own text when its window 
   assert.deepEqual(t.saves, [{ label: 'slop', handle: 'reply_a', url: '/reply_a/status/2', page: PAGE, text: 'hello' }]);
   assert.deepEqual(pressed(t, '2'), ['slop']);
   assert.deepEqual(pressed(t, '3'), [], 'only the clicked reply');
-  click(t, button(t, '2', 'not_slop'));
+  assert.equal(tip(t, '2'), 'Labelled slop: click to remove the label');
+  click(t, button(t, '2', 'slop'));
   t.advance(UNDO_MS);
   await settle();
-  assert.equal(t.saves[1].label, 'not_slop');
-  assert.deepEqual(pressed(t, '2'), ['not_slop']);
-  click(t, button(t, '2', 'not_slop'));
-  t.advance(UNDO_MS);
-  await settle();
-  assert.equal(t.saves[2].label, null);
+  assert.equal(t.saves[1].label, null);
   assert.deepEqual(pressed(t, '2'), []);
+  assert.equal(tip(t, '2'), 'Hide as slop');
   // A quoted post's text is not the reply's; emoji come from their alt text.
   click(t, button(t, '3', 'slop'));
   click(t, button(t, '4', 'slop'));
   t.advance(UNDO_MS);
   await settle();
-  assert.deepEqual(t.saves.slice(3).map((s) => s.text), ['hello', 'Great insight 🚀']);
+  assert.deepEqual(t.saves.slice(2).map((s) => s.text), ['hello', 'Great insight 🚀']);
 });
 
-test("nothing done in a pair reaches X's handlers, and a click made by the page's own script is ignored", async () => {
+test('a reply labelled Not slop by an older version shows the button unfilled, and a click labels it slop rather than clearing it', async () => {
+  // A Not slop click also put the account in Always show, and Always show
+  // wins, so the slop label hides nothing and the notice says why.
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on({ allowlist: 'reply_a' }), labels: { stored: { 2: 'not_slop' } }, clock: true });
+  await settle();
+  assert.deepEqual(pressed(t, '2'), []);
+  assert.equal(tip(t, '2'), 'Hide as slop (in Always show)');
+  click(t, button(t, '2', 'slop'));
+  assert.deepEqual(pressed(t, '2'), ['slop']);
+  assert.equal(t.hidden('2'), false, 'Always show wins');
+  assert.equal(toastText(t), 'Labelled @reply_a as slop and added it to Also hide. It still shows: it is in Always show.');
+  assert.equal(tip(t, '2'), 'Labelled slop: click to remove the label (in Always show)');
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves.map((x) => x.label), ['slop']);
+  // Without Always show (the box edited since), the same click hides it.
+  const u = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { stored: { 2: 'not_slop' } }, clock: true });
+  await settle();
+  click(u, button(u, '2', 'slop'));
+  assert.equal(u.hidden('2'), true);
+  assert.equal(toastText(u), 'Hid @reply_a and added it to Also hide.');
+});
+
+test("nothing done on the button reaches X's handlers, and a click made by the page's own script is ignored", async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {}, clock: true });
   await settle();
   const types = ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup'];
@@ -188,10 +231,10 @@ test("nothing done in a pair reaches X's handlers, and a click made by the page'
   assert.equal(t.saves.length, 1);
 });
 
-test('a cell X reuses for another post moves its pair to that post; one for the post the page is about loses it', async () => {
+test('a cell X reuses for another post moves its button to that post; one for the post the page is about loses it', async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { stored: { 9: 'slop' } }, clock: true });
   await settle();
-  click(t, button(t, '2', 'not_slop'));
+  click(t, button(t, '2', 'slop'));
   t.advance(UNDO_MS);
   await settle();
   // X rewrites the cell's links in place for post 9 by @reply_c.
@@ -200,7 +243,7 @@ test('a cell X reuses for another post moves its pair to that post; one for the 
   const link = article.querySelector('time').closest('a');
   t.deliverMutations([{ type: 'attributes', target: link, attributeName: 'href', addedNodes: [], removedNodes: [] }]);
   await settle();
-  assert.equal(article.querySelectorAll('[data-xsh-bar]').length, 1, 'one pair per post');
+  assert.equal(article.querySelectorAll('[data-xsh-bar]').length, 1, 'one button per post');
   assert.equal(bar(t, '2').getAttribute('data-xsh-bar'), '9');
   assert.equal(bar(t, '2').getAttribute('data-xsh-author'), 'reply_c');
   assert.deepEqual(pressed(t, '2'), ['slop'], "post 9's saved label, not post 2's");
@@ -218,18 +261,20 @@ test('a cell X reuses for another post moves its pair to that post; one for the 
   assert.equal(absent(bar(t, '3')), true);
 });
 
-test('saved labels show when a pair appears, and a change made in another tab shows at once', async () => {
+test('saved labels show when a button appears, and a change made in another tab shows at once', async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { stored: { 2: 'slop' } } });
   await settle();
   assert.deepEqual(pressed(t, '2'), ['slop']);
   assert.deepEqual(pressed(t, '3'), []);
+  t.labelChange('3', 'slop');
+  assert.deepEqual(pressed(t, '3'), ['slop']);
   t.labelChange('3', 'not_slop');
-  assert.deepEqual(pressed(t, '3'), ['not_slop']);
+  assert.deepEqual(pressed(t, '3'), [], 'Not slop draws the button unfilled');
   t.labelChange('2', null);
   assert.deepEqual(pressed(t, '2'), []);
 });
 
-test('a refused save puts the reply back and says why on the pair and in the notice; the pair says when the list or a box already has the account', async () => {
+test('a refused save puts the reply back and says why in the tooltip and the notice; the tooltip says when the list or a box already has the account', async () => {
   const cells = [...THREAD, post({ author: 'slop_x', status: '4' }), post({ author: 'pal', status: '5' })];
   const t = runContent(page(cells), {
     pathname: PAGE,
@@ -239,13 +284,15 @@ test('a refused save puts the reply back and says why on the pair and in the not
   });
   await settle();
   assert.deepEqual(['2', '3', '4', '5'].map((s) => note(t, s)), ['', 'in Also hide', 'on the list', 'in Always show']);
-  assert.equal(t.hidden('4'), true, 'a hidden reply keeps its pair, for when hiding is paused');
+  assert.deepEqual(['2', '4'].map((s) => tip(t, s)), ['Hide as slop', 'Hide as slop (on the list)']);
+  assert.equal(t.hidden('4'), true, 'a hidden reply keeps its button, for when hiding is paused');
   click(t, button(t, '2', 'slop'));
   assert.equal(t.hidden('2'), true, 'hidden at once');
   t.advance(UNDO_MS);
   await settle();
   assert.equal(t.hidden('2'), false, 'shown again');
   assert.equal(note(t, '2'), 'not saved: labels are off');
+  assert.equal(tip(t, '2'), 'Hide as slop (not saved: labels are off)');
   assert.deepEqual(pressed(t, '2'), []);
   assert.equal(toastText(t), 'Not saved: labels are off');
   assert.equal(undoBtn(t).hasAttribute('hidden'), true, 'nothing to undo');
@@ -302,7 +349,7 @@ test('Slop hides the account at once; nothing is saved, counted or sighted until
   assert.deepEqual(pressed(t, '2'), ['slop']);
   assert.equal(note(t, '2'), 'in Also hide');
   assert.equal(toastOpen(t), true);
-  assert.equal(toastText(t), 'Labelled Slop. @reply_a added to Also hide.');
+  assert.equal(toastText(t), 'Hid @reply_a and added it to Also hide.');
   assert.equal(undoBtn(t).hasAttribute('hidden'), false);
   assert.deepEqual(t.saves, []);
   assert.deepEqual(t.sightings, [], 'muting is not told inside the window');
@@ -379,7 +426,7 @@ test('Undo puts the page back as it was, and nothing is ever saved or sighted; a
   await settle();
   click(u, button(u, '2', 'slop'));
   assert.deepEqual(pressed(u, '2'), []);
-  assert.equal(toastText(u), 'Label removed.');
+  assert.equal(toastText(u), 'Slop label removed.');
   click(u, undoBtn(u));
   assert.deepEqual(pressed(u, '2'), ['slop']);
   u.advance(UNDO_MS);
@@ -387,21 +434,22 @@ test('Undo puts the page back as it was, and nothing is ever saved or sighted; a
   assert.deepEqual(u.saves, []);
 });
 
-test("Not slop shows a listed account's replies at once, and Undo hides them again", async () => {
+test('a click while hiding is paused labels the reply and says so, without claiming it hid', async () => {
   const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ paused: true }, ['reply_a']), labels: { worker: true }, clock: true });
   await settle();
   assert.equal(t.hidden('2'), false, 'paused');
-  click(t, button(t, '2', 'not_slop'));
-  assert.equal(toastText(t), 'Labelled Not slop. @reply_a added to Always show.');
-  assert.equal(note(t, '2'), 'in Always show');
-  t.push(on({}, ['reply_a']));
-  await settle();
-  assert.deepEqual(['2', '4'].map((s) => t.hidden(s)), [false, false], 'unpaused inside the window: Always show already applies');
-  click(t, undoBtn(t));
-  assert.deepEqual(['2', '4'].map((s) => t.hidden(s)), [true, true]);
+  assert.equal(tip(t, '2'), 'Hide as slop (on the list)');
+  click(t, button(t, '2', 'slop'));
+  assert.equal(t.hidden('2'), false, 'still paused');
+  assert.equal(toastText(t), 'Labelled @reply_a as slop and added it to Also hide.', 'not "Hid": nothing hid');
+  assert.deepEqual(pressed(t, '2'), ['slop']);
   t.advance(UNDO_MS);
   await settle();
-  assert.deepEqual(t.saves, []);
+  assert.deepEqual(t.saves.map((x) => x.label), ['slop']);
+  assert.equal(t.state().settings.extraList, 'reply_a', 'in Also hide too, so it stays hidden if the list drops it');
+  // Already in Also hide: the notice says so by not adding it.
+  click(t, button(t, '4', 'slop'));
+  assert.equal(toastText(t), 'Labelled @reply_a as slop.');
 });
 
 test('a click saves the one before it at once, and so does leaving the page or switching away from the tab', async () => {
@@ -479,7 +527,7 @@ test("a refusal of the click before keeps the Undo of the click still in its win
   assert.deepEqual(['2', '4'].map((s) => t.hidden(s)), [false, false], 'the refused click is put back');
   assert.deepEqual(pressed(t, '2'), [], 'the stored label, read again');
   assert.equal(note(t, '2'), 'not saved: too many labels');
-  assert.equal(toastText(t), 'Labelled Slop. @reply_b added to Also hide.');
+  assert.equal(toastText(t), 'Hid @reply_b and added it to Also hide.');
   assert.equal(undoBtn(t).hasAttribute('hidden'), false, 'the waiting click can still be undone');
   assert.equal(t.hidden('3'), true);
   click(t, undoBtn(t));
@@ -491,37 +539,38 @@ test("a refusal of the click before keeps the Undo of the click still in its win
 
 test('a refused click under a newer click on the same post: Undo goes back to the stored label and says why, and a save leaves no stale note', async () => {
   const answer = (m) => (m.label === 'slop' ? { ok: false, reason: 'too many labels' } : { ok: true, label: m.label });
-  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { worker: true, answer }, clock: true });
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on({ paused: true }), labels: { worker: true, answer }, clock: true });
   await settle();
   click(t, button(t, '2', 'slop'));
-  click(t, button(t, '2', 'not_slop'));
+  click(t, button(t, '2', 'slop'));
   await settle();
-  assert.deepEqual(pressed(t, '2'), ['not_slop'], 'the newer click still shows');
-  assert.equal(note(t, '2'), 'in Always show');
-  assert.equal(toastText(t), 'Labelled Not slop. @reply_a added to Always show.');
+  assert.deepEqual(pressed(t, '2'), [], 'the newer click, a clear, still shows');
+  assert.equal(toastText(t), 'Slop label removed.');
+  assert.equal(undoBtn(t).hasAttribute('hidden'), false);
   click(t, undoBtn(t));
   await settle();
   assert.deepEqual(pressed(t, '2'), [], 'Slop was never stored');
   assert.equal(note(t, '2'), 'not saved: too many labels');
   // The same two clicks, with the newer one saved.
-  const u = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { worker: true, answer }, clock: true });
+  const u = runContent(page(THREAD), { pathname: PAGE, state: on({ paused: true }), labels: { worker: true, answer }, clock: true });
   await settle();
   click(u, button(u, '2', 'slop'));
-  click(u, button(u, '2', 'not_slop'));
+  click(u, button(u, '2', 'slop'));
   u.advance(UNDO_MS);
   await settle();
-  assert.deepEqual(pressed(u, '2'), ['not_slop']);
-  assert.equal(note(u, '2'), 'in Always show');
+  assert.deepEqual(pressed(u, '2'), []);
+  assert.equal(note(u, '2'), '');
 });
 
 test('a label stored from elsewhere while a click on the same post waits leaves the click shown, and Undo goes back to the stored label', async () => {
-  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {}, clock: true });
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { stored: { 2: 'slop' } }, clock: true });
   await settle();
-  click(t, button(t, '2', 'not_slop'));
+  click(t, button(t, '2', 'slop'));
+  assert.deepEqual(pressed(t, '2'), [], 'a clear');
   // Another tab stores Slop for the same post.
   t.labelChange('2', 'slop');
   await settle();
-  assert.deepEqual(pressed(t, '2'), ['not_slop']);
+  assert.deepEqual(pressed(t, '2'), []);
   click(t, undoBtn(t));
   assert.deepEqual(pressed(t, '2'), ['slop']);
   t.advance(UNDO_MS);
@@ -534,10 +583,10 @@ test('a refused click goes back to the stored label, not to an earlier click tha
   await settle();
   // Each click sends the one before it; every save is refused.
   click(t, button(t, '2', 'slop'));
-  click(t, button(t, '2', 'not_slop'));
+  click(t, button(t, '2', 'slop'));
   click(t, button(t, '3', 'slop'));
   await settle();
   assert.deepEqual(pressed(t, '2'), [], 'nothing was stored for the post');
   assert.equal(note(t, '2'), 'not saved: labels are off');
-  assert.equal(toastText(t), 'Labelled Slop. @reply_b added to Also hide.', 'the waiting click keeps its notice');
+  assert.equal(toastText(t), 'Hid @reply_b and added it to Also hide.', 'the waiting click keeps its notice');
 });

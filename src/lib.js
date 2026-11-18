@@ -59,7 +59,7 @@
     muteMaxAttempts: 2,
     // Accounts seen while browsing, muted ahead of the rest of the list.
     muteFrontMax: 50,
-    // Labels (extension only, off unless the user turns them on): at most
+    // Labels (extension only, on unless the user turns them off): at most
     // this many saved, each keeping at most this many characters of reply text.
     labelMax: 2000,
     labelTextMax: 1000,
@@ -737,6 +737,14 @@
   // stored under its own key (LABEL_PREFIX + the post id) in the extension's
   // local storage and leaves the browser only in a file the user exports.
 
+  // Whether labels are on. They are until the user turns them off: settings
+  // that never had the switch (a new install, or one from before labels were
+  // on by default) count as on. Any value but true or none at all is off.
+  function labelsOn(settings) {
+    const v = settings ? settings.labeling : undefined;
+    return v === undefined || v === true;
+  }
+
   const STATUS_PATH_RE = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d{1,25})(?:[/?#]|$)/;
   const X_ORIGIN_RE = /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com(?=\/)/i;
 
@@ -1065,6 +1073,7 @@
     muteSummary,
     LABEL_PREFIX,
     LABELS,
+    labelsOn,
     statusOf,
     statusPageOf,
     labelRecord,

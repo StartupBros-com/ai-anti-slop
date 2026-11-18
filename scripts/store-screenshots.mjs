@@ -82,6 +82,22 @@ const THREADS = {
 };
 const threadPath = (id) => `/${OP}/status/${id}`;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+// A row of action icons under each post, where X draws its own, so the label
+// button sits where it does on x.com. Plain outline glyphs, not X's.
+const GLYPH = {
+  reply: 'M4 5h16v11H9l-4 3v-3H4z',
+  repost: 'M7 7h10v6m0 0l-3-3m3 3l3-3M17 17H7v-6m0 0l-3 3m3-3l3 3',
+  like: 'M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z',
+  views: 'M5 19V11M10 19V5M15 19v-6M20 19V9',
+  bookmark: 'M7 4h10v16l-5-4-5 4z',
+  share: 'M12 15V4m0 0L8 8m4-4l4 4M5 13v6h14v-6',
+};
+const glyph = (k) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${GLYPH[k]}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/></svg>`;
+const actions = (id) =>
+  `<div role="group" aria-label="Post actions" class="acts">` +
+  ['reply', 'repost', 'like', 'views'].map((k, i) => `<div class="wide"><button data-testid="${k}" type="button" aria-label="${k}">${glyph(k)}<span>${(id * (i + 3)) % 40 || ''}</span></button></div>`).join('') +
+  ['bookmark', 'share'].map((k) => `<div class="narrow"><button data-testid="${k}" type="button" aria-label="${k}">${glyph(k)}</button></div>`).join('') +
+  `</div>`;
 
 function post(handle, id, time, text, op = false) {
   const [name, color] = PEOPLE[handle];
@@ -91,7 +107,7 @@ function post(handle, id, time, text, op = false) {
     `<div data-testid="User-Name"><a href="/${handle}" role="link" class="nm"><span>${esc(name)}</span></a>` +
     `<a href="/${handle}" role="link" tabindex="-1" class="hd"><span>@${handle}</span></a><span class="hd">·</span>` +
     `<a href="/${handle}/status/${id}" role="link" class="hd"><time datetime="2026-11-09T10:00:00.000Z">${time}</time></a></div>` +
-    `<div data-testid="tweetText" class="tx"><span>${esc(text)}</span></div></div></div></article></div></div>`
+    `<div data-testid="tweetText" class="tx"><span>${esc(text)}</span></div>${actions(id)}</div></div></article></div></div>`
   );
 }
 
@@ -105,7 +121,11 @@ function threadPage(id) {
     '.av{flex:none;width:40px;height:40px;border-radius:50%;color:#fff;font-weight:700;display:flex;align-items:center;justify-content:center}' +
     '[data-testid="User-Name"]{display:flex;gap:4px;align-items:baseline;flex-wrap:wrap}' +
     '.nm{color:#0f1419;font-weight:700;text-decoration:none}.hd{color:#536471;text-decoration:none}' +
-    '.tx{margin-top:2px}.op .tx{font-size:18px;margin-top:8px}';
+    '.tx{margin-top:2px}.op .tx{font-size:18px;margin-top:8px}' +
+    '.acts{display:flex;justify-content:space-between;align-items:center;gap:4px;max-width:425px;margin-top:10px;color:rgb(83,100,113)}' +
+    '.acts .wide{flex:1}.acts .narrow+.narrow{margin-left:8px}' +
+    '.acts button{display:flex;align-items:center;gap:4px;height:20px;padding:0;border:0;background:none;color:inherit;font:13px system-ui,sans-serif}' +
+    '.acts svg{width:18.75px;height:18.75px}';
   const body = post(OP, id, '3h', OP_TEXT, true) + THREADS[id].map(([h, pid, t, text]) => post(h, pid, t, text)).join('');
   return (
     `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Example thread</title><style>${css}</style></head><body>` +
@@ -344,19 +364,18 @@ try {
   });
   const muting = await shootPart('section.muting');
 
-  // ---- 4. labels, with hiding paused so the labelled replies stay in view
-  await setSettings({ labeling: true, paused: true });
+  // ---- 4. labels (on by default), with hiding paused so the labelled reply
+  // stays in view
+  await setSettings({ paused: true });
   await x.setViewportSize({ width: 700, height: STAGE_H });
   await x.goto(`https://x.com${threadPath(2000)}`);
   await x.waitForFunction((n) => document.querySelectorAll('[data-xsh-bar]').length === n, THREADS[2000].length, { timeout: 15000 });
-  const press = async (handle, label) => {
-    const b = x.locator(`[data-xsh-bar][data-xsh-author="${handle}"] button[data-xsh-label="${label}"]`);
-    await b.click();
-    await until(async () => (await b.getAttribute('aria-pressed')) === 'true', 10000, `${label} on @${handle} to save`);
-  };
-  await press('xsh_demo_bot4', 'slop');
-  await press('xsh_demo_ana', 'not_slop');
-  await sleep(400);
+  await x.locator('[data-xsh-bar][data-xsh-author="xsh_demo_bot4"] button[data-xsh-label="slop"]').click();
+  // Saved once its 6-second Undo window ends, and the notice closes.
+  await until(async () => (await local('xsh:labelCount'))['xsh:labelCount'] === 1, 15000, 'the label on @xsh_demo_bot4 to save');
+  // Off the button, so the shot has no hover circle.
+  await x.mouse.move(0, 0);
+  await sleep(600);
   const labelled = await x.screenshot();
   await openPopup();
   await popup.evaluate(() => {
@@ -395,7 +414,7 @@ try {
   );
   await shoot(
     'screenshot-4-labels.png',
-    frame('Label replies to fix your own lists', 'Slop adds the account to Also hide; Not slop adds it to Always show. Labels stay in this browser.', 'Example thread with made-up accounts, hiding paused.', panel(labelled, 40, 700) + card(labelsCard, 780, 460, 1.1)),
+    frame('Hide a spam reply in one click', 'The button at the end of each reply hides it and adds the account to Also hide, with 6 seconds to undo.', 'Example thread with made-up accounts, hiding paused so the labelled reply shows.', panel(labelled, 40, 700) + card(labelsCard, 780, 460, 1.1)),
     1280,
     800,
   );

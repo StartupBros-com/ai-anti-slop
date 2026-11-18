@@ -1257,12 +1257,18 @@ function fromPopup(bg, msg, sender = { id: EXT_ID, url: POPUP_URL }) {
 }
 
 test('background: a label is refused while labelling is off, and nothing is written', async () => {
-  for (const settings of [{}, { labeling: 'true' }, { labeling: false }]) {
+  for (const settings of [{ labeling: false }, { labeling: 'true' }, { labeling: null }]) {
     const bg = labelBackground({ settings });
     const before = structuredClone(bg.chrome.store);
     assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: false, reason: 'labels are off' });
     assert.deepEqual(bg.chrome.store, before);
   }
+});
+
+test('background: labels are on by default, so settings that never had the switch save one', async () => {
+  const bg = labelBackground({ settings: {} });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  assert.equal(bg.chrome.store['xsh:label:2'].label, 'slop');
 });
 
 test('background: Slop saves the record and adds the account to Also hide once; Not slop adds it to Always show; clearing changes neither box', async () => {
@@ -1441,6 +1447,13 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   assert.equal(odd.chrome.store['xsh:settings'].muteCap, 1000, 'rendering does not rewrite it');
 });
 
+test('popup: the labels switch shows on when it was never set', async () => {
+  const p = loadPopup({ 'xsh:list': { handles: [], fetchedAt: Date.now(), source: 's' }, 'xsh:settings': {}, 'xsh:mutes': lib.emptyMutes() });
+  await settle();
+  assert.equal(p.document.getElementById('labeling').checked, true);
+  assert.equal(p.document.getElementById('labelsSum').textContent, 'On · 0 saved');
+});
+
 test('popup: labels switch on and off, export as JSON lines oldest first, and delete only on a second click', async () => {
   const recs = [3, 1, 2].map((at) => ({
     at,
@@ -1451,7 +1464,7 @@ test('popup: labels switch on and off, export as JSON lines oldest first, and de
   }));
   const store = {
     'xsh:list': { handles: [], fetchedAt: Date.now(), source: 's' },
-    'xsh:settings': { extraList: 'h1' },
+    'xsh:settings': { extraList: 'h1', labeling: false },
     'xsh:labelCount': 3,
     'xsh:mutes': lib.emptyMutes(),
   };
