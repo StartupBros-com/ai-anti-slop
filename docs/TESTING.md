@@ -401,6 +401,39 @@ loaded extension's own injection was not part of these runs.
   X's own nodes, left both between Grok and More in the same run.
 - No exceptions, and nothing hid.
 
+Later that day, with the icon on every post rather than on replies only, the
+same scripts and stand-in ran in the same browser, logged in to an X account,
+on more pages. At each scroll position the posts on screen were read with the
+icons shown and then hidden by a style rule, 300 ms apart.
+
+- `x.com/home` at 1,024 pixels wide, in three runs of 8, 30 and 8 screens:
+  9, 29 and 8 posts, and every one got the icon, first in the group, 8.1
+  pixels before Grok. No post's height changed, and no name or handle was cut
+  short. Grok, More and the action rows moved 0 pixels in 45 of the 46 reads;
+  in one, one of X's icons moved 30.8 pixels, a move seen once more on a page
+  with no icon of ours (the search below).
+- The same feed at 420 pixels, in two runs of 6 screens: X drew no Grok icon,
+  and 21 of 21 posts each time got the icon just left of More, 8.1 pixels
+  from it, with 0 pixels moved and no height changed. In the second run, which
+  counted distinct posts, 1 of the 21 had a name or handle cut short with an
+  ellipsis that was whole with the icons hidden; the first counted 2 to 4 a
+  screen, counting a post again on each screen it stayed on.
+- A repost came up in the second runs at both widths. It got the icon, and the
+  account a click would label was the one its link names, the original
+  post's author.
+- The thread from the runs above, at 1,024 pixels, twice: the post the page is
+  about got none, and the others (5, then 4) got the icon before Grok. In one
+  of the 8 reads, one name was cut short by the icon.
+- A reply's own page, so the post it answers is drawn above it: that post got
+  the icon before Grok, and the reply, by the account whose page it is, got
+  none.
+- A profile page: 5 of 5 posts, all by that account, got none.
+- A search for the logged-in account's own posts: 10 of 10 got none. In one of
+  4 reads an icon of X's moved 30.8 pixels on that page, which had no icon of
+  ours, so X itself moved it between the two reads.
+- x.com's sidebar showed who was logged in at both widths. No post had two
+  icons, no promoted post came up, and there were no exceptions.
+
 ## Popup layout in Chromium
 
 On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
@@ -480,8 +513,10 @@ X's light and dim themes, a theme switched with a thread open (the icon keeps
 the grey it read when placed, as the one in the row did), X in other languages
 (Grok's button is found by its shape, not its name), widths other than 1,024
 and 420 pixels, how X nests More when it draws no Grok (only where the icon
-landed was read), the line of its own under a post without More, and a long
-name or handle, which the icon's 27 pixels now cut short sooner. For the shorter popup (0.9.0):
+landed was read), the line of its own under a post without More, promoted
+posts, the notifications, lists and bookmarks pages, a profile's posts by
+other accounts, and x.com drawing its sidebar after the posts (it was there
+first in every run above). For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
 measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on

@@ -2,7 +2,12 @@
 // shaped like x.com's: the post the page is about first, replies under it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { post, page, headIcons, meLink, runContent, stateWith, tick } from './helpers.mjs';
+import { post, page as bare, headIcons, meLink, runContent, stateWith, tick } from './helpers.mjs';
+
+// x.com as it is when logged in: the sidebar's profile link is drawn with the
+// posts, unless a test draws its own. bare() is a page without it.
+const ME = 'me_user';
+const page = (cells) => (cells.some((c) => c.includes('AppTabBar_Profile_Link')) ? bare(cells) : bare([meLink(ME), ...cells]));
 
 const settle = async () => {
   for (let i = 0; i < 5; i++) await tick();
@@ -194,14 +199,21 @@ test('labels are on by default: settings that never had the switch get the butto
   assert.equal(bars(t), 2);
 });
 
-test('no button off a post page, with labelling off, or without a way to save (the userscript)', async () => {
+test("every page that lists posts gets the buttons, a profile's own posts aside; none with labelling off, or without a way to save (the userscript)", async () => {
   const home = runContent(page(THREAD), { pathname: '/home', state: on(), labels: {} });
+  const search = runContent(page(THREAD), { pathname: '/search', state: on(), labels: {} });
   const profile = runContent(page(THREAD), { pathname: '/op', state: on(), labels: {} });
+  const profileTab = runContent(page(THREAD), { pathname: '/OP/with_replies', state: on(), labels: {} });
+  await settle();
+  for (const t of [home, search]) assert.deepEqual(barIds(t), ['1', '2', '3'], t.location.pathname);
+  for (const t of [profile, profileTab]) assert.deepEqual(barIds(t), ['2', '3'], `${t.location.pathname}: none on the profile's own posts, which hiding leaves alone there`);
+  const icons = home.document.querySelector('[data-fixture="1"] [data-icons]');
+  assert.equal(icons.firstElementChild === bar(home, '1'), true, 'in the same spot as on a reply: first at the top right');
   const off = runContent(page(THREAD), { pathname: PAGE, state: stateWith([], { labeling: false }), labels: {} });
   const truthy = runContent(page(THREAD), { pathname: PAGE, state: stateWith([], { labeling: 'true' }), labels: {} });
-  const noSave = runContent(page(THREAD), { pathname: PAGE, state: on() });
+  const noSave = runContent(page(THREAD), { pathname: '/home', state: on() });
   await settle();
-  for (const t of [home, profile, off, truthy, noSave]) assert.equal(bars(t), 0);
+  for (const t of [off, truthy, noSave]) assert.equal(bars(t), 0);
   for (const t of [off, truthy, noSave]) assert.equal(absent(t.document.getElementById('xsh-bar-style')), true, 'no CSS while labelling is off');
   for (const t of [off, truthy, noSave]) assert.equal(absent(toast(t)), true, 'no notice while labelling is off');
   // Turned on, the buttons appear; turned off, they go.
@@ -226,53 +238,83 @@ function cellFrom(t, html) {
 const added = (target, nodes) => ({ type: 'childList', target, addedNodes: nodes, removedNodes: [] });
 const removed = (target, nodes) => ({ type: 'childList', target, addedNodes: [], removedNodes: nodes });
 
-test("no button on the posts above the page's post, nor on its quotes, likes or photo pages", async () => {
-  const t = runContent(page([UP, ...THREAD]), { pathname: PAGE, state: on(), labels: {} });
+test("on a post's page the posts above it get a button too, and so do its quotes and photo pages; the page's author gets none, there or in the replies", async () => {
+  const ownReply = post({ author: 'op', status: '5' });
+  const t = runContent(page([UP, ...THREAD, ownReply]), { pathname: PAGE, state: on(), labels: {} });
   const slash = runContent(page(THREAD), { pathname: `${PAGE}/`, state: on(), labels: {} });
-  const others = ['/quotes', '/likes', '/retweets', '/photo/1'].map((s) => runContent(page(THREAD), { pathname: `${PAGE}${s}`, state: on(), labels: {} }));
+  const others = ['/quotes', '/photo/1'].map((s) => runContent(page(THREAD), { pathname: `${PAGE}${s}`, state: on(), labels: {} }));
   await settle();
-  assert.deepEqual(barIds(t), ['2', '3']);
+  assert.deepEqual(barIds(t), ['0', '2', '3'], "the post above has one; the page's post and its author's reply have none");
   assert.deepEqual(barIds(slash), ['2', '3'], 'a trailing slash is the same page');
-  for (const o of others) assert.deepEqual(barIds(o), [], o.location.pathname);
+  for (const o of others) assert.deepEqual(barIds(o), ['2', '3'], o.location.pathname);
 });
 
-test("a post above the page's post loses its button when that post mounts after it, and stays without one while that post is unmounted", async () => {
-  const t = runContent(page([UP, ...THREAD.slice(1)]), { pathname: PAGE, state: on(), labels: {} });
+test("the user's own posts get no button, and one drawn before the sidebar shows who is logged in goes then", async () => {
+  const mine = post({ author: ME, status: '8', head: 'grok' });
+  const known = runContent(page([meLink('Me_User'), mine, ...THREAD]), { pathname: '/home', state: on(), labels: {} });
+  const late = runContent(bare([mine, ...THREAD]), { pathname: '/home', state: on(), labels: {} });
   await settle();
-  assert.deepEqual(barIds(t), ['0', '2', '3'], "with the page's post not mounted, no post is known to be above it");
-  const focal = cellFrom(t, THREAD[0]);
-  timeline(t).insertBefore(focal, t.document.querySelector('[data-fixture="2"]'));
-  t.deliverMutations([added(timeline(t), [focal])]);
+  assert.deepEqual(barIds(known), ['1', '2', '3']);
+  assert.deepEqual(barIds(late), ['8', '1', '2', '3'], 'not known yet: every post has one');
+  const nav = cellFrom(late, meLink(ME));
+  late.document.body.appendChild(nav);
+  late.deliverMutations([added(late.document.body, [nav])]);
   await settle();
-  assert.deepEqual(barIds(t), ['2', '3']);
-  // Deep in the replies X unmounts the page's post; a settings change then rescans every post.
-  focal.remove();
-  t.deliverMutations([removed(timeline(t), [focal])]);
-  t.push(on());
-  await settle();
-  assert.deepEqual(barIds(t), ['2', '3'], 'the post above is remembered');
-  // X mounts the post above again, in a new node.
-  const old = t.document.querySelector('[data-fixture="0"]');
-  old.remove();
-  const again = cellFrom(t, UP);
-  timeline(t).insertBefore(again, timeline(t).firstChild);
-  t.deliverMutations([removed(timeline(t), [old]), added(timeline(t), [again])]);
-  await settle();
-  assert.deepEqual(barIds(t), ['2', '3']);
+  assert.deepEqual(barIds(late), ['1', '2', '3'], 'known now: off the own post');
+  assert.equal(late.document.querySelector('[data-fixture="8"] [data-icons]').children.length, 2, 'Grok and More, as X drew them');
 });
 
-test("on another post's page, a post that was above the last page's post gets a button again", async () => {
+test("a click made before the sidebar shows who is logged in is refused, since the post may be the user's own; once it shows, the click works", async () => {
+  const mine = post({ author: ME, status: '8' });
+  const t = runContent(bare([mine, ...THREAD]), { pathname: '/home', state: on(), labels: {}, clock: true });
+  await settle();
+  click(t, button(t, '8', 'slop'));
+  await settle();
+  assert.match(toastText(t), /^Not saved: x\.com has not shown who is logged in yet/);
+  assert.equal(undoBtn(t).hasAttribute('hidden'), true, 'nothing to undo');
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves, [], 'nothing saved');
+  assert.equal(t.document.querySelector('[data-xsh-hidden]'), null, 'nothing hid');
+  assert.deepEqual(pressed(t, '8'), [], 'the button is not pressed');
+  const nav = cellFrom(t, meLink(ME));
+  t.document.body.appendChild(nav);
+  t.deliverMutations([added(t.document.body, [nav])]);
+  await settle();
+  assert.deepEqual(barIds(t), ['1', '2', '3'], 'the own post loses its button');
+  click(t, button(t, '2', 'slop'));
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves.map((m) => [m.label, m.handle]), [['slop', 'reply_a']]);
+});
+
+test("on another page the buttons follow that page's author: the last page's author gets one, the new one's posts lose theirs", async () => {
   const t = runContent(page([UP, ...THREAD]), { pathname: PAGE, state: on(), labels: {} });
   await settle();
-  assert.deepEqual(barIds(t), ['2', '3']);
-  // X replaces the page with post 7's, where post 0 is a reply.
+  assert.deepEqual(barIds(t), ['0', '2', '3']);
+  // X replaces the page with post 7's, where post 0 and the last page's post are replies.
   for (const c of [...timeline(t).children]) c.remove();
-  const cells = [post({ author: 'other', status: '7' }), UP].map((h) => cellFrom(t, h));
+  const cells = [post({ author: 'other', status: '7' }), UP, THREAD[0]].map((h) => cellFrom(t, h));
   for (const c of cells) timeline(t).appendChild(c);
   t.location.pathname = '/other/status/7';
   t.deliverMutations([added(timeline(t), cells)]);
   await settle();
-  assert.deepEqual(barIds(t), ['0']);
+  assert.deepEqual(barIds(t), ['0', '1']);
+  // To the profile of the account that wrote post 0: its post loses the button, in place.
+  t.location.pathname = '/parent';
+  t.deliverMutations([]);
+  await settle();
+  assert.deepEqual(barIds(t), ['7', '1']);
+});
+
+test('a click on the home feed saves the post with the page it was on, as on a reply', async () => {
+  const t = runContent(page(THREAD), { pathname: '/home', state: on(), labels: {}, clock: true });
+  await settle();
+  click(t, button(t, '1', 'slop'));
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves, [{ label: 'slop', handle: 'op', url: '/op/status/1', page: '/home', text: 'hello' }]);
+  assert.deepEqual(pressed(t, '1'), ['slop']);
 });
 
 test("a click saves the reply's author, link, page and own text when its window ends, and a second click clears the label", async () => {

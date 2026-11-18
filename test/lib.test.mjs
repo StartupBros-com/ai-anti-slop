@@ -315,6 +315,8 @@ test('labelRecord checks the message and records what the list and boxes held', 
   assert.equal(Array.from(long).length, 1000);
   assert.equal(lib.labelRecord({ ...msg, text: { x: 1 } }, LABEL_CTX, NOW_L).record.text, '');
   assert.equal(lib.labelRecord({ ...msg, page: 'https://evil.com/a/status/1' }, LABEL_CTX, NOW_L).record.page, null);
+  // A label from the home timeline, or any page that is not a post's own, keeps no page.
+  for (const p of ['/home', '/search', '/op', '/i/lists/1']) assert.equal(lib.labelRecord({ ...msg, page: p }, LABEL_CTX, NOW_L).record.page, null, p);
   // Clearing needs only a valid post and handle.
   assert.deepEqual(lib.labelRecord({ label: null, handle: 'slop_b', url: '/slop_b/status/111' }, LABEL_CTX, NOW_L), { ok: true, id: '111', handle: 'slop_b', label: null });
   // Anything else is refused.

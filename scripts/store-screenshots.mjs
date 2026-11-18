@@ -419,7 +419,7 @@ try {
   );
   await shoot(
     'screenshot-4-labels.png',
-    frame('Hide a spam reply in one click', 'The button at the top right of each reply hides it and adds the account to Also hide, with 6 seconds to undo.', 'Example thread with made-up accounts, hiding paused so the labelled reply shows.', panel(labelled, 40, 700) + card(labelsCard, 780, 460, 1.1)),
+    frame('Hide a spam reply in one click', 'The button at the top right of each post hides it and adds the account to Also hide, with 6 seconds to undo.', 'Example thread with made-up accounts, hiding paused so the labelled reply shows.', panel(labelled, 40, 700) + card(labelsCard, 780, 460, 1.1)),
     1280,
     800,
   );
