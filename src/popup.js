@@ -35,14 +35,42 @@
     setText(
       $('capWhy'),
       `No setting goes above ${top}: hiding already covers this browser, and muting only adds the X apps.` +
-        (left ? ` At ${top} a day, muting the ${plural(left, 'account', 'accounts')} left takes ${plural(Math.ceil(left / top), 'day', 'days')}.` : ''),
+        (left
+          ? ` At ${top} a day, muting the ${plural(left, 'account', 'accounts')} left takes ${plural(Math.ceil(left / top), 'day', 'days')}; Run now visits them all at once.`
+          : ''),
     );
+  }
+
+  // Run now: everything waiting, one visit after another, past the number a
+  // day. Offered while muting is on, the day has not stopped and something is
+  // waiting; while a run goes, the button stops it.
+  let running = false;
+  function renderRun(s, m, handles, run) {
+    const on = !!(s.muteEnabled && s.muteAccount);
+    const b = L.muteBudget(m, L.utcDay(Date.now()), L.muteCap(s));
+    const waiting = on ? L.runWaiting(handles, s, m) : 0;
+    running = !!(on && run && run.account === s.muteAccount);
+    setHidden($('runRow'), !on || !!b.stopped || (!running && !waiting));
+    setText($('runNow'), running ? 'Stop' : 'Run now');
+    const n = plural(waiting, 'account', 'accounts');
+    setText(
+      $('runWhat'),
+      running
+        ? `Running: ${n} left, a few seconds apart. It stops when none are left, when you press Stop or when muting stops for the day; closing the browser ends it.`
+        : `Mutes and unmutes the ${n} waiting now, a few seconds apart, past your number a day, until none are left or you press Stop. That is more scripted clicking at once than any daily number.`,
+    );
+  }
+  function runNote(text) {
+    setHidden($('runMsg'), !text);
+    setText($('runMsg'), text || '');
   }
 
   // Off: only the hint to fill Always show first. On: who it mutes as,
   // today's mutes as a bar and in words, and the totals so far. A stopped
   // day also says when muting starts again and where each reason is explained.
-  function renderMuting(s, m) {
+  // A day can go over its number with Run now (or a lower number picked
+  // later that day): the line then gives the counts without "of".
+  function renderMuting(s, m, run) {
     const on = !!(s.muteEnabled && s.muteAccount);
     $('mute').checked = on;
     setHidden($('muteHint'), on);
@@ -55,16 +83,19 @@
     const now = Date.now();
     const b = L.muteBudget(m, L.utcDay(now), L.muteCap(s));
     const t = L.muteSummary(m);
-    const next = m.nextAt && m.nextAt > now ? ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min` : '';
+    const inRun = !!(run && run.account === s.muteAccount);
+    const next = !inRun && m.nextAt && m.nextAt > now ? ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min` : '';
     setText($('muteWho'), `Muting as @${s.muteAccount}`);
     // Mutes and unmutes share the daily cap; unmutes are named only once there are some.
     const used = b.mutes + b.unmutes;
-    const actions = b.unmutes
-      ? `${used} of ${b.cap} (${b.mutes} ${b.mutes === 1 ? 'mute' : 'mutes'}, ${b.unmutes} ${b.unmutes === 1 ? 'unmute' : 'unmutes'})`
-      : `${b.mutes} of ${b.cap} mutes`;
+    const kinds = `${plural(b.mutes, 'mute', 'mutes')}, ${plural(b.unmutes, 'unmute', 'unmutes')}`;
+    let actions;
+    if (used > b.cap) actions = b.unmutes ? `${used} (${kinds}; over ${b.cap} a day)` : `${plural(b.mutes, 'mute', 'mutes')} (over ${b.cap} a day)`;
+    else actions = b.unmutes ? `${used} of ${b.cap} (${kinds})` : `${b.mutes} of ${b.cap} mutes`;
+    const visits = b.visits > b.visitCap ? plural(b.visits, 'visit', 'visits') : `${b.visits} of ${b.visitCap} visits`;
     $('muteBar').setAttribute('max', String(b.cap));
     $('muteBar').setAttribute('value', String(Math.min(used, b.cap)));
-    setText($('muteToday'), `Today (UTC): ${actions}, ${b.visits} of ${b.visitCap} visits${next}`);
+    setText($('muteToday'), `Today (UTC): ${actions}, ${visits}${next}`);
     setText(
       $('muteTotals'),
       `So far: ${t.muted} muted (${t.confirmed} seen on your muted list, ${t.notFound} not found there), ` +
@@ -122,7 +153,9 @@
     const rec = o[K.list] || { handles: [] };
     const s = o[K.settings] || {};
     const m = o[K.mutes] || L.emptyMutes();
-    renderMuting(s, m);
+    const run = (await chrome.storage.session.get(L.RUN_KEY))[L.RUN_KEY] || null;
+    renderMuting(s, m, run);
+    renderRun(s, m, rec.handles, run);
     renderCap(s, m, rec.handles);
     const n = o[K.labelCount];
     renderLabels(s, Number.isInteger(n) && n > 0 ? n : 0);
@@ -276,6 +309,47 @@
     }
     await saveSettings({ muteEnabled: true, muteAccount: me });
     render();
+  });
+
+  // The worker answers Run now with { ok, waiting } or { ok: false, reason }.
+  let runAsked = false;
+  $('runNow').addEventListener('click', async () => {
+    if (runAsked) return;
+    runAsked = true;
+    const on = !running;
+    let r = null;
+    try {
+      r = await chrome.runtime.sendMessage({ type: 'xsh:run', on });
+    } catch (e) {
+      r = { ok: false, reason: String(e) };
+    } finally {
+      runAsked = false;
+    }
+    runNote(r && r.ok ? '' : `Not ${on ? 'started' : 'stopped'}: ${(r && r.reason) || 'no answer'}`);
+    render();
+  });
+
+  // While the popup is open, visits change the mute record and a run starts
+  // or ends: draw again. Renders do not overlap; a change during one draws once more.
+  let drawing = null;
+  let drawAgain = false;
+  function redraw() {
+    if (drawing) {
+      drawAgain = true;
+      return;
+    }
+    drawing = render()
+      .catch(() => {})
+      .finally(() => {
+        drawing = null;
+        if (drawAgain) {
+          drawAgain = false;
+          redraw();
+        }
+      });
+  }
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if ((area === 'local' && changes[K.mutes]) || (area === 'session' && changes[L.RUN_KEY])) redraw();
   });
 
   $('muteCap').addEventListener('change', () => {

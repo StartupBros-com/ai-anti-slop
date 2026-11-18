@@ -13,6 +13,7 @@ const JOB_ALARM = 'xsh-job-timeout';
 const JOB_KEY = 'xsh:job'; // chrome.storage.session: the one job in flight
 const JOB_TABS_KEY = 'xsh:jobTabs'; // chrome.storage.session: tabs opened for jobs
 const VISIT_KEY = 'xsh:visit'; // chrome.storage.local: { tabId, windowId, startedAt } of the visit in progress, to close its tab after an update
+const RUN_KEY = L.RUN_KEY; // chrome.storage.session: a Run now in progress
 const PRESENT_TIMEOUT_MS = 1500;
 
 async function settings() {
@@ -109,6 +110,66 @@ async function ensureMuteAlarm() {
 function gapMs() {
   const [lo, hi] = L.DEFAULTS.muteGapMinutes;
   return Math.round((lo + Math.random() * (hi - lo)) * 60000);
+}
+
+// ------------------------------------------------------------------ Run now
+//
+// The user pressed Run now in the popup: every unmute and mute waiting is
+// visited one after another, a few seconds apart, past the daily caps and
+// without waiting for an x.com tab. The checks of settings/muted/all still run
+// every muteCheckEvery mutes, and anything that stops the day ends the run.
+// It also ends on Stop, when nothing is left to visit, when muting is turned
+// off or bound to another account, and when session storage empties (browser
+// closed, extension reloaded or updated).
+
+const getRun = async () => (await chrome.storage.session.get(RUN_KEY))[RUN_KEY] || null;
+const endRun = () => chrome.storage.session.remove(RUN_KEY);
+
+function runGapMs() {
+  const [lo, hi] = L.DEFAULTS.muteRunGapMs;
+  return Math.round(lo + Math.random() * (hi - lo));
+}
+
+// The next step of a run comes from the visit that just ended, not from the
+// once-a-minute alarm, which stays as the fallback if the worker is stopped.
+function chainRun(ms) {
+  setTimeout(() => runTick().catch(() => {}), ms);
+}
+
+// Called inside serial(). Refuses when muting is off, the day has stopped or
+// nothing is waiting; otherwise stores the run and lets the next step go now.
+async function startRun() {
+  const s = await settings();
+  if (!muting(s)) return { ok: false, reason: 'muting is off' };
+  const now = Date.now();
+  const rec = L.stampAccount(await mutesRec(), s.muteAccount);
+  const b = L.muteBudget(rec, L.utcDay(now), L.muteCap(s));
+  if (b.stopped) return { ok: false, reason: `stopped for today: ${b.stopped}` };
+  const list = await stored();
+  const waiting = L.runWaiting(list && list.handles, s, rec);
+  if (!waiting) return { ok: false, reason: 'nothing is waiting' };
+  await chrome.storage.session.set({ [RUN_KEY]: { startedAt: now, account: s.muteAccount } });
+  rec.nextAt = 0;
+  await saveMutes(rec);
+  return { ok: true, waiting };
+}
+
+// Called inside serial(). Muting goes back to its daily pace from now.
+async function stopRun() {
+  if (!(await getRun())) return { ok: true };
+  await endRun();
+  const rec = await mutesRec();
+  rec.nextAt = Math.max(rec.nextAt || 0, Date.now() + gapMs());
+  await saveMutes(rec);
+  return { ok: true };
+}
+
+// Called inside serial(), after a settings change.
+async function endRunIfOff() {
+  const run = await getRun();
+  if (!run) return;
+  const s = await settings();
+  if (!muting(s) || s.muteAccount !== run.account) await endRun();
 }
 
 // Job tabs still open, newest last, so the x.com check below never counts
@@ -217,6 +278,7 @@ async function dropJob(job) {
   await clearJob();
   chrome.alarms.clear(JOB_ALARM);
   await closeJobTab(job.tabId);
+  if (await getRun()) chainRun(runGapMs());
 }
 
 // Close a job's tab. Its id leaves the job-tab list only once the close
@@ -243,11 +305,14 @@ async function finishJob(job, result) {
     // An unreadable muted list means mutes cannot be confirmed: stop for the day.
     rec = L.stopDay(rec, now, `settings/muted/all check: ${result.status}${result.reason ? ` (${result.reason})` : ''}`);
   }
-  rec.nextAt = now + gapMs();
+  const run = await getRun();
+  const gap = run ? runGapMs() : gapMs();
+  rec.nextAt = now + gap;
   await saveMutes(rec);
   await clearJob(); // before closing, so onRemoved does not see this job
   chrome.alarms.clear(JOB_ALARM);
   await closeJobTab(job.tabId);
+  if (run) chainRun(gap + 50);
 }
 
 // What tickWith returns when a mute visit is due at 50 or 100 a day and the
@@ -276,10 +341,12 @@ async function runTick() {
 async function tickWith(xOpen) {
   const s = await settings();
   const job = await getJob();
+  let run = await getRun();
   const now = Date.now();
   if (job) {
     if (!muting(s)) {
       // Turned off mid-job: drop it unrecorded.
+      if (run) await endRun();
       await dropJob(job);
       return;
     }
@@ -288,14 +355,24 @@ async function tickWith(xOpen) {
     }
     return;
   }
-  if (!muting(s)) return;
+  if (!muting(s)) {
+    if (run) await endRun();
+    return;
+  }
+  if (run && run.account !== s.muteAccount) {
+    await endRun();
+    run = null;
+  }
   const got = await mutesRec();
   let rec = L.stampAccount(got, s.muteAccount);
   if (rec !== got) await saveMutes(rec);
   if (now < (rec.nextAt || 0)) return;
   const cap = L.muteCap(s);
   const b = L.muteBudget(rec, L.utcDay(now), cap);
-  if (b.stopped) return;
+  if (b.stopped) {
+    if (run) await endRun();
+    return;
+  }
   const list = await stored();
   const handles = list && list.handles;
   // Unmutes go first: an account that left the list was most likely listed
@@ -304,12 +381,13 @@ async function tickWith(xOpen) {
   const candidates = L.muteCandidates(handles, s, rec);
   const next = unmutes.length ? { kind: 'unmute', handle: unmutes[0] } : candidates.length ? { kind: 'mute', handle: candidates[0] } : null;
   const pending = (rec.sinceCheck || []).length;
-  let canVisit = b.mutesLeft > 0 && b.visitsLeft > 0 && next !== null;
+  // A run skips the caps and the x.com-tab rule; nothing else.
+  let canVisit = next !== null && (run !== null || (b.mutesLeft > 0 && b.visitsLeft > 0));
   if (pending >= L.DEFAULTS.muteCheckEvery) {
     await startJob('check', null, s.muteAccount, now);
     return;
   }
-  if (canVisit && L.capNeedsXOpen(cap)) {
+  if (!run && canVisit && L.capNeedsXOpen(cap)) {
     if (xOpen === null) return ASK_TABS;
     canVisit = xOpen === true;
   }
@@ -317,7 +395,10 @@ async function tickWith(xOpen) {
     await startJob('check', null, s.muteAccount, now);
     return;
   }
-  if (!canVisit) return;
+  if (!canVisit) {
+    if (run) await endRun(); // nothing left to visit
+    return;
+  }
   await startJob(next.kind, next.handle, s.muteAccount, now);
   rec = L.countVisit(rec, now);
   await saveMutes(rec);
@@ -338,8 +419,18 @@ chrome.runtime.onStartup.addListener(() => {
 });
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes[K.settings]) ensureMuteAlarm();
+  if (area === 'local' && changes[K.settings]) {
+    ensureMuteAlarm();
+    serial(endRunIfOff).catch(() => {});
+  }
 });
+
+// Only the popup, or another page at the extension's own address (also when
+// opened in a tab), never a content script, whose address is the site's.
+function fromOwnPage(sender) {
+  const own = chrome.runtime.getURL('');
+  return !!sender && typeof sender.url === 'string' && sender.url.startsWith(own);
+}
 
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) refresh();
@@ -414,11 +505,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === 'xsh:labels-clear') {
-    // Only from the popup: a page at the extension's own address (also when
-    // opened in a tab), never a content script, whose address is the site's.
-    const own = chrome.runtime.getURL('');
-    if (!sender || typeof sender.url !== 'string' || !sender.url.startsWith(own)) return false;
+    if (!fromOwnPage(sender)) return false;
     serial(clearLabels).then(sendResponse, (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
+    return true;
+  }
+  if (msg.type === 'xsh:run') {
+    // Run now ({ on: true }) or Stop ({ on: false }), from the popup only.
+    if (!fromOwnPage(sender)) return false;
+    serial(() => (msg.on === true ? startRun() : stopRun())).then(
+      (r) => {
+        sendResponse(r);
+        if (r && r.ok && msg.on === true) runTick().catch(() => {});
+      },
+      (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }),
+    );
     return true;
   }
   return false;

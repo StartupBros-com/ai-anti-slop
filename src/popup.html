@@ -221,6 +221,11 @@
     <p id="muteTotals" class="small muted"></p>
   </div>
   <div role="status"><p id="muteStop" class="bad" hidden></p><p id="muteNext" class="hint" hidden>Muting starts again on the next UTC day. <a href="https://github.com/StartupBros-com/ai-anti-slop#muting-stopped-for-today" target="_blank" rel="noopener">What each reason means</a></p></div>
+  <div id="runRow" hidden>
+    <div class="btnrow"><button id="runNow" type="button" aria-describedby="runWhat">Run now</button></div>
+    <p id="runWhat" class="hint"></p>
+  </div>
+  <div role="status"><p id="runMsg" class="small bad" hidden></p></div>
   <div class="caprow">
     <label for="muteCap">Mutes a day</label>
     <select id="muteCap">
@@ -235,6 +240,7 @@
     <summary class="chev">How muting works</summary>
     <ul>
       <li>Mutes up to the number a day you pick, one every few minutes, in background tabs it opens and closes.</li>
+      <li>Run now visits everything waiting at once, a few seconds apart, past that number. It stops when nothing is left, when you press Stop, when muting stops for the day, or when the browser closes.</li>
       <li>Clicks X's own Mute on x.com, so the mutes reach the X apps too. It never uses X's API.</li>
       <li>Mutes the list, your Also hide accounts and any bot set to Mute on X.</li>
       <li>Skips accounts you follow, Always show accounts and every other bot, even one in Also hide.</li>

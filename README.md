@@ -15,8 +15,9 @@ In the extension you can also [label replies](#labels) Slop or Not slop.
 Hiding works on the page in your desktop browser, in this browser profile
 only, and the Pause switch shows the posts again. Muting is off until you turn
 it on in the extension's popup. It then mutes up to 25 accounts a day (or 50 or
-100, which run only while you have x.com open) by clicking X's own Mute on
-x.com, so the mutes apply in the X app too. It unmutes an account it muted
+100, which run only while you have x.com open), or every account waiting when
+you press **Run now**, by clicking X's own Mute on x.com, so the mutes apply in
+the X app too. It unmutes an account it muted
 once the account leaves the list. It never blocks anyone and does not use the
 X API. It is free and MIT-licensed.
 
@@ -52,7 +53,7 @@ own Mute and Block, act on your X account.
 |---|---|---|---|---|
 | Changes your X account | No | Yes: it is X's Mute | Yes | Yes |
 | Applies in the X app | No | Yes | Yes | Yes |
-| Covering a list of hundreds | Install once; the list refreshes itself | 25 accounts a day by default, so the 773 listed on 2026-11-08 take about a month; 8 days at 100 a day | Mute each account from its post or profile | Block each account from its post or profile |
+| Covering a list of hundreds | Install once; the list refreshes itself | 25 accounts a day by default, so the 773 listed on 2026-11-08 take about a month; 8 days at 100 a day; **Run now** visits them one after another, with no daily number | Mute each account from its post or profile | Block each account from its post or profile |
 | The account can find out | No | No, as with Mute on X | No: "Muted accounts will not know that you've muted them" | Yes: if it visits your profile, "they will see they have been blocked" |
 | Undo | Pause, or add the handle to Always show | Add the handle to Always show while muting is on, or unmute it on X; an account that leaves the list is unmuted by itself | Unmute each account | Unblock each account |
 
@@ -154,6 +155,7 @@ whenever the tab comes back into view. The userscript does not mute.
 | Fetch the list now | **Refresh list now** | **Refresh list now** |
 | Mute listed accounts on your X account | Tick **Mute listed accounts on X** (see [Muting](#muting)) | Not available |
 | Mute more accounts a day | Pick 50 or 100 under **Mutes a day** (see [How many a day](#how-many-a-day)) | Not available |
+| Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
 | Label replies Slop or Not slop | Under **Label replies**, tick **Show Slop and Not slop buttons under replies on x.com** (see [Labels](#labels)) | Not available |
 | Back up or move your settings | Under **Your accounts**, click **Export or import**, then **Export settings**; import the file on the same page (see [Export and import](#export-and-import)) | Not available |
 | Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export Also hide as a list**, or pick their file under **Import** | Not available |
@@ -291,7 +293,8 @@ and its tab closed. So one more mute can land just after you untick.
   comes 1 to 3 minutes (picked at random) after the last tab closed, so about
   1 to 4 minutes later. At most 25 mutes and 50 profile visits a day, or the
   number you pick under **Mutes a day** and twice that many visits (see
-  [How many a day](#how-many-a-day)). Days are UTC days.
+  [How many a day](#how-many-a-day)). Days are UTC days. **Run now** skips
+  the gap and both caps (see [Run now](#run-now)).
 - After every 5 mutes, and when the day's caps are reached or nothing is left
   to visit, it opens `x.com/settings/muted/all` the same way and checks that
   each new mute is listed there.
@@ -320,7 +323,8 @@ of one of its posts and clicks X's own "Unmute @handle" item, the way it
 mutes. If the menu offers Mute instead, the account was already unmuted, and
 nothing is clicked.
 
-- Unmutes go before new mutes and count against the same number a day.
+- Unmutes go before new mutes and count against the same number a day. A run
+  of **Run now** does them first too.
 - It unmutes only mutes it made, as the account muting is on for. An account
   it found already muted (by you, in the X app or with another tool) is never
   unmuted, and neither is a mute made while muting was on for another account.
@@ -353,13 +357,43 @@ Under **Mutes a day** the popup offers 25, 50 and 100.
 - No setting goes above 100, and a stored value other than 25, 50 or 100 counts
   as 25. Hiding already covers this browser, so muting only adds the X apps;
   at 100 a day, the 773 accounts listed on 2026-11-08 take 8 days. The popup
-  shows that figure for the accounts it has left to mute.
+  shows that figure for the accounts it has left to mute. **Run now** visits
+  them without waiting for the next day.
 
 A lower number means less scripted clicking on your account each day. No
 number makes it allowed: X's rules forbid scripting the X website at any rate
 (see [Before you turn it on](#before-you-turn-it-on)). X publishes no limit for
 mutes, so 50 and 100 are not known to be safe; the cap and the open-tab rule
 are their only limits.
+
+### Run now
+
+While muting is on, the day has not stopped and something is waiting, the
+popup shows **Run now** with the number of accounts waiting: the unmutes and
+mutes the daily pace has not reached yet. Pressing it visits them all, one
+after another:
+
+- Unmutes first, then mutes, in the order above, with the same tabs, clicks
+  and checks as the daily pace.
+- 2 to 5 seconds (picked at random) after one tab closes, the next opens,
+  instead of 1 to 4 minutes later. Neither daily cap applies, and at 50 or 100
+  a day it does not wait for an x.com tab of yours. What it does still counts
+  in today's figures, which the popup then gives as counts past the number,
+  such as "Today (UTC): 40 mutes (over 25 a day), 44 visits".
+- After every 5 mutes it still checks `x.com/settings/muted/all`, and
+  everything under [When it stops for the day](#when-it-stops-for-the-day)
+  still stops the day, which ends the run.
+- An account that fails twice is left alone, as under [Retries](#retries), so
+  a run always ends.
+- It ends when nothing is left, when you press **Stop** (the same button), when
+  muting is turned off or turned on for another account, and when the browser
+  closes or the extension is reloaded or updated. It never starts again by
+  itself. Muting then goes back to the number a day, which a run has usually
+  used up for today.
+
+A run is the most scripted clicking at once that AI Anti-Slop does. X
+publishes no limit for mutes, so no pace, this one included, is known to be
+safe (see [Before you turn it on](#before-you-turn-it-on)).
 
 ### When it stops for the day
 
@@ -398,6 +432,9 @@ Muting as @you
 Today (UTC): 3 of 25 mutes, 5 of 50 visits · next visit in 2 min
 So far: 3 muted (3 seen on your muted list, 0 not found there), 1 already muted, 1 you follow, 0 skipped.
 ```
+
+Past the day's number, after **Run now**, the line gives the counts without
+"of", and during a run it leaves out the next visit.
 
 Skipped means no post, or 2 failed visits.
 
@@ -522,7 +559,8 @@ The privacy policy, with what each storage key holds, is
 - `storage` holds the list, your settings, the mute record and your labels, in
   `chrome.storage.local`. During a mute visit it also holds the visit's
   account and tab ids in `chrome.storage.session`, which the browser clears
-  when it closes. `alarms` schedules the list refresh, muting's once-a-minute check, and the
+  when it closes, and during **Run now** the time the run started and the
+  account it runs as. `alarms` schedules the list refresh, muting's once-a-minute check, and the
   90 s limit on a visit. Opening and closing its own tabs needs no further permission.
 - The content script runs on x.com, twitter.com and their `mobile.` hosts. In
   your own tabs it makes no network requests and clicks nothing: it reads the
@@ -533,8 +571,8 @@ The privacy policy, with what each storage key holds, is
   muting may visit first in line. With labelling on, it adds a second style
   rule and the Slop / Not slop buttons, and hands each label you click, with
   the reply's text, to the background worker to store.
-- At 50 or 100 mutes a day, before each visit the worker lists your open tabs
-  and asks each one whether it is an x.com tab of yours. It uses only each
+- At 50 or 100 mutes a day, before each visit outside **Run now** the worker
+  lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
   tab's id and whether the browser has discarded it, never its address or
   title, and only the extension's script on an x.com page answers.
 - It clicks only in a tab the background worker opened for a visit. The worker
@@ -718,7 +756,8 @@ instead (see [Bots](#bots)), which has **Hide here**.
 ### If an account leaves the list, is it unmuted?
 
 Yes, if AI Anti-Slop muted it and muting is still on. It is unmuted ahead of
-new mutes, within the number a day you picked (see [Unmuting](#unmuting)). A
+new mutes, within the number a day you picked, or at once with **Run now** (see
+[Unmuting](#unmuting)). A
 mute you made yourself is left alone.
 
 ### How do I remove it?
@@ -789,7 +828,8 @@ Hiding was checked on real x.com on 2026-11-03 (four pages, 0 mismatches), and
 versions 0.2.0 to 0.5.0 ran in headless Chromium against fixture pages. Muting
 has run in Brave on the maintainer's own account since 2026-11-07; 0.5.0's
 labels and daily setting have not run in Brave yet. One unmute from 0.8.0's
-page code ran on real x.com on 2026-11-18.
+page code ran on real x.com on 2026-11-18. 0.9.0's **Run now** has run only
+against the fakes in the automated tests.
 [docs/TESTING.md](docs/TESTING.md) has each run, its method and results, and
 what has not been tested.
 

@@ -278,7 +278,10 @@ these accounts** on real x.com, more than two days in a row, how X responds to
 this pace over weeks, and X in other languages. For unmuting (0.8.0): an
 unmute started by the extension's own worker in its visit tab (the run above
 used a stand-in for the worker), and whether X ever asks to confirm an unmute
-(it did not, once). For export and import: Brave
+(it did not, once). For Run now (0.9.0): any run on real x.com; only the
+fakes in `test/wiring.test.mjs` have run it, so how X responds to visits a few
+seconds apart, and how long a run of hundreds of accounts takes, are not known.
+For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.
