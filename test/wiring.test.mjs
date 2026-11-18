@@ -40,8 +40,14 @@ function area(store, onChanged, name) {
 
 const EXT_ID = 'xshtestextensionid';
 
-function fakeChrome() {
-  const store = {};
+// `browser` is the browser's own table of open tabs, which outlives a worker:
+// a second worker after an update shares the first one's. tabs.get answers
+// from it as Chrome does without the "tabs" permission: id, window and whether
+// the tab is in front, no address; a closed tab is an error, and a tab id that
+// is not an integer throws before any promise exists.
+const newBrowser = () => ({ live: new Map(), nextId: 100 });
+
+function fakeChrome(store = {}, browser = newBrowser()) {
   const session = {};
   const alarmTable = {};
   const onChanged = event();
@@ -49,16 +55,23 @@ function fakeChrome() {
   // opened for a job that is still open, without URLs (there is no "tabs"
   // permission). `answer(id, msg)` is a tab's reply to tabs.sendMessage; by
   // default no content script is there. A tab in `failRemove` will not close.
-  const tabs = { opened: [], removed: [], nextId: 100, onRemoved: event(), list: [], queries: 0, asked: [], failRemove: new Set() };
+  const tabs = { opened: [], removed: [], browser, onRemoved: event(), list: [], queries: 0, asked: [], failRemove: new Set() };
   tabs.answer = () => Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
   tabs.create = async (info) => {
-    const tab = { id: tabs.nextId++, ...info };
+    const tab = { id: browser.nextId++, windowId: 1, ...info };
     tabs.opened.push(tab);
+    browser.live.set(tab.id, { id: tab.id, windowId: tab.windowId, active: info.active !== false });
     return tab;
+  };
+  tabs.get = (id) => {
+    if (!Number.isInteger(id)) throw new TypeError('Error in invocation of tabs.get(integer tabId, optional function callback)');
+    const t = browser.live.get(id);
+    return t ? Promise.resolve(structuredClone(t)) : Promise.reject(new Error(`No tab with id: ${id}.`));
   };
   tabs.remove = async (id) => {
     if (tabs.failRemove.has(id)) throw new Error(`No tab with id: ${id}.`);
     tabs.removed.push(id);
+    browser.live.delete(id);
     tabs.onRemoved.fire(id, {});
   };
   tabs.query = async () => {
@@ -97,8 +110,10 @@ function fakeChrome() {
   };
 }
 
-function loadBackground(responder) {
-  const chrome = fakeChrome();
+// A second worker may share the first one's local storage (`store`) and open
+// tabs (`browser`) with an empty session: what a reload or update looks like.
+function loadBackground(responder, store, browser) {
+  const chrome = fakeChrome(store, browser);
   const requests = [];
   const fetch = async (url, init) => {
     requests.push({ url, init });
@@ -1988,4 +2003,156 @@ test('background: muted, moved to Always show, unmuted, moved back: muted again 
   m = await visit('https://x.com/slop_a', 'mute', 'muted', 'muted');
   assert.deepEqual([m.handles.slop_a.status, m.handles.slop_a.account], ['muted', ME]);
   assert.deepEqual([m.days[today()].mutes, m.days[today()].unmutes, m.days[today()].visits, m.days[today()].stopped], [2, 1, 3, null]);
+});
+
+// ------------------------------------------------------------ stranded visit after an update
+
+// A visit in progress in a first worker, then an update: a second worker with
+// the same local storage and open tabs, and empty session storage.
+async function updatedWorker() {
+  const first = await muteBackground();
+  await alarm(first);
+  const tabId = lastTab(first).id;
+  assert.deepEqual(first.chrome.store['xsh:visit'], { tabId, windowId: 1, startedAt: first.chrome.store['xsh:visit'].startedAt }, 'the visit is kept in local storage');
+  const second = loadBackground(() => ok('slop_a\nslop_b'), first.chrome.store, first.chrome.tabs.browser);
+  return { first, second, tabId };
+}
+
+// Fire the update in the second worker; what it closed, and whether the key is left.
+async function sweepAfterUpdate(second) {
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  return { removed: second.chrome.tabs.removed, key: 'xsh:visit' in second.chrome.store };
+}
+
+test('update: a worker with empty session storage closes exactly the stranded visit tab and removes the key', async () => {
+  const { second, tabId } = await updatedWorker();
+  assert.deepEqual(second.chrome.session, {});
+  assert.deepEqual(await sweepAfterUpdate(second), { removed: [tabId], key: false });
+});
+
+test('update: a tab the browser no longer has, one in another window, or the one in front of the user is not closed', async () => {
+  const cases = {
+    gone: (t) => t.browser.live.delete(t.id),
+    'another window': (t) => (t.browser.live.get(t.id).windowId = 2),
+    'in front': (t) => (t.browser.live.get(t.id).active = true),
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const { second, tabId } = await updatedWorker();
+    change({ browser: second.chrome.tabs.browser, id: tabId });
+    assert.deepEqual(await sweepAfterUpdate(second), { removed: [], key: false }, name);
+  }
+});
+
+test('update: a visit stamped in the future (the clock went back) or a key without a usable tab id closes no tab', async () => {
+  const cases = {
+    future: (v) => (v.startedAt = Date.now() + 60000),
+    'no time': (v) => delete v.startedAt,
+    'tab id as text': (v) => (v.tabId = String(v.tabId)),
+    'no tab id': (v) => delete v.tabId,
+    'no window id': (v) => delete v.windowId,
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const { second } = await updatedWorker();
+    change(second.chrome.store['xsh:visit']);
+    assert.deepEqual(await sweepAfterUpdate(second), { removed: [], key: false }, name);
+    // The serial chain is not stuck: the next visit still opens.
+    second.chrome.store['xsh:mutes'].nextAt = 0;
+    const before = second.chrome.tabs.opened.length;
+    second.chrome.alarms.onAlarm.fire({ name: 'xsh-mute' });
+    await settle();
+    assert.equal(second.chrome.tabs.opened.length, before + 1, `${name}: the next visit opened`);
+  }
+});
+
+test('update: install and chrome_update close no tab', async () => {
+  for (const reason of ['install', 'chrome_update']) {
+    const { second } = await updatedWorker();
+    second.chrome.runtime.onInstalled.fire({ reason });
+    await settle();
+    assert.deepEqual(second.chrome.tabs.removed, [], reason);
+  }
+});
+
+test('update: a key older than the tab timeout closes no tab, and is removed', async () => {
+  const { second } = await updatedWorker();
+  second.chrome.store['xsh:visit'].startedAt = Date.now() - lib.DEFAULTS.muteTabTimeoutMs - 1;
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+  assert.equal('xsh:visit' in second.chrome.store, false);
+});
+
+test('update: browser startup removes the key and closes no tab', async () => {
+  const { second } = await updatedWorker();
+  second.chrome.runtime.onStartup.fire();
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+  assert.equal('xsh:visit' in second.chrome.store, false);
+});
+
+test('update: no key, no tab closed', async () => {
+  const second = loadBackground(() => ok(''), {});
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+});
+
+test('update: never closes the tab of a job the new worker started itself', async () => {
+  const { second } = await updatedWorker();
+  // The new worker's alarm tick runs first and starts its own visit, which
+  // takes over the key; onInstalled then runs the sweep.
+  second.chrome.store['xsh:mutes'].nextAt = 0;
+  second.chrome.alarms.onAlarm.fire({ name: 'xsh-mute' });
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  const mine = second.chrome.tabs.opened.at(-1);
+  assert.ok(mine, 'the new worker opened a tab');
+  assert.deepEqual(second.chrome.tabs.removed, [], 'nothing was closed');
+  assert.equal(second.chrome.session['xsh:job'].tabId, mine.id);
+  assert.equal(second.chrome.store['xsh:visit'].tabId, mine.id);
+});
+
+test('update: the sweep skips a key that names the current session job', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  const tab = lastTab(bg);
+  bg.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(bg.chrome.tabs.removed, []);
+  assert.equal(bg.chrome.store['xsh:visit'].tabId, tab.id);
+});
+
+test('visit key: a finished job leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  const tab = lastTab(bg);
+  await send(bg, { type: 'xsh:job' }, tab.id);
+  await send(bg, { type: 'xsh:job-result', result: { id: bg.chrome.session['xsh:job'].id, status: 'already' } }, tab.id);
+  await settle();
+  assert.equal('xsh:job' in bg.chrome.session, false);
+  assert.equal('xsh:visit' in bg.chrome.store, false);
+});
+
+test('visit key: a tab the user closed leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  bg.chrome.tabs.onRemoved.fire(lastTab(bg).id, {});
+  await settle();
+  assert.equal('xsh:visit' in bg.chrome.store, false);
+});
+
+test('visit key: a job dropped because muting was turned off leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  const tab = lastTab(bg);
+  const claimed = await send(bg, { type: 'xsh:job' }, tab.id);
+  bg.chrome.store['xsh:settings'] = { muteEnabled: false, muteAccount: null };
+  assert.equal(await send(bg, { type: 'xsh:job-go', id: claimed.id }, tab.id), false);
+  await settle();
+  assert.equal('xsh:job' in bg.chrome.session, false, 'the job is gone');
+  assert.equal('xsh:visit' in bg.chrome.store, false);
 });

@@ -254,7 +254,7 @@ from `x.com/settings/muted/all`.
 
 ## Not tested
 
-Hiding in Brave (muting has run there, above), Tampermonkey, Violentmonkey in
+Hiding in Brave (muting has run there, above), a real extension update in the middle of a visit (the closing of the stranded tab has only run against fakes), Tampermonkey, Violentmonkey in
 Firefox, the 6-hour refresh actually firing, reposts, and the notifications
 page. For the 0.7.0 and 0.7.1 renames: whether a userscript manager updates an
 installed 0.6.x or 0.7.0 script in place (the script keeps its `@name` and

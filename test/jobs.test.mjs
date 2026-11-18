@@ -220,3 +220,78 @@ test('stats report the logged-in account the popup binds muting to', async () =>
   await tick();
   assert.equal(t.content.stats().me, 'startupbros');
 });
+
+// Once an update or reload invalidates the extension, chrome.runtime.sendMessage
+// throws synchronously. The page must neither raise an unhandled rejection nor
+// click or report anything.
+test('content: sendMessage throwing synchronously raises no rejection, clicks nothing, reports nothing', async () => {
+  const unhandled = [];
+  const onUnhandled = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const sent = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: { local: { get: async () => ({ 'xsh:list': { handles: [H], fetchedAt: 1 }, 'xsh:settings': { muteEnabled: true, muteAccount: ME } }) }, onChanged: { addListener() {} } },
+      runtime: {
+        id: 'xshtest',
+        onMessage: { addListener() {} },
+        sendMessage(msg) {
+          sent.push(msg.type);
+          throw new Error('Extension context invalidated.');
+        },
+      },
+    };
+    const t = runContent(page([meLink(ME), postWithCaret({ author: H })]), { pathname: '/home', chrome });
+    const clicks = wireMenu(t.document, { items: MENU, handle: H });
+    for (let i = 0; i < 8; i++) await tick();
+    // The sighting and the job ask both threw; the page is still fine.
+    assert.ok(sent.includes('xsh:job'), 'the job ask was tried');
+    assert.ok(sent.includes('xsh:sighting'), 'the sighting was tried');
+    // A job handed to the page directly: the confirmation fails, so no click, and the report is swallowed.
+    await t.content.runJob(job());
+    for (let i = 0; i < 8; i++) await tick();
+    assert.ok(sent.includes('xsh:job-go'), 'the confirmation was tried');
+    assert.ok(sent.includes('xsh:job-result'), 'the report was tried');
+    assert.deepEqual(clicks, [], 'no click without the worker\'s yes');
+    assert.deepEqual(unhandled, [], 'no unhandled rejection');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+// chrome.storage throws the same way. The label read runs from a timer, where
+// a throw is an uncaught exception, not a rejection.
+test('content: a label read throwing synchronously after an update raises nothing', async () => {
+  const thrown = [];
+  const onThrown = (e) => thrown.push(e);
+  process.on('uncaughtException', onThrown);
+  process.on('unhandledRejection', onThrown);
+  try {
+    const labelReads = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: {
+        local: {
+          // The page loaded while the extension was there; the label read comes after it was cut off.
+          get(keys) {
+            if (keys.includes('xsh:list')) return Promise.resolve({ 'xsh:list': { handles: [], fetchedAt: 1 }, 'xsh:settings': { labeling: true } });
+            labelReads.push(keys);
+            throw new Error('Extension context invalidated.');
+          },
+        },
+        onChanged: { addListener() {} },
+      },
+      runtime: { id: 'xshtest', onMessage: { addListener() {} }, sendMessage: async () => null },
+    };
+    const t = runContent(page([post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2' })]), { pathname: '/op/status/1', chrome });
+    for (let i = 0; i < 8; i++) await tick();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(t.document.querySelector('[data-xsh-bar="2"]'), 'the label pair rendered, so labels were read');
+    assert.equal(labelReads.length, 1, 'the label read was tried and threw');
+    assert.deepEqual(thrown, [], 'nothing uncaught');
+  } finally {
+    process.off('uncaughtException', onThrown);
+    process.off('unhandledRejection', onThrown);
+  }
+});
