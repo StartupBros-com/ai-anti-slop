@@ -138,14 +138,15 @@ Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or o
 
 **Permission justifications:** the dashboard takes all host access, the
 clankwall host and the x.com content scripts, in a single **Host permission
-justification** field, which holds the last two rows of this table joined.
+justification** field, which holds the last two rows of this table joined
+(989 of the field's 1,000 characters).
 
 | Permission | Justification |
 |---|---|
 | `storage` | Keeps the downloaded list and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on. All of it stays in the browser's extension storage. |
 | `alarms` | Refreshes the list every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
-| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds one Hide as slop icon to the header of each post, on the home timeline, search, profiles, lists and post pages, except posts by the account whose page is open and, once X shows who is logged in, the user's own posts, and reads a post's text only when the user clicks the icon. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
+| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except on posts by the account whose page is open and, once X shows who is logged in, the user's own, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
 **Remote code:** the dashboard asked no remote-code question when 0.7.1 was
 submitted, so nothing was entered. If it asks, the answer is No: all
