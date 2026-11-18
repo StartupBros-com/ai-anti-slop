@@ -459,19 +459,28 @@ posts X lists after them. The post the page is about and the posts above it,
 which it replies to, get none, and nothing appears on its quotes or likes
 pages, the home timeline, profiles or search.
 
-- **Slop** saves the label and adds the account to **Also hide these
-  accounts**, so its posts hide at once and, with muting on, it is muted too
-  (a bot follows its row, as under [Bots](#bots)).
-- **Not slop** saves the label and adds the account to **Always show these
+- **Slop** labels the reply and adds the account to **Also hide these
+  accounts**, so its posts on the page hide at once and, with muting on, it is
+  muted too once the label is saved (a bot follows its row, as under
+  [Bots](#bots)).
+- **Not slop** labels the reply and adds the account to **Always show these
   accounts**, so it is never hidden or muted.
+- Each click shows on the page at once, and a notice at the bottom of the
+  window says what it did, with an **Undo** button for 6 seconds. **Undo**
+  puts the label and the box back as they were. Nothing is saved until the 6
+  seconds end, so an undone click is never stored and never reaches muting.
+  The click is saved sooner when you click another button, open another page,
+  or switch away from or close the tab. If the save is refused, the page goes
+  back and the pair says why ("not saved: ...").
 - An account already in that box is not added again. Next to the buttons, the
   pair says when the account is "on the list", "in Also hide" or "in Always
   show". An account in both boxes is shown: Always show wins.
 - Clicking the other button changes the label; clicking the pressed one again
   clears it. Clearing a label, or deleting them all, leaves both boxes as they
   are. To take an account out of a box, edit it under **Your accounts**.
-- A hidden reply's buttons are hidden with it. To label one, tick **Pause
-  hiding** first.
+- A hidden reply's buttons are hidden with it, so a **Slop** click moves
+  keyboard focus to **Undo**. To label a hidden reply, tick **Pause hiding**
+  first.
 - Clicking a button does not open the post, and the buttons ignore clicks made
   by a page's own script.
 
@@ -480,7 +489,7 @@ A record holds:
 
 | Field | What it holds |
 |---|---|
-| `at` | When you clicked, in milliseconds since 1970 |
+| `at` | When it was saved, in milliseconds since 1970: when the click's 6-second Undo window ended, or sooner (see above) |
 | `label` | `slop` or `not_slop` |
 | `handle` | The reply's author, in lower case |
 | `url` | The reply's link, `https://x.com/handle/status/id` |
@@ -576,8 +585,9 @@ The privacy policy, with what each storage key holds, is
   account whose post it hid (once per account until the tab reloads), and
   the worker puts the ones
   muting may visit first in line. With labelling on, it adds a second style
-  rule and the Slop / Not slop buttons, and hands each label you click, with
-  the reply's text, to the background worker to store.
+  rule, the Slop / Not slop buttons and the notice that offers **Undo**, and
+  hands each label you click, with the reply's text, to the background worker
+  to store once its Undo window ends.
 - At 50 or 100 mutes a day, before each visit outside **Run now** the worker
   lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
   tab's id and whether the browser has discarded it, never its address or

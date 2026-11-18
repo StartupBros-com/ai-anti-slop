@@ -50,9 +50,16 @@ export function page(cells) {
 // does: `labels.stored` maps post ids to labels already saved, `labels.answer`
 // gives the worker's reply to a save (default: saved), `saves` records each
 // save and `labelChange(id, label)` stands in for a change in another tab.
+// With `labels.worker`, a save that is answered ok also stores the box change
+// the worker's would (lib.labelPatch) without telling the page: `notify()`
+// delivers that storage change when the test chooses, and `state()` reads it.
 // With `present`, `present()` asks the tab what the worker's x.com check asks.
-export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null } = {}) {
+//
+// With `clock`, timers longer than 0 ms wait for `advance(ms)` instead of
+// real time; 0 ms timers (the label read batch) still run on their own.
+export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null, clock = false } = {}) {
   const { window, document, MutationObserver } = parseHTML(html);
+  const fake = clock ? fakeClock() : null;
   const location = { pathname };
   let subscriber = null;
   let current = state;
@@ -89,7 +96,13 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     const stored = labels.stored || {};
     adapter.saveLabel = (m) => {
       saves.push(JSON.parse(JSON.stringify(m)));
-      return Promise.resolve(labels.answer ? labels.answer(m) : { ok: true, label: m.label });
+      const res = labels.answer ? labels.answer(m) : { ok: true, label: m.label };
+      if (labels.worker && res && res.ok) {
+        const s = (current && current.settings) || {};
+        const patch = lib.labelPatch(s, m.handle, m.label);
+        if (patch) current = { ...current, settings: { ...s, ...patch } };
+      }
+      return Promise.resolve(res);
     };
     adapter.getLabels = (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, stored[id] || null])));
     adapter.subscribeLabels = (cb) => {
@@ -117,8 +130,8 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     MutationObserver: TestObserver,
     ...(chrome ? { chrome } : { XSlopHideAdapter: adapter }),
     console,
-    setTimeout,
-    clearTimeout,
+    setTimeout: fake ? fake.setTimeout : setTimeout,
+    clearTimeout: fake ? fake.clearTimeout : clearTimeout,
   });
   vm.runInContext(src('src/lib.js'), ctx, { filename: 'src/lib.js' });
   vm.runInContext(src('src/content.js'), ctx, { filename: 'src/content.js' });
@@ -131,6 +144,9 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
       current = next;
       subscriber(next);
     },
+    state: () => current,
+    notify: () => subscriber(current),
+    advance: (ms) => fake.advance(ms),
     content: ctx.XSlopHideContent,
     deliverMutations(records) { deliverMutations(records); },
     observed() { return observed; },
@@ -141,6 +157,41 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     labelChange: (id, label) => labelSub(id, label),
     present: () => presentFn(),
     window,
+  };
+}
+
+// Timers for runContent's `clock`: a timer longer than 0 ms runs only when
+// advance() reaches its time, in time order; a 0 ms one is a real timer.
+function fakeClock() {
+  let now = 0;
+  let seq = 0;
+  const due = new Map();
+  return {
+    setTimeout(fn, ms, ...args) {
+      if (!(ms > 0)) return setTimeout(fn, 0, ...args);
+      const id = { fake: ++seq };
+      due.set(id, { at: now + ms, seq, fn, args });
+      return id;
+    },
+    clearTimeout(id) {
+      if (id && id.fake) due.delete(id);
+      else clearTimeout(id);
+    },
+    advance(ms) {
+      const end = now + ms;
+      for (;;) {
+        let next = null;
+        for (const [id, t] of due) {
+          if (t.at <= end && (!next || t.at < due.get(next).at || (t.at === due.get(next).at && t.seq < due.get(next).seq))) next = id;
+        }
+        if (!next) break;
+        const t = due.get(next);
+        due.delete(next);
+        now = t.at;
+        t.fn(...t.args);
+      }
+      now = end;
+    },
   };
 }
 
