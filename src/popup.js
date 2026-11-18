@@ -30,6 +30,11 @@
     const cap = L.muteCap(s);
     const sel = $('muteCap');
     if (document.activeElement !== sel) setChoice(sel, String(cap));
+    // Above the lowest number, muting runs only while x.com is open: said
+    // beside the choice, not only in How muting works, or it seems to stall.
+    const low = Math.min(...L.DEFAULTS.muteCaps);
+    setHidden($('capNote'), cap === low);
+    setText($('capNote'), cap === low ? '' : 'Runs only while x.com is open in a tab.');
     const top = Math.max(...L.DEFAULTS.muteCaps);
     const left = L.muteCandidates(handles, s, m).length;
     setText(
@@ -50,14 +55,17 @@
     const b = L.muteBudget(m, L.utcDay(Date.now()), L.muteCap(s));
     const waiting = on ? L.runWaiting(handles, s, m) : 0;
     running = !!(on && run && run.account === s.muteAccount);
-    setHidden($('runRow'), !on || !!b.stopped || (!running && !waiting));
+    // The caution sits apart from the button, under the counts; they show together.
+    const offer = on && !b.stopped && (running || waiting > 0);
+    setHidden($('runRow'), !offer);
+    setHidden($('runWhat'), !offer);
     setText($('runNow'), running ? 'Stop' : 'Run now');
     const n = plural(waiting, 'account', 'accounts');
     setText(
       $('runWhat'),
       running
-        ? `Running: ${n} left, a few seconds apart. It stops when none are left, when you press Stop or when muting stops for the day; closing the browser ends it.`
-        : `Mutes and unmutes the ${n} waiting now, a few seconds apart, past your number a day, until none are left or you press Stop. That is more scripted clicking at once than any daily number.`,
+        ? `Running: ${n} left, a few seconds apart. Closing the browser also ends it.`
+        : `Mutes and unmutes the ${n} waiting now, past your number a day. That is more scripted clicking at once than any daily number.`,
     );
   }
   function runNote(text) {
@@ -75,6 +83,8 @@
     $('mute').checked = on;
     setHidden($('muteHint'), on);
     setHidden($('muteOn'), !on);
+    // The totals sit in How muting works, outside muteOn, so they hide on their own.
+    setHidden($('muteTotals'), !on);
     if (!on) {
       setHidden($('muteStop'), true);
       setHidden($('muteNext'), true);
@@ -220,6 +230,8 @@
   // One row per bot: a link to its profile (for a manual block) and a
   // Show / Hide here / Mute on X choice. Built once; render sets the values.
   const LABELS = { show: 'Show', hide: 'Hide here', mute: 'Mute on X' };
+  // The folded heading's counts, short enough to sit on the heading's line.
+  const SHORT = { show: 'Show', hide: 'Hide', mute: 'Mute' };
   // Through the options, not select.value, and clearing before selecting:
   // the test DOM (linkedom) has a read-only select.value and loses a
   // selection when a later option is set to false.
@@ -280,7 +292,7 @@
     const allow = L.parseAllowlist(s.allowlist);
     const n = { show: 0, hide: 0, mute: 0 };
     for (const b of L.BOTS) n[modes[b.handle]] += 1;
-    setText($('botsSum'), L.BOT_MODES.map((m) => `${LABELS[m]} ${n[m]}`).join(' · '));
+    setText($('botsSum'), L.BOT_MODES.map((m) => `${SHORT[m]} ${n[m]}`).join(' · '));
     for (const b of L.BOTS) {
       const sel = $(`bot-${b.handle}`);
       if (!sel || document.activeElement === sel) continue;
@@ -417,19 +429,24 @@
   $('files').addEventListener('click', () => chrome.runtime.openOptionsPage());
   // aria-disabled, not disabled, while it refreshes: a disabled button drops
   // keyboard focus. aria-disabled does not stop clicks, so the flag does.
+  // The button is an icon, so its name changes, never its text.
   let refreshing = false;
+  const nameRefresh = (btn, name) => {
+    btn.setAttribute('aria-label', name);
+    btn.setAttribute('title', name);
+  };
   $('refresh').addEventListener('click', async () => {
     if (refreshing) return;
     refreshing = true;
     const btn = $('refresh');
     btn.setAttribute('aria-disabled', 'true');
-    btn.textContent = 'Refreshing…';
+    nameRefresh(btn, 'Refreshing…');
     try {
       await chrome.runtime.sendMessage({ type: 'xsh:refresh' });
     } finally {
       refreshing = false;
       btn.removeAttribute('aria-disabled');
-      btn.textContent = 'Refresh list now';
+      nameRefresh(btn, 'Refresh list now');
       render();
     }
   });

@@ -367,6 +367,52 @@ margin before the button comes from: X's row has a 4-pixel gap, and Bookmark
 and Share sit 12 pixels apart. The extension itself has not drawn the button on
 x.com yet.
 
+## Popup layout in Chromium
+
+On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
+Chromium 157, before and after the popup was made shorter, with `popup.js`
+running against a stand-in for the extension's storage and tabs (no worker ran
+and nothing reached x.com). Each state ran in the light and dark themes. The
+figures are from the light theme, counting only text and controls that showed,
+with every fold closed. Muting on means 9 mutes today and 759 accounts waiting;
+the tab line is "From 5 accounts. 4 on screen now." except in the last row,
+where it is "From 9 accounts. Plus 2 posts that tag a bot. 3 on screen now."
+across two lines.
+
+| State | Words before | Words after | Pixels tall before | Pixels tall after | Controls in view before | Controls in view after |
+|---|---|---|---|---|---|---|
+| Muting off, 25 a day | 195 | 116 | 823 | 565 | 5 of 9 | 9 of 9 |
+| Muting on, 25 a day | 258 | 161 | 1,033 | 725 | 4 of 10 | 6 of 10 |
+| Hiding paused | 193 | 114 | 809 | 552 | 5 of 9 | 9 of 9 |
+| A tab that is not x.com | 200 | 121 | 831 | 573 | 4 of 9 | 9 of 9 |
+| Muting on, 100 a day | 258 | 170 | 1,033 | 736 | 4 of 10 | 6 of 10 |
+| Not x.com, 100 a day | 200 | 130 | 831 | 585 | 4 of 9 | 9 of 9 |
+| Muting off, 100 a day, two-line tab line | 202 | 132 | 841 | 596 | 4 of 9 | 9 of 9 |
+
+Controls in view are those showing at open that end inside the first 600
+pixels, so they can be used without scrolling. Heights varied by 1 pixel
+between runs.
+
+A popup scrolls past 600 pixels. With muting off it now fits in every state
+measured; with muting on it still scrolls, by 125 to 136 pixels, because X's
+rules warning stays in full there too. In every state, before and after, 9 or
+10 controls showed when the popup opened and 21 were one click away, inside a
+closed fold; the other 1 or 2 were hidden messages and buttons that the state
+did not call for. X's rules warning showed in every state, and no page error
+was thrown.
+
+`test/wiring.test.mjs` passed with each of eight faults planted one at a time in
+`popup.js` or `popup.html`, and each failed one test: the x.com note never
+showing, the note moved back under the row, the note beside the select instead
+of under its label, the select not described by the note, the Run now caution
+staying when the button hides, the refresh button writing text over its icon,
+the totals showing while muting is off, and the Always-show hint moved out of
+How muting works.
+
+The store screenshots were then made again with `scripts/store-screenshots.mjs`,
+which runs the unpacked extension with its worker against the real list (787
+accounts), and the popup in them was looked at by eye.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -395,7 +441,9 @@ only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
 where X could not be reached), so how X responds to visits a few seconds apart,
 and how long a run of hundreds of accounts takes, are not known.
 For the Hide as slop icon (0.9.0): the extension drawing it on real x.com, X's
-light and dim themes, a narrow window and Brave. For the label Undo window: the save when a tab is
+light and dim themes, a narrow window and Brave. For the shorter popup (0.9.0):
+its heights in Brave on Windows, whose system font is not the Linux one
+measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on
 real x.com or in Brave. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set

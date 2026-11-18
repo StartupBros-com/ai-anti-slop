@@ -30,7 +30,7 @@
   }
   * { box-sizing: border-box; }
   body {
-    width: 400px; margin: 0; padding: 12px 16px 16px;
+    width: 400px; margin: 0; padding: 10px 16px 12px;
     background: var(--bg); color: var(--fg);
     font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     font-variant-numeric: tabular-nums;
@@ -71,7 +71,7 @@
   #paused:checked { background: var(--bad); }
 
   /* ---- this tab: the number first */
-  .status { margin-top: 12px; }
+  .status { margin-top: 8px; }
   .hero { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
   .hero .num { font-size: 32px; line-height: 1.1; font-weight: 800; letter-spacing: -0.02em; color: var(--rose); }
   .hero .what { font-weight: 600; }
@@ -79,8 +79,9 @@
   .hero.say { font-size: 16px; line-height: 1.35; font-weight: 600; }
   #tabMore { margin-top: 2px; font-size: 13px; color: var(--muted); }
   .listrow { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; margin-top: 12px; font-size: 13px; line-height: 1.45; }
-  #list { min-width: 0; font-weight: 500; }
-  #listAge { grid-column: 1 / -1; color: var(--muted); }
+  #list { grid-column: 1; min-width: 0; font-weight: 500; }
+  #listAge { grid-column: 1; color: var(--muted); }
+  #refresh { grid-column: 2; grid-row: 1 / span 2; }
 
   /* ---- buttons and fields */
   button {
@@ -95,6 +96,12 @@
   button.primary:hover:enabled { background: var(--fg-hover); border-color: var(--fg-hover); }
   button.armed { color: var(--bad); border-color: var(--bad); }
   button:disabled, button[aria-disabled='true'] { opacity: 0.4; cursor: default; }
+  /* An icon button: no edge until hovered, named by aria-label. */
+  button.icon { display: grid; place-items: center; width: 32px; height: 32px; min-height: 0; padding: 0; border-color: transparent; color: var(--muted); }
+  button.icon:hover:enabled:not([aria-disabled='true']) { color: var(--fg); }
+  button.icon svg { display: block; }
+  @keyframes spin { to { rotate: 360deg; } }
+  #refresh[aria-disabled='true'] svg { animation: spin 900ms linear infinite; }
   select {
     font: inherit; font-size: 13px; min-height: 28px; min-width: 112px; padding: 2px 6px;
     border: 1px solid var(--edge); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer;
@@ -113,22 +120,28 @@
   .check input { flex: none; width: 16px; height: 16px; margin: 1px 0 0; accent-color: var(--fg); }
   #muteStop + .hint { margin-top: 2px; }
 
-  /* ---- muting: the one section that acts on X gets the heavy rule */
-  .muting { margin-top: 16px; padding-top: 12px; border-top: 2px solid var(--fg); }
+  /* ---- muting: the one section that acts on X. The warning box marks it;
+     what it does in detail waits in How muting works. */
+  .muting { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--rule); }
   .rules {
-    margin-top: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.45; text-wrap: pretty;
+    margin-top: 6px; padding: 6px 10px; font-size: 13px; line-height: 1.4; text-wrap: pretty;
     border: 1px solid var(--rule); border-left: 4px solid var(--bad); border-radius: 6px; background: var(--hover);
   }
   .rules strong { font-weight: 650; color: var(--bad); }
   #muteOn { margin-top: 12px; }
+  /* Who it mutes as, and Run now beside it; the caution under the counts. */
+  .whorow { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 28px; }
+  #runWhat { margin-top: 4px; }
   #muteWho { font-weight: 500; }
   progress { appearance: none; display: block; width: 100%; height: 8px; margin: 8px 0 4px; border: 0; border-radius: 4px; background: var(--rule); overflow: hidden; }
   progress::-webkit-progress-bar { background: var(--rule); }
   progress::-webkit-progress-value { background: var(--rose); }
-  #muteTotals { margin-top: 2px; }
   .caprow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
   .caprow label { font-weight: 500; }
-  .caprow + .hint { margin-top: 4px; }
+  /* The note sits under the label, beside the select, so it costs the row a
+     few pixels rather than a line of its own. */
+  .caplabel { min-width: 0; }
+  #capNote { margin-top: 1px; line-height: 1.35; }
 
   /* ---- disclosures: a summary row with its chevron on the trailing edge */
   details > summary { list-style: none; cursor: pointer; }
@@ -139,25 +152,28 @@
     rotate: 45deg; translate: 0 -2px; transition: rotate 150ms ease-out;
   }
   details[open] > .chev::after, .fold[open] > summary::after { rotate: -135deg; translate: 0 2px; }
-  .more { margin-top: 8px; font-size: 13px; }
+  .more { margin-top: 6px; font-size: 13px; }
   .more > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 28px; color: var(--muted); }
   .more > summary:hover { color: var(--fg); }
   .more > summary::after { border-width: 0 1.5px 1.5px 0; }
-  #capWhy { margin-top: 4px; line-height: 1.45; text-wrap: pretty; }
+  .more > p { margin-top: 6px; line-height: 1.45; text-wrap: pretty; }
+  .more > p.hint { margin-top: 6px; }
   .more ul { margin: 6px 0 0; padding-inline-start: 18px; line-height: 1.45; }
   .more li { margin: 4px 0; text-wrap: pretty; }
 
-  .folds { margin-top: 16px; border-top: 1px solid var(--rule); }
+  /* ---- the folded sections: one line each, the title on the left and
+     what is set on the right, wrapping under the title only if it must. */
+  .folds { margin-top: 12px; border-top: 1px solid var(--rule); }
   .fold { border-bottom: 1px solid var(--rule); }
   .fold > summary {
-    display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px;
-    margin-inline: -8px; padding: 6px 8px; border-radius: 6px;
+    display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px;
+    margin-inline: -8px; padding: 4px 30px 4px 8px; min-height: 32px; border-radius: 6px; position: relative;
     transition: background-color 150ms ease-out;
   }
   .fold > summary:hover { background: var(--hover); }
-  .fold > summary h2 { grid-column: 1; font-size: 14px; line-height: 1.35; font-weight: 600; }
-  .fold > summary .sum { grid-column: 1; font-size: 13px; line-height: 1.4; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .fold > summary::after { grid-column: 2; grid-row: 1 / span 2; }
+  .fold > summary h2 { font-size: 14px; line-height: 1.35; font-weight: 600; }
+  .fold > summary .sum { margin-inline-start: auto; font-size: 13px; line-height: 1.4; color: var(--muted); white-space: nowrap; }
+  .fold > summary::after { position: absolute; right: 10px; top: 50%; margin: -6px 0 0; }
   .fold .body { padding: 2px 0 16px; }
   .fold .body > .hint:first-child { margin-top: 0; }
 
@@ -168,7 +184,7 @@
   .bot .who a { display: inline-block; padding-block: 3px; font-weight: 600; }
   .bot .note { display: block; font-size: 13px; color: var(--muted); }
 
-  footer { margin-top: 16px; font-size: 13px; color: var(--muted); }
+  footer { margin-top: 12px; font-size: 13px; color: var(--muted); }
   footer a { display: inline-block; padding-block: 3px; color: var(--fg); }
 
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -183,9 +199,10 @@
     progress { border: 1px solid ButtonText; }
     progress::-webkit-progress-value { background: Highlight; }
     .rules { border-color: CanvasText; }
+    button.icon { border-color: ButtonText; }
     :focus-visible { outline-color: Highlight; }
   }
-  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; animation: none !important; } }
 </style>
 </head>
 <body>
@@ -202,7 +219,7 @@
   <p id="tabMore" hidden></p>
   <div class="listrow">
     <p id="list">Loading…</p>
-    <button id="refresh" type="button">Refresh list now</button>
+    <button id="refresh" class="icon" type="button" aria-label="Refresh list now" title="Refresh list now"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66"/><path d="M20 4v5h-5"/></svg></button>
     <p id="listAge"></p>
   </div>
   <div role="status"><p id="err" class="bad" hidden></p></div>
@@ -213,31 +230,28 @@
   <label class="sw head"><span>Mute listed accounts on X</span><input type="checkbox" id="mute" role="switch" aria-describedby="muteWarn"></label>
   <div role="alert"><p id="muteErr" class="bad" hidden></p></div>
   <p id="muteWarn" class="rules"><strong>X's rules</strong> forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. A lower daily number lowers the risk; no number makes it allowed.</p>
-  <p id="muteHint" class="hint">Before turning this on, add accounts you never want muted to Always show, under Your accounts.</p>
   <div id="muteOn" hidden>
-    <p id="muteWho"></p>
+    <div class="whorow"><p id="muteWho"></p><div id="runRow" hidden><button id="runNow" type="button" aria-describedby="runWhat">Run now</button></div></div>
     <progress id="muteBar" max="25" value="0" aria-label="Mutes today"></progress>
     <p id="muteToday" class="small"></p>
-    <p id="muteTotals" class="small muted"></p>
+    <p id="runWhat" class="hint" hidden></p>
   </div>
   <div role="status"><p id="muteStop" class="bad" hidden></p><p id="muteNext" class="hint" hidden>Muting starts again on the next UTC day. <a href="https://github.com/StartupBros-com/ai-anti-slop#muting-stopped-for-today" target="_blank" rel="noopener">What each reason means</a></p></div>
-  <div id="runRow" hidden>
-    <div class="btnrow"><button id="runNow" type="button" aria-describedby="runWhat">Run now</button></div>
-    <p id="runWhat" class="hint"></p>
-  </div>
   <div role="status"><p id="runMsg" class="small bad" hidden></p></div>
   <div class="caprow">
-    <label for="muteCap">Mutes a day</label>
-    <select id="muteCap">
+    <div class="caplabel"><label for="muteCap">Mutes a day</label><p id="capNote" class="hint" hidden></p></div>
+    <select id="muteCap" aria-describedby="capNote">
       <option value="25">25</option>
       <option value="50">50</option>
       <option value="100">100</option>
     </select>
   </div>
-  <p class="hint">25 runs whenever the browser is open. 50 and 100 run only while x.com is open in a tab.</p>
-  <p id="capWhy" class="hint"></p>
   <details class="more">
     <summary class="chev">How muting works</summary>
+    <p id="muteHint" class="hint">Before turning it on, add accounts you never want muted to Always show, under Your accounts.</p>
+    <p id="muteTotals" class="small" hidden></p>
+    <p class="hint">25 runs whenever the browser is open. 50 and 100 run only while x.com is open in a tab.</p>
+    <p id="capWhy" class="hint"></p>
     <ul>
       <li>Mutes up to the number a day you pick, one every few minutes, in background tabs it opens and closes.</li>
       <li>Run now visits everything waiting at once, a few seconds apart, past that number. It stops when nothing is left, when you press Stop, when muting stops for the day (five visits in a row that do nothing stop it too), or when the browser closes.</li>
@@ -251,7 +265,7 @@
 
 <div class="folds">
 <details class="fold">
-  <summary><h2>Bots that answer when tagged</h2><span id="botsSum" class="sum"></span></summary>
+  <summary><h2>Bots like @grok</h2><span id="botsSum" class="sum"></span></summary>
   <div class="body">
     <p class="hint">A row you haven't changed follows the list: Hide here if the bot is on the list or in Also hide, Show if not. Mute on X hides the bot here and mutes it while muting is on.</p>
     <div id="bots"></div>
