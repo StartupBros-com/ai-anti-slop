@@ -1248,11 +1248,12 @@
 // X's own Mute item, then reports back, and the worker closes the tab. It never
 // calls X's API.
 //
-// Labels, unless the user has turned them off (extension only): on a post's
-// own page, each post below it gets one icon button, Hide as slop, in its
-// header, left of X's Grok and More icons. A click there, and the Undo it
-// offers, are the only things this script acts on in the user's own tabs, and
-// only a click the browser marks as the user's own.
+// Labels, unless the user has turned them off (extension only): every post
+// X lists (home, search, profiles, lists, notifications, a post's page) gets
+// one icon button, Hide as slop, in its header, left of X's Grok and More
+// icons, except where a click could never hide it (labelTarget). A click
+// there, and the Undo it offers, are the only things this script acts on in
+// the user's own tabs, and only a click the browser marks as the user's own.
 // A click shows on the page at once and is handed to the background worker
 // to save only when its 6-second Undo window ends, so an undone click is
 // never saved and never reaches muting.
@@ -1276,7 +1277,7 @@
   let paused = false;
   let muting = false;
   let lastPath = location.pathname;
-  let meUnknown = false; // a tagged post was left visible before whoAmI() answered
+  let meUnknown = false; // a tagged post was left visible, or a button drawn, before whoAmI() answered
   const hiddenPosts = new Set(); // distinct posts hidden in this tab
   const hiddenAuthors = new Set();
   const hiddenMentions = new Set(); // distinct posts hidden for tagging a bot
@@ -1292,12 +1293,6 @@
   const asked = new Set(); // post ids whose label was read or is being read
   const toRead = new Set();
   const notes = new Map(); // post id -> why the last click was not saved
-  // Ids of the posts above the one the page is about (the posts it replies
-  // to), for the page at ancestorsPath. Kept by id, since X reuses a post's
-  // nodes, and for as long as the page is open, since X unmounts posts
-  // scrolled far away: deep in the replies the page's post may be gone.
-  let ancestors = new Set();
-  let ancestorsPath = null;
 
   // How long a label click can be undone before it is saved.
   const UNDO_MS = 6000;
@@ -1329,7 +1324,7 @@
   // The button's look, added only while labels are on, so a page with them
   // off gets nothing beyond the hide rule. It copies X's own icons: a 19px
   // glyph in X's grey (More's, read where it goes: headStyle), red with a
-  // round tint on hover, filled red once the reply is labelled. The tint
+  // round tint on hover, filled red once the post is labelled. The tint
   // circle is 35x36 px. A post without More gets the button in a row of its
   // own under the text.
   function injectBarStyle() {
@@ -1399,51 +1394,20 @@
 
   // ---------------------------------------------------------------- labels
 
-  function ancestorIds() {
-    if (ancestorsPath !== location.pathname) {
-      ancestorsPath = location.pathname;
-      ancestors = new Set();
-    }
-    return ancestors;
-  }
-
-  // While the page's post is mounted, remember every post above it in the
-  // document. Returns true when that adds one, which may already have a button.
-  // A post above it that is first mounted after the page's post has been
-  // unmounted (a long chain scrolled far up) is not caught.
-  function noteAncestors(focal) {
-    const known = ancestorIds();
-    const above = [];
-    for (const art of document.querySelectorAll(ARTICLE)) {
-      const url = postKey(art);
-      const post = url && L.statusOf(url);
-      if (!post) continue;
-      if (post.id === focal.id) {
-        let grew = false;
-        for (const id of above) {
-          if (!known.has(id)) {
-            known.add(id);
-            grew = true;
-          }
-        }
-        return grew;
-      }
-      above.push(post.id);
-    }
-    return false;
-  }
-
-  // The post a button would label, or null: on a post's own page (not its
-  // quotes, likes or a photo), a post below the page's post with its own link
-  // and author. The page's post and the posts above it get none.
-  function labelTarget(article) {
-    const focal = L.statusPageOf(location.pathname);
-    if (!focal) return null;
+  // The post a button would label, or null: any post with its own link and
+  // author, wherever X lists it, except where a click could never hide it:
+  // the user's own posts (`who` is whoAmI()), and posts by the account whose
+  // profile or post page is open, which hiding leaves alone (L.shouldHide's
+  // owner). On a post's own page that is the post itself and its author's
+  // replies under it.
+  function labelTarget(article, who) {
     const url = postKey(article);
     const post = url && L.statusOf(url);
-    if (!post || post.id === focal.id || ancestorIds().has(post.id)) return null;
+    if (!post) return null;
     const author = L.authorHandleOf(article);
-    return author ? { id: post.id, url, author } : null;
+    if (!author || author === L.pageOwner(location.pathname)) return null;
+    if (who && who.me === author) return null;
+    return { id: post.id, url, author };
   }
 
   // The post's own text (not a quoted post's), with emoji, which X draws as
@@ -1606,9 +1570,9 @@
   // Add, update or remove the button on one post. X reuses a post's nodes
   // for another post, so the button is re-keyed whenever the post's link
   // changes.
-  function syncBar(article) {
+  function syncBar(article, who) {
     if (!labeling) return;
-    const t = labelTarget(article);
+    const t = labelTarget(article, who);
     let bar = barOf(article);
     if (!t) {
       if (bar) bar.remove();
@@ -1622,13 +1586,14 @@
     if (!asked.has(t.id)) readLabel(t.id);
   }
 
-  // Bring the buttons on these posts up to date, or on every post when a
-  // post above the page's post has just been found: it may already have one.
+  // Bring the buttons on these posts up to date. Until the sidebar shows who
+  // is logged in, the user's own posts cannot be told apart and get a button;
+  // onMutations looks again then, and takes it off.
   function syncBars(arts) {
     if (!labeling) return;
-    const focal = L.statusPageOf(location.pathname);
-    const grew = focal ? noteAncestors(focal) : false;
-    for (const art of grew ? document.querySelectorAll(ARTICLE) : arts) syncBar(art);
+    const who = whoAmI();
+    if (!who && arts.length) meUnknown = true;
+    for (const art of arts) syncBar(art, who);
   }
 
   function renderId(id) {
@@ -1693,8 +1658,16 @@
   // it labels it slop. The page changes now; the save waits for the window
   // to end.
   function labelClick(article, which, btn) {
-    const t = labelTarget(article);
-    if (!t || !labeling) return;
+    if (!labeling) return;
+    // Until the sidebar shows who is logged in, the post may be the user's
+    // own, and the click would put their own handle in Also hide.
+    const who = whoAmI();
+    if (!who) {
+      showToast('Not saved: x.com has not shown who is logged in yet. Try again in a moment.', false);
+      return;
+    }
+    const t = labelTarget(article, who);
+    if (!t) return;
     // One click at a time: one still in its window is saved first.
     commit();
     const had = labels.has(t.id);
@@ -1715,14 +1688,14 @@
     renderId(t.id);
     const cell = article.closest(CELL) || article;
     showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), label === 'slop' && viewAllowBox.has(t.author)), true);
-    // A click that hides the reply hides the button too: focus moves to Undo.
+    // A click that hides the post hides the button too: focus moves to Undo.
     if (btn && document.activeElement === btn && btn.closest(`[${ATTR}]`)) {
       const u = undoButton();
       if (u) u.focus();
     }
   }
 
-  // What the notice says a click did. gone: the reply is hidden now (not so
+  // What the notice says a click did. gone: the post is hidden now (not so
   // while hiding is paused or the account is in Always show). allowed: the
   // account is in Always show, as one labelled Not slop before 0.9.0 is, so
   // the label hides nothing.
@@ -1765,7 +1738,7 @@
   }
 
   // Saved. The click's own change is dropped only with the stored state read
-  // after the save, so a hidden reply is never shown between the two.
+  // after the save, so a hidden post is never shown between the two.
   function saved(p) {
     return Promise.resolve()
       .then(() => adapter.load())
@@ -1891,7 +1864,7 @@
   }
 
   // The window ended with focus on Undo, which now hides: move it to the
-  // same button on the next reply that shows, if there is one.
+  // same button on the next post that shows, if there is one.
   function focusNext(p) {
     const all = [...document.querySelectorAll(`[${BAR}] [data-xsh-label="${p.which}"]`)];
     const i = p.btn ? all.indexOf(p.btn) : -1;
