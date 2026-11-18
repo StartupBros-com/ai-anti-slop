@@ -284,6 +284,42 @@ in 90 s)", 461 s after the click. Each of the 5 accounts it visited had one
 failed try and none was given up on; the sixth was not visited, and nothing
 opened in the next 10 s. The open popup showed the stop and hid **Run now**.
 
+## Label Undo in Chromium, without X
+
+On 2026-11-18 the unpacked extension with the 6-second Undo window (its
+manifest still says 0.9.0) ran in headless Chromium 157 (through Playwright).
+A local server answered for x.com, with a thread of 9 replies, and for the
+list's host, with a list of one account, so nothing reached either. Labels
+were turned on in storage and every click was a real Playwright click or key
+press. 27 of 28 checks passed; the 28th could not run (below).
+
+- **Slop** on a reply hid it before the first paint after the click: the click
+  handler finished 3.6 ms after the first click and 0.6 ms after a later one.
+  The same account's other reply hid too. The notice at the bottom of the
+  window said "Labelled Slop. @xsh_demo_a added to Also hide." with **Undo**.
+- Until the 6 seconds ended nothing was stored: no label, nothing in Also hide,
+  and the tab's count of hidden accounts was unchanged. Then the record was
+  stored with the documented fields, the account was in Also hide, the notice
+  closed and the count included the account. A MutationObserver saw the
+  reply's hide attribute set once and never removed, so the reply did not show
+  for a moment between the click and the stored state.
+- **Undo** showed the reply again and the notice said "Undone." with no
+  button, then closed by itself. 6.6 s later nothing had been stored.
+- With the keyboard, Enter on **Slop** moved focus to **Undo**, and Enter on
+  **Undo** showed the reply and put focus back on its **Slop**. When the window
+  ended with focus on **Undo**, focus moved to **Slop** on the next reply shown.
+  None of the key or click events in the pair or the notice reached the page's
+  own document listeners.
+- A click was still stored when the tab was reloaded 1 s into its window, and
+  when the tab was closed 1 s into it. A page change made the way X makes it
+  (`history.pushState`) stored the click at once.
+- No request left the two local hosts.
+
+The check that could not run: storing a click when its tab is hidden without
+being closed. Headless Chromium kept the tab visible with another tab in
+front, with its window minimised and with the page frozen, so that save has
+run only in the unit tests.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -311,7 +347,9 @@ used a stand-in for the worker), and whether X ever asks to confirm an unmute
 only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
 where X could not be reached), so how X responds to visits a few seconds apart,
 and how long a run of hundreds of accounts takes, are not known.
-For export and import: Brave
+For the label Undo window: the save when a tab is
+hidden without being closed, in a real browser (see above), and any of it on
+real x.com or in Brave. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.

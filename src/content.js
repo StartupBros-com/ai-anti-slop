@@ -8,8 +8,11 @@
 //
 // Labels, when the user has turned them on (extension only): on a post's
 // own page, each post below it gets a small Slop / Not slop pair. A click
-// there is the only thing this script acts on in the user's own tabs, and
-// only a click the browser marks as the user's own.
+// there, and the Undo it offers, are the only things this script acts on in
+// the user's own tabs, and only a click the browser marks as the user's own.
+// A click shows on the page at once and is handed to the background worker
+// to save only when its 6-second Undo window ends, so an undone click is
+// never saved and never reaches muting.
 //
 // State comes from an adapter: the extension adapter below (chrome.storage,
 // filled by background.js), or globalThis.XSlopHideAdapter when the userscript
@@ -52,6 +55,25 @@
   let ancestors = new Set();
   let ancestorsPath = null;
 
+  // How long a label click can be undone before it is saved.
+  const UNDO_MS = 6000;
+  // The one click still inside its Undo window, or null.
+  let pending = null;
+  // Accounts a click has put in a box that the stored settings do not show
+  // there yet: { handle, field } with field 'extraList' (Also hide) or
+  // 'allowlist' (Always show). Each stays until the stored settings have it,
+  // or its click is undone or refused.
+  let overlay = [];
+  // What hiding goes by: the stored list and boxes plus the overlay.
+  let viewList = new Set();
+  let viewAllow = new Set();
+  let viewExtraBox = new Set();
+  let viewAllowBox = new Set();
+  // The notice that says what a click did and offers Undo: [data-xsh-toast],
+  // a polite live region kept on the page while labelling is on.
+  const TOAST = 'data-xsh-toast';
+  let toastTimer = null;
+
   function injectStyle() {
     if (document.getElementById('xsh-style')) return;
     const st = document.createElement('style');
@@ -70,7 +92,11 @@
       `[${BAR}]{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 8px 56px;font:13px/1.3 system-ui,sans-serif;color:rgb(113,118,123)}` +
       `[${BAR}] button{font:inherit;color:inherit;background:transparent;border:1px solid rgba(113,118,123,.6);border-radius:999px;padding:2px 10px;cursor:pointer}` +
       `[${BAR}] button[aria-pressed="true"][data-xsh-label="slop"]{color:#fff;background:rgb(244,33,46);border-color:rgb(244,33,46)}` +
-      `[${BAR}] button[aria-pressed="true"][data-xsh-label="not_slop"]{color:#fff;background:rgb(0,150,100);border-color:rgb(0,150,100)}`;
+      `[${BAR}] button[aria-pressed="true"][data-xsh-label="not_slop"]{color:#fff;background:rgb(0,150,100);border-color:rgb(0,150,100)}` +
+      `[${TOAST}]{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;font:14px/1.4 system-ui,sans-serif}` +
+      `[${TOAST}] [data-xsh-toast-box]{display:flex;gap:12px;align-items:center;max-width:min(90vw,480px);padding:10px 14px;border-radius:8px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.35);pointer-events:auto}` +
+      `[${TOAST}] [hidden]{display:none!important}` +
+      `[${TOAST}] button{font:inherit;font-weight:700;color:rgb(29,155,240);background:transparent;border:0;padding:4px 6px;cursor:pointer}`;
     (document.head || document.documentElement).appendChild(st);
   }
 
@@ -83,9 +109,12 @@
   function evaluate(article, owner) {
     const author = L.authorHandleOf(article);
     const cell = article.closest(CELL) || article;
-    const hide = L.shouldHide(author, { list, allow, owner, paused });
+    const hide = L.shouldHide(author, { list: viewList, allow: viewAllow, owner, paused });
     if (hide) {
       if (cell.getAttribute(ATTR) !== author) cell.setAttribute(ATTR, author);
+      // Hidden only by a click not yet saved: not a sighting and not counted,
+      // so an undone click leaves no trace and a saved one is counted then.
+      if (!L.shouldHide(author, { list, allow, owner, paused })) return;
       // Seen while browsing: muted ahead of the rest of the list.
       if (muting && !hiddenAuthors.has(author) && adapter.noteSighting) adapter.noteSighting(author);
       hiddenAuthors.add(author);
@@ -99,7 +128,7 @@
     // told apart, so a tagged post stays visible; onMutations looks again then.
     const who = tagged ? whoAmI() : null;
     if (tagged && !who) meUnknown = true;
-    if (who && L.shouldHideMention(author, tagged, { allow, owner, paused, me: who.me, mentions })) {
+    if (who && L.shouldHideMention(author, tagged, { allow: viewAllow, owner, paused, me: who.me, mentions })) {
       const v = `mention:${tagged}`;
       if (cell.getAttribute(ATTR) !== v) cell.setAttribute(ATTR, v);
       const k = postKey(article);
@@ -180,6 +209,10 @@
     return null;
   }
 
+  // X opens a post on a click anywhere in it, and has keyboard shortcuts:
+  // none of these events, done in the pair or the notice, reaches its handlers.
+  const STOPPED = ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup'];
+
   function makeBar() {
     const bar = document.createElement('div');
     bar.setAttribute(BAR, '');
@@ -199,18 +232,14 @@
     const note = document.createElement('span');
     note.setAttribute('data-xsh-note', '');
     bar.appendChild(note);
-    // X opens a post on a click anywhere in it, and has keyboard shortcuts:
-    // nothing done in the pair reaches its handlers.
-    for (const type of ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup']) {
-      bar.addEventListener(type, (e) => onBarEvent(e, bar));
-    }
+    for (const type of STOPPED) bar.addEventListener(type, (e) => onBarEvent(e, bar));
     return bar;
   }
 
   // Why an account shows despite a Slop label, or what already covers it.
   function boxNote(author) {
-    if (allowBox.has(author)) return 'in Always show';
-    if (extraBox.has(author)) return 'in Also hide';
+    if (viewAllowBox.has(author)) return 'in Always show';
+    if (viewExtraBox.has(author)) return 'in Also hide';
     if (listed.has(author)) return 'on the list';
     return '';
   }
@@ -288,30 +317,246 @@
     if (e.isTrusted === false) return;
     const btn = e.target && e.target.closest ? e.target.closest('[data-xsh-label]') : null;
     const article = bar.closest(ARTICLE);
-    if (btn && article) saveLabel(article, btn.getAttribute('data-xsh-label'));
+    if (btn && article) labelClick(article, btn.getAttribute('data-xsh-label'), btn);
   }
 
-  // Clicking the label a post already has clears it.
-  async function saveLabel(article, which) {
+  // Rebuild what hiding goes by from the stored state and the overlay, first
+  // dropping overlay entries the stored boxes now hold.
+  function refreshView() {
+    overlay = overlay.filter((o) => !(o.field === 'extraList' ? extraBox : allowBox).has(o.handle));
+    viewList = new Set(list);
+    viewAllow = new Set(allow);
+    viewExtraBox = new Set(extraBox);
+    viewAllowBox = new Set(allowBox);
+    for (const o of overlay) {
+      if (o.field === 'extraList') {
+        viewList.add(o.handle);
+        viewExtraBox.add(o.handle);
+      } else {
+        viewAllow.add(o.handle);
+        viewAllowBox.add(o.handle);
+      }
+    }
+  }
+
+  function dropEntry(entry) {
+    if (entry) overlay = overlay.filter((o) => o !== entry);
+  }
+
+  // A click on Slop or Not slop. Clicking the label a post already has
+  // clears it. The page changes now; the save waits for the window to end.
+  function labelClick(article, which, btn) {
     const t = labelTarget(article);
     if (!t || !labeling) return;
-    const label = labels.get(t.id) === which ? null : which;
-    let res;
-    try {
-      res = await adapter.saveLabel({ label, handle: t.author, url: t.url, page: location.pathname, text: postText(article) });
-    } catch (e) {
-      res = { ok: false, reason: String((e && e.message) || e) };
-    }
-    if (res && res.ok) {
-      notes.delete(t.id);
-      labels.set(t.id, label);
-    } else {
-      notes.set(t.id, `not saved: ${(res && res.reason) || 'no answer'}`);
-    }
+    // One click at a time: one still in its window is saved first.
+    commit();
+    const had = labels.has(t.id);
+    const prev = had ? labels.get(t.id) : null;
+    const label = prev === which ? null : which;
+    // What will be saved is read now: by the time the window ends, X may
+    // have reused this post's nodes, or the page may have changed.
+    const msg = { label, handle: t.author, url: t.url, page: location.pathname, text: postText(article) };
+    // The box the click adds the account to, as the worker's save will.
+    const field = label === 'slop' ? 'extraList' : label === 'not_slop' ? 'allowlist' : null;
+    const entry = field && !(field === 'extraList' ? viewExtraBox : viewAllowBox).has(t.author) ? { handle: t.author, field } : null;
+    if (entry) overlay.push(entry);
+    pending = { id: t.id, which, had, prev, note: notes.get(t.id), label, msg, entry, btn, timer: setTimeout(commit, UNDO_MS) };
+    notes.delete(t.id);
+    labels.set(t.id, label);
+    refreshView();
+    rescanAll();
     renderId(t.id);
+    showToast(clickText(label, entry), true);
+    // A Slop click hides the button it was made with: focus moves to Undo.
+    if (btn && document.activeElement === btn && btn.closest(`[${ATTR}]`)) {
+      const u = undoButton();
+      if (u) u.focus();
+    }
+  }
+
+  function clickText(label, entry) {
+    if (label === null) return 'Label removed.';
+    const name = label === 'slop' ? 'Slop' : 'Not slop';
+    if (!entry) return `Labelled ${name}.`;
+    return `Labelled ${name}. @${entry.handle} added to ${entry.field === 'extraList' ? 'Also hide' : 'Always show'}.`;
+  }
+
+  // Put a post's label back as it was before a click.
+  function restoreLabel(p) {
+    if (p.had) {
+      labels.set(p.id, p.prev);
+    } else {
+      // Its stored label had not been read yet: read it again.
+      labels.delete(p.id);
+      asked.delete(p.id);
+    }
+  }
+
+  // Hand the click still in its window, if any, to the worker to save now.
+  function commit() {
+    const p = pending;
+    if (!p) return;
+    pending = null;
+    clearTimeout(p.timer);
+    const undoHadFocus = isUndoFocused();
+    closeToast();
+    if (undoHadFocus) focusNext(p);
+    let sent;
+    try {
+      sent = Promise.resolve(adapter.saveLabel(p.msg));
+    } catch (e) {
+      sent = Promise.reject(e);
+    }
+    sent
+      .catch((e) => ({ ok: false, reason: String((e && e.message) || e) }))
+      .then((res) => (res && res.ok ? saved(p) : refused(p, (res && res.reason) || 'no answer')));
+  }
+
+  // Saved. The click's own change is dropped only with the stored state read
+  // after the save, so a hidden reply is never shown between the two.
+  function saved(p) {
+    return Promise.resolve()
+      .then(() => adapter.load())
+      .then(
+        (s) => {
+          dropEntry(p.entry);
+          applyState(s);
+        },
+        () => {
+          dropEntry(p.entry);
+          refreshView();
+          rescanAll();
+        },
+      );
+  }
+
+  // Refused or lost: the page goes back to what is stored, and the pair says
+  // why.
+  function refused(p, reason) {
+    dropEntry(p.entry);
+    const note = `not saved: ${reason}`;
+    if (pending && pending.id === p.id) {
+      // A newer click on this post is still in its window and stays shown.
+      // Its Undo goes back to the stored label, with this note.
+      pending.had = false;
+      pending.note = note;
+    } else if (labels.get(p.id) === p.label) {
+      // The label before this click may itself have been a click that was
+      // never saved: read the stored one again.
+      labels.delete(p.id);
+      asked.delete(p.id);
+      notes.set(p.id, note);
+    }
+    // Otherwise a newer click on this post was already sent, and its answer
+    // decides what the pair shows.
+    refreshView();
+    rescanAll();
+    renderId(p.id);
+    // A newer click still in its window keeps its notice and its Undo.
+    if (!pending) showToast(`Not saved: ${reason}`, false);
+  }
+
+  // Undo the click still in its window: nothing was saved, so nothing is
+  // sent. quiet, when labelling is turned off, skips the notice and focus.
+  function undo(quiet) {
+    const p = pending;
+    if (!p) return;
+    pending = null;
+    clearTimeout(p.timer);
+    dropEntry(p.entry);
+    restoreLabel(p);
+    if (p.note) notes.set(p.id, p.note);
+    else notes.delete(p.id);
+    refreshView();
+    rescanAll();
+    renderId(p.id);
+    if (quiet) return;
+    showToast('Undone.', false);
+    // Back to the button the click was made with, if it shows again.
+    const bar = p.btn && p.btn.closest(`[${BAR}]`);
+    if (bar && bar.getAttribute(BAR) === p.id && document.contains(p.btn) && !p.btn.closest(`[${ATTR}]`)) p.btn.focus();
+  }
+
+  const toastEl = () => document.querySelector(`[${TOAST}]`);
+  const undoButton = () => document.querySelector(`[${TOAST}] [data-xsh-undo]`);
+  const isUndoFocused = () => {
+    const u = undoButton();
+    return !!u && document.activeElement === u;
+  };
+
+  // Kept on the page while labelling is on, empty between clicks, so screen
+  // readers announce what goes into it.
+  function makeToast() {
+    if (toastEl()) return;
+    const el = document.createElement('div');
+    el.setAttribute(TOAST, '');
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    const box = document.createElement('div');
+    box.setAttribute('data-xsh-toast-box', '');
+    box.setAttribute('hidden', '');
+    const text = document.createElement('span');
+    text.setAttribute('data-xsh-toast-text', '');
+    const u = document.createElement('button');
+    u.setAttribute('type', 'button');
+    u.setAttribute('data-xsh-undo', '');
+    u.textContent = 'Undo';
+    box.appendChild(text);
+    box.appendChild(u);
+    el.appendChild(box);
+    for (const type of STOPPED) el.addEventListener(type, onToastEvent);
+    (document.body || document.documentElement).appendChild(el);
+  }
+
+  function onToastEvent(e) {
+    e.stopPropagation();
+    if (e.type !== 'click') return;
+    e.preventDefault();
+    if (e.isTrusted === false) return;
+    if (e.target && e.target.closest && e.target.closest('[data-xsh-undo]')) undo(false);
+  }
+
+  function showToast(text, offerUndo) {
+    if (!labeling) return;
+    makeToast();
+    const el = toastEl();
+    el.querySelector('[data-xsh-toast-text]').textContent = text;
+    const u = el.querySelector('[data-xsh-undo]');
+    if (offerUndo) u.removeAttribute('hidden');
+    else u.setAttribute('hidden', '');
+    el.querySelector('[data-xsh-toast-box]').removeAttribute('hidden');
+    clearTimeout(toastTimer);
+    toastTimer = offerUndo ? null : setTimeout(closeToast, UNDO_MS);
+  }
+
+  function closeToast() {
+    clearTimeout(toastTimer);
+    toastTimer = null;
+    const el = toastEl();
+    if (!el) return;
+    el.querySelector('[data-xsh-toast-text]').textContent = '';
+    el.querySelector('[data-xsh-toast-box]').setAttribute('hidden', '');
+  }
+
+  // The window ended with focus on Undo, which now hides: move it to the
+  // same button on the next reply that shows, if there is one.
+  function focusNext(p) {
+    const all = [...document.querySelectorAll(`[${BAR}] [data-xsh-label="${p.which}"]`)];
+    const i = p.btn ? all.indexOf(p.btn) : -1;
+    if (i < 0) return;
+    const next = all.slice(i + 1).find((b) => !b.closest(`[${ATTR}]`));
+    if (next) next.focus();
   }
 
   function onLabelChange(id, label) {
+    if (pending && pending.id === id) {
+      // A click on this post is still in its window and stays shown. Its
+      // Undo goes back to the label now stored.
+      pending.had = true;
+      pending.prev = label || null;
+      asked.add(id);
+      return;
+    }
     labels.set(id, label || null);
     asked.add(id);
     renderId(id);
@@ -332,6 +577,8 @@
   function onMutations(records) {
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
+      // Leaving the page ends a label click's Undo window.
+      commit();
       rescanAll();
       return;
     }
@@ -400,8 +647,22 @@
     allowBox = L.parseAllowlist(st.allowlist);
     extraBox = L.parseAllowlist(st.extraList);
     labeling = !!(st.labeling === true && adapter.saveLabel);
-    if (labeling) injectBarStyle();
-    else for (const bar of document.querySelectorAll(`[${BAR}]`)) bar.remove();
+    if (labeling) {
+      injectBarStyle();
+      makeToast();
+    } else {
+      // Turned off inside a click's window: the click is dropped, as the
+      // worker would refuse it now.
+      undo(true);
+      for (const bar of document.querySelectorAll(`[${BAR}]`)) bar.remove();
+      const el = toastEl();
+      if (el) el.remove();
+      if (toastTimer) {
+        clearTimeout(toastTimer);
+        toastTimer = null;
+      }
+    }
+    refreshView();
     rescanAll();
   }
 
@@ -662,6 +923,12 @@
   });
   adapter.subscribe(applyState);
   if (adapter.subscribeLabels) adapter.subscribeLabels(onLabelChange);
+  // Leaving the page or the tab ends a label click's Undo window: it is
+  // handed to the worker now. Each does nothing with no click waiting.
+  if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('pagehide', commit);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') commit();
+  });
   if (adapter.serveStats) adapter.serveStats(stats);
   adapter.load().then(applyState);
   // A tab the worker opened for a job gets the job; every other tab gets null.
