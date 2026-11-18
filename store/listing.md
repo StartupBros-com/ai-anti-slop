@@ -13,8 +13,10 @@ the store added an `update_url` to `manifest.json` and a
 `_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.8.0,
-field by field. Field names and rules are from Google's developer documentation
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.9.0,
+field by field. 0.8.0 went to review on 2026-11-18 with the description below
+less its Run now sentence, which 0.9.0 adds, and with the summary that ended
+"at a capped daily pace" in place of "daily or all at once". Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.
@@ -44,7 +46,7 @@ Upload that zip under **Package**.
 changing either takes a new upload:
 
 - Name: `AI Anti-Slop – Hide AI spam accounts on X`
-- Summary: `Hides x.com posts by accounts on a self-updating AI-reply spam list, and can mute them on X at a capped daily pace. No X API.`
+- Summary: `Hides x.com posts by accounts on a self-updating AI-reply spam list, and can mute them on X, daily or all at once. No X API.`
 
 **Description** (plain text; the store shows line breaks but no formatting):
 
@@ -65,7 +67,7 @@ SETTINGS FILES
 - Import a settings file or a shared list. Import adds accounts and never removes any, shows what will change before it changes anything, and never turns muting on.
 
 MUTING (optional, off until you turn it on)
-- When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open.
+- When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open. Run now visits every account waiting at once, a few seconds apart, until none are left or you press Stop.
 - It skips accounts you follow and accounts in Always show. If an account it muted leaves the list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 

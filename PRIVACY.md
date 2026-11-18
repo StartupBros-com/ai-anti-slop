@@ -3,8 +3,8 @@
 AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to replies.
-This policy covers the extension and the userscript, version 0.8.0. Last
-updated 2026-11-17.
+This policy covers the extension and the userscript, version 0.9.0. Last
+updated 2026-11-18.
 
 ## In short
 
@@ -55,7 +55,11 @@ Sync does not copy it to other devices.
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
 the account being visited, the handle muting runs as, and the id of the tab it
 opened (`xsh:job`), plus the ids of tabs it opened for visits that are still open
-(`xsh:jobTabs`). Chrome clears session storage when the browser closes.
+(`xsh:jobTabs`). While a **Run now** is going, it keeps there the time the run
+started, the handle muting runs as and how many visits in a row did nothing
+(`xsh:run`). Chrome clears session
+storage when the browser closes and when the extension is reloaded or updated,
+which ends a run.
 
 The userscript stores only the list and your settings, in your userscript
 manager's storage. It does not mute and has no labels.
@@ -80,8 +84,8 @@ where it clicks X's own Mute menu item, and your muted-accounts page
 (`https://x.com/settings/muted/all`), which it reads to check earlier mutes. Your
 browser loads these pages with your x.com login, the same as if you opened them,
 so X receives the visits and the mutes as your activity. The extension sends
-nothing else to X. At a daily cap of 50 or 100, before a visit it asks your open
-tabs whether one of them is an x.com tab. It uses only each tab's id and whether
+nothing else to X. At a daily cap of 50 or 100, before a visit outside
+**Run now** it asks your open tabs whether one of them is an x.com tab. It uses only each tab's id and whether
 the browser has unloaded it; it does not read tab addresses or titles.
 
 A **Slop** label adds the account to **Also hide**; a **Not slop** label adds it

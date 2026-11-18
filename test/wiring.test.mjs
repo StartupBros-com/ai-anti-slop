@@ -88,7 +88,7 @@ function fakeChrome(store = {}, browser = newBrowser()) {
     session,
     alarmTable,
     tabs,
-    storage: { local: area(store, onChanged, 'local'), session: area(session, null, 'session'), onChanged },
+    storage: { local: area(store, onChanged, 'local'), session: area(session, onChanged, 'session'), onChanged },
     alarms: {
       get: async (name) => alarmTable[name],
       create: (name, info) => {
@@ -112,14 +112,16 @@ function fakeChrome(store = {}, browser = newBrowser()) {
 
 // A second worker may share the first one's local storage (`store`) and open
 // tabs (`browser`) with an empty session: what a reload or update looks like.
-function loadBackground(responder, store, browser) {
+// `timers` (from fakeTimers) replaces setTimeout and clearTimeout.
+function loadBackground(responder, store, browser, timers = null) {
   const chrome = fakeChrome(store, browser);
   const requests = [];
   const fetch = async (url, init) => {
     requests.push({ url, init });
     return responder(url);
   };
-  const ctx = vm.createContext({ chrome, fetch, AbortSignal, console, setTimeout, clearTimeout, URL });
+  const clock = timers || { setTimeout, clearTimeout };
+  const ctx = vm.createContext({ chrome, fetch, AbortSignal, console, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, URL });
   ctx.self = ctx;
   ctx.importScripts = (p) => {
     assert.equal(p, 'lib.js');
@@ -236,8 +238,8 @@ const ME = 'startupbros';
 const today = () => lib.utcDay(Date.now());
 
 // A worker with a stored list and the given settings, already installed.
-async function muteBackground({ handles = ['slop_a', 'slop_b'], settings = { muteEnabled: true, muteAccount: ME }, mutes = null } = {}) {
-  const bg = loadBackground(() => ok(handles.join('\n')));
+async function muteBackground({ handles = ['slop_a', 'slop_b'], settings = { muteEnabled: true, muteAccount: ME }, mutes = null, timers = null } = {}) {
+  const bg = loadBackground(() => ok(handles.join('\n')), undefined, undefined, timers);
   bg.chrome.store['xsh:list'] = { handles, fetchedAt: Date.now(), source: 's' };
   bg.chrome.store['xsh:settings'] = settings;
   if (mutes) bg.chrome.store['xsh:mutes'] = mutes;
@@ -858,7 +860,7 @@ test('popup: the bar stops at the cap, and a stop line from today hides while mu
   });
   await settle();
   assert.equal(over.document.getElementById('muteBar').getAttribute('value'), '25');
-  assert.equal(over.document.getElementById('muteToday').textContent, 'Today (UTC): 26 of 25 mutes, 30 of 50 visits');
+  assert.equal(over.document.getElementById('muteToday').textContent, 'Today (UTC): 26 mutes (over 25 a day), 30 of 50 visits');
   const off = loadPopup({
     'xsh:list': { handles: [], fetchedAt: Date.now(), source: 's' },
     'xsh:settings': { muteEnabled: false },
@@ -1418,7 +1420,7 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   assert.equal($('muteBar').getAttribute('max'), '100');
   assert.equal(
     $('capWhy').textContent,
-    'No setting goes above 100: hiding already covers this browser, and muting only adds the X apps. At 100 a day, muting the 249 accounts left takes 3 days.',
+    'No setting goes above 100: hiding already covers this browser, and muting only adds the X apps. At 100 a day, muting the 249 accounts left takes 3 days; Run now visits them all at once.',
   );
   // A boolean, not the element: a failed assert carrying a DOM node hangs the runner.
   assert.equal(Boolean($('capWhy').closest('details')), false, 'the cap note is in view, not inside a fold');
@@ -2155,4 +2157,389 @@ test('visit key: a job dropped because muting was turned off leaves no key', asy
   await settle();
   assert.equal('xsh:job' in bg.chrome.session, false, 'the job is gone');
   assert.equal('xsh:visit' in bg.chrome.store, false);
+});
+
+// ------------------------------------------------------------ Run now
+
+// Timers the test fires by hand, so a run's next step needs no real wait.
+function fakeTimers() {
+  const due = [];
+  return {
+    due,
+    setTimeout: (fn, ms) => {
+      due.push({ fn, ms });
+      return due.length;
+    },
+    clearTimeout: () => {},
+  };
+}
+
+// The day's number used up: 25 mutes, the next daily visit two minutes away.
+const capUsed = (handles = {}) => ({
+  ...lib.emptyMutes(),
+  handles,
+  days: { [today()]: { mutes: 25, unmutes: 0, visits: 30, stopped: null } },
+  nextAt: Date.now() + 120000,
+});
+
+// Hand the open job tab its job, then report what it found.
+async function answer(bg, result) {
+  const tab = lastTab(bg);
+  const job = await send(bg, { type: 'xsh:job' }, tab.id);
+  await send(bg, { type: 'xsh:job-result', result: { id: job.id, ...result } }, tab.id);
+  return job;
+}
+
+// The run's next step: its pause of a few seconds passes, then its timer fires.
+async function nextStep(bg, t) {
+  const timer = t.due.shift();
+  assert.ok(timer, 'the run set a timer for its next step');
+  assert.ok(timer.ms >= 2000 && timer.ms <= 5100, `a pause of a few seconds, got ${timer.ms} ms`);
+  due(bg);
+  timer.fn();
+  await settle();
+}
+
+const runOn = (bg) => reply(fromPopup(bg, { type: 'xsh:run', on: true }));
+
+test('background: Run now visits everything waiting past the daily number, unmutes first, a few seconds apart, with the checks, then ends', async () => {
+  const t = fakeTimers();
+  const handles = ['slop_a', 'slop_b', 'slop_c', 'slop_d', 'slop_e', 'slop_f', 'slop_g'];
+  const bg = await muteBackground({ handles, mutes: capUsed({ gone: mutedAs(ME) }), timers: t });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, [], 'the day is used up, so the daily pace visits nothing');
+
+  assert.deepEqual(await runOn(bg), { ok: true, waiting: 8 });
+  await settle();
+  assert.equal(bg.chrome.session['xsh:run'].account, ME);
+  assert.equal(lastTab(bg).url, 'https://x.com/gone');
+  assert.equal((await answer(bg, { status: 'unmuted' })).kind, 'unmute');
+  const gap = bg.chrome.store['xsh:mutes'].nextAt - Date.now();
+  assert.ok(gap > 1900 && gap <= 5000, `next visit a few seconds away, got ${gap} ms`);
+
+  const visited = [];
+  for (const h of handles.slice(0, 5)) {
+    await nextStep(bg, t);
+    visited.push(lastTab(bg).url);
+    await answer(bg, { status: 'muted' });
+  }
+  assert.deepEqual(visited, handles.slice(0, 5).map((h) => `https://x.com/${h}`));
+  // Five mutes since the last check: the muted list is read before any more.
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all');
+  await answer(bg, { status: 'checked', rows: ['slop_e', 'slop_d', 'slop_c', 'slop_b', 'slop_a'] });
+  for (const h of ['slop_f', 'slop_g']) {
+    await nextStep(bg, t);
+    assert.equal(lastTab(bg).url, `https://x.com/${h}`);
+    await answer(bg, { status: 'muted' });
+  }
+  // Nothing left to mute, two mutes not yet checked: one last check.
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all');
+  await answer(bg, { status: 'checked', rows: ['slop_g', 'slop_f', 'slop_e'] });
+  const tabs = bg.chrome.tabs.opened.length;
+  await nextStep(bg, t);
+  assert.equal(bg.chrome.tabs.opened.length, tabs, 'nothing left: no tab');
+  assert.equal('xsh:run' in bg.chrome.session, false, 'the run ended');
+  assert.equal(t.due.length, 0, 'and set no more timers');
+
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.deepEqual(m.days[today()], { mutes: 32, unmutes: 1, visits: 38, stopped: null });
+  assert.equal(m.handles.gone.status, 'unmuted');
+  for (const h of handles) assert.equal(m.handles[h].confirmed, true, h);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, tabs, 'after the run, the daily number holds again');
+});
+
+test('background: Run now is refused, and opens nothing, while muting is off, after the day has stopped, or with nothing waiting', async () => {
+  const stopped = { ...capUsed(), days: { [today()]: { mutes: 3, visits: 4, stopped: '@slop_x: refused' } } };
+  const cases = [
+    [{ settings: { muteEnabled: false } }, 'muting is off'],
+    [{ mutes: stopped }, 'stopped for today: @slop_x: refused'],
+    [{ handles: ['slop_a'], mutes: capUsed({ slop_a: mutedAs(ME) }) }, 'nothing is waiting'],
+  ];
+  for (const [opts, reason] of cases) {
+    const bg = await muteBackground(opts);
+    assert.deepEqual(await runOn(bg), { ok: false, reason });
+    await settle();
+    assert.deepEqual(bg.chrome.tabs.opened, [], reason);
+    assert.equal('xsh:run' in bg.chrome.session, false, reason);
+  }
+});
+
+test('background: only the popup can start or stop a run; a tab or another page gets no answer', async () => {
+  const bg = await muteBackground({ mutes: capUsed() });
+  assert.equal(await send(bg, { type: 'xsh:run', on: true }, 7), undefined);
+  for (const sender of [
+    { id: EXT_ID, tab: { id: 7 }, url: 'https://x.com/slop_a' },
+    { id: EXT_ID, url: 'chrome-extension://another_extension/src/popup.html' },
+    { id: EXT_ID },
+  ]) {
+    assert.equal(await fromPopup(bg, { type: 'xsh:run', on: true }, sender), undefined, JSON.stringify(sender));
+  }
+  await settle();
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+  assert.equal('xsh:run' in bg.chrome.session, false);
+});
+
+test('background: Stop ends the run and puts the daily pace back', async () => {
+  const t = fakeTimers();
+  const bg = await muteBackground({ mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  // Found muted already: no check of the muted list is owed after it.
+  await answer(bg, { status: 'already' });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:run', on: false })), { ok: true });
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const gap = bg.chrome.store['xsh:mutes'].nextAt - Date.now();
+  assert.ok(gap > 50000, `next visit back to minutes away, got ${gap} ms`);
+  await nextStep(bg, t);
+  assert.equal(bg.chrome.tabs.opened.length, 1, 'the timer left behind opens nothing: the day is used up');
+});
+
+test('background: anything that stops the day ends the run', async () => {
+  const t = fakeTimers();
+  const bg = await muteBackground({ mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  await answer(bg, { status: 'refused', reason: 'X showed a warning' });
+  assert.match(bg.chrome.store['xsh:mutes'].days[today()].stopped, /^@slop_a: refused/);
+  await nextStep(bg, t);
+  assert.equal(bg.chrome.tabs.opened.length, 1);
+  assert.equal('xsh:run' in bg.chrome.session, false);
+});
+
+test('background: in a run, an account that fails twice is left alone and the run still ends', async () => {
+  const t = fakeTimers();
+  const bg = await muteBackground({ handles: ['slop_a'], mutes: capUsed({ gone: mutedAs(ME) }), timers: t });
+  await runOn(bg);
+  await settle();
+  await answer(bg, { status: 'error', reason: 'no menu' });
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/gone', 'one more try at the unmute');
+  await answer(bg, { status: 'error', reason: 'no menu' });
+  await nextStep(bg, t);
+  await answer(bg, { status: 'error', reason: 'no menu' });
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_a', 'one more try at the mute');
+  await answer(bg, { status: 'error', reason: 'no menu' });
+  await nextStep(bg, t);
+  assert.deepEqual(
+    bg.chrome.tabs.opened.map((tab) => tab.url),
+    ['gone', 'gone', 'slop_a', 'slop_a'].map((h) => `https://x.com/${h}`),
+  );
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.handles.slop_a.status, 'failed');
+  assert.equal(m.handles.gone.status, 'muted', 'an unmute that failed twice leaves the account muted');
+  assert.equal(m.handles.gone.unmuteAttempts, 2);
+});
+
+test('background: turning muting off or muting as another account ends the run', async () => {
+  for (const next of [{ muteEnabled: false, muteAccount: null }, { muteEnabled: true, muteAccount: 'someone_else' }]) {
+    const bg = await muteBackground({ mutes: capUsed() });
+    await runOn(bg);
+    await settle();
+    assert.ok(bg.chrome.session['xsh:run']);
+    await bg.chrome.storage.local.set({ 'xsh:settings': next });
+    await settle();
+    assert.equal('xsh:run' in bg.chrome.session, false, JSON.stringify(next));
+  }
+});
+
+test('background: at 50 a day a run does not wait for an x.com tab, and never asks the open tabs', async () => {
+  const mutes = { ...capUsed(), days: { [today()]: { mutes: 50, unmutes: 0, visits: 60, stopped: null } } };
+  const bg = await muteBackground({ settings: { muteEnabled: true, muteAccount: ME, muteCap: 50 }, mutes });
+  const asked = bg.chrome.tabs.queries;
+  await runOn(bg);
+  await settle();
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_a');
+  assert.equal(bg.chrome.tabs.queries, asked);
+});
+
+test('background: a worker after an update or a browser restart has no run, so the daily number holds', async () => {
+  const t = fakeTimers();
+  const bg = await muteBackground({ mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  await answer(bg, { status: 'already' });
+  const next = loadBackground(() => ok('slop_a\nslop_b'), bg.chrome.store, bg.chrome.tabs.browser);
+  next.chrome.runtime.onStartup.fire();
+  await settle();
+  due(next);
+  await alarm(next);
+  assert.deepEqual(next.chrome.tabs.opened, []);
+});
+
+// A popup whose Run now button records what it sends and answers `answerWith`.
+function runPopup(store, answerWith = { ok: true }) {
+  const p = loadPopup(store);
+  p.sent = [];
+  p.chrome.runtime.sendMessage = async (m) => {
+    p.sent.push({ ...m }); // a copy made here: the page's objects are another realm's
+    return answerWith;
+  };
+  return p;
+}
+
+const popupStore = (mutes, settings = { muteEnabled: true, muteAccount: ME }) => ({
+  'xsh:list': { handles: ['slop_a', 'slop_b', 'slop_c'], fetchedAt: Date.now(), source: 's' },
+  'xsh:settings': settings,
+  'xsh:mutes': mutes,
+});
+
+test('popup: Run now names what is waiting and sends the start; during a run it reads Stop', async () => {
+  const p = runPopup(popupStore(capUsed({ gone: mutedAs(ME) })));
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  assert.equal($('runRow').hidden, false);
+  assert.equal($('runNow').textContent, 'Run now');
+  assert.equal(
+    $('runWhat').textContent,
+    'Mutes and unmutes the 4 accounts waiting now, a few seconds apart, past your number a day, until none are left or you press Stop. That is more scripted clicking at once than any daily number.',
+  );
+  assert.match($('muteToday').textContent, / · next visit in 2 min$/);
+  $('runNow').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.deepEqual(p.sent, [{ type: 'xsh:run', on: true }]);
+  assert.equal($('runMsg').hidden, true);
+
+  // The worker stores the run; the open popup draws it without being reopened.
+  await p.chrome.storage.session.set({ 'xsh:run': { startedAt: Date.now(), account: ME } });
+  await settle();
+  assert.equal($('runNow').textContent, 'Stop');
+  assert.match($('runWhat').textContent, /^Running: 4 accounts left, a few seconds apart\./);
+  assert.doesNotMatch($('muteToday').textContent, /next visit/);
+  $('runNow').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.deepEqual(p.sent.at(-1), { type: 'xsh:run', on: false });
+});
+
+test('popup: Run now is not offered while muting is off, after the day has stopped, or with nothing waiting', async () => {
+  const stopped = { ...capUsed(), days: { [today()]: { mutes: 3, visits: 4, stopped: '@slop_x: refused' } } };
+  const settled = capUsed({ slop_a: mutedAs(ME), slop_b: mutedAs(ME), slop_c: mutedAs(ME) });
+  for (const store of [popupStore(capUsed(), { muteEnabled: false }), popupStore(stopped), popupStore(settled)]) {
+    const p = runPopup(store);
+    await settle();
+    assert.equal(p.document.getElementById('runRow').hidden, true, JSON.stringify(store['xsh:mutes'].days));
+  }
+});
+
+test('popup: a refused Run now says why', async () => {
+  const p = runPopup(popupStore(capUsed()), { ok: false, reason: 'nothing is waiting' });
+  await settle();
+  p.document.getElementById('runNow').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.equal(p.document.getElementById('runMsg').hidden, false);
+  assert.equal(p.document.getElementById('runMsg').textContent, 'Not started: nothing is waiting');
+});
+
+test('popup: past the daily number the today line gives counts, not "of", and redraws as visits land', async () => {
+  const day = today();
+  const p = runPopup(popupStore({ ...lib.emptyMutes(), days: { [day]: { mutes: 60, unmutes: 2, visits: 70 } } }));
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  assert.equal($('muteToday').textContent, 'Today (UTC): 62 (60 mutes, 2 unmutes; over 25 a day), 70 visits');
+  assert.equal($('muteBar').getAttribute('value'), '25');
+  await p.chrome.storage.local.set({ 'xsh:mutes': { ...lib.emptyMutes(), days: { [day]: { mutes: 61, unmutes: 2, visits: 71 } } } });
+  await settle();
+  assert.equal($('muteToday').textContent, 'Today (UTC): 63 (61 mutes, 2 unmutes; over 25 a day), 71 visits');
+});
+
+test('background: a visit reporting a status it does not know counts as a failed try, so a run still ends', async () => {
+  assert.deepEqual({ ...lib.jobResult('mute', { status: 'unmuted' }) }, { status: 'error', reason: 'unknown result: unmuted' });
+  assert.deepEqual({ ...lib.jobResult('unmute', {}) }, { status: 'error', reason: 'unknown result: undefined' });
+  assert.deepEqual({ ...lib.jobResult('mute', { status: 'already' }) }, { status: 'already' });
+  const t = fakeTimers();
+  const bg = await muteBackground({ handles: ['slop_a'], mutes: capUsed({ gone: mutedAs(ME) }), timers: t });
+  await runOn(bg);
+  await settle();
+  for (const status of ['already', 'muted', 'weird', undefined]) {
+    await answer(bg, { status });
+    await nextStep(bg, t);
+  }
+  assert.deepEqual(
+    bg.chrome.tabs.opened.map((tab) => tab.url),
+    ['gone', 'gone', 'slop_a', 'slop_a'].map((h) => 'https://x.com/' + h),
+  );
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.handles.gone.unmuteAttempts, 2);
+  assert.equal(m.handles.slop_a.status, 'failed');
+});
+
+test('popup: a visit landing, or pressing Run now, leaves what the user typed but has not saved', async () => {
+  const p = runPopup(popupStore(capUsed()));
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  $('allow').value = 'typed_not_saved';
+  $('extra').value = 'also_typed';
+  await p.chrome.storage.local.set({ 'xsh:mutes': { ...capUsed(), days: { [today()]: { mutes: 26, unmutes: 0, visits: 31 } } } });
+  await settle();
+  assert.equal($('muteToday').textContent.startsWith('Today (UTC): 26 mutes (over 25 a day)'), true);
+  $('runNow').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.equal($('allow').value, 'typed_not_saved');
+  assert.equal($('extra').value, 'also_typed');
+});
+
+test('background: in a run, five visits in a row that do nothing stop muting for the day before any account is given up on', async () => {
+  const t = fakeTimers();
+  const handles = ['slop_a', 'slop_b', 'slop_c', 'slop_d', 'slop_e', 'slop_f'];
+  const bg = await muteBackground({ handles, mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  const answers = [
+    { status: 'error', reason: 'no answer from the tab in 90 s' },
+    { status: 'no-post', reason: 'no post by the account on its profile' },
+    { status: 'error', reason: 'the ⋯ menu did not open' },
+    { status: 'no-post', reason: 'no post by the account on its profile' },
+    { status: 'error', reason: 'no answer from the tab in 90 s' },
+  ];
+  for (const [i, result] of answers.entries()) {
+    await answer(bg, result);
+    if (i < answers.length - 1) {
+      assert.equal(bg.chrome.session['xsh:run'].misses, i + 1);
+      await nextStep(bg, t);
+    }
+  }
+  await settle();
+  assert.equal('xsh:run' in bg.chrome.session, false, 'the run ended');
+  assert.equal(t.due.length, 0, 'and set no timer for a next step');
+  assert.deepEqual(
+    bg.chrome.tabs.opened.map((tab) => tab.url),
+    handles.slice(0, 5).map((h) => `https://x.com/${h}`),
+  );
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.days[today()].stopped, 'Run now: 5 visits in a row did nothing, the last @slop_e: error (no answer from the tab in 90 s)');
+  for (const h of handles.slice(0, 5)) {
+    assert.notEqual(m.handles[h].status, 'failed', `@${h} keeps its second try`);
+    assert.equal(lib.muteCandidates(handles, { muteEnabled: true, muteAccount: ME }, m).includes(h), true);
+  }
+  due(bg);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, 5, 'the daily pace visits nothing either, today');
+});
+
+test('background: in a run, a visit that does something starts the count of visits that did nothing again', async () => {
+  const t = fakeTimers();
+  const handles = ['m1', 'm2', 'm3', 'm4', 'm5', 'm6', 'm7', 'm8', 'm9'];
+  const bg = await muteBackground({ handles, mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  const err = { status: 'error', reason: 'no menu' };
+  for (const result of [err, err, err, err, { status: 'muted' }, err, err, err, err]) {
+    await answer(bg, result);
+    await nextStep(bg, t);
+  }
+  assert.equal(bg.chrome.session['xsh:run'].misses, 4, 'four since the mute');
+  assert.equal(bg.chrome.tabs.opened.length, 10);
+  assert.equal(lastTab(bg).url, 'https://x.com/m1', 'a second try once every account had one');
+  await answer(bg, err);
+  await settle();
+  assert.equal('xsh:run' in bg.chrome.session, false);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.match(m.days[today()].stopped, /^Run now: 5 visits in a row did nothing, the last @m1: error/);
+  assert.equal(m.handles.m1.status, 'failed');
+  assert.equal(m.handles.m5.status, 'muted');
 });

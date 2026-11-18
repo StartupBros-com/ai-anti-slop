@@ -2,7 +2,7 @@
 // @name         x-slop-hide
 // @name:en      AI Anti-Slop
 // @namespace    https://github.com/StartupBros-com/x-slop-hide
-// @version      0.8.0
+// @version      0.9.0
 // @description  Hides x.com posts by accounts on a self-updating AI-reply spam list. Hides only; muting is in the browser extension.
 // @license      MIT
 // @homepageURL  https://github.com/StartupBros-com/ai-anti-slop
@@ -65,6 +65,16 @@
     // Minutes between visits, picked at random in this range. The alarm that
     // drives muting fires once a minute (the floor at Chrome 116).
     muteGapMinutes: [1, 3],
+    // During Run now, milliseconds between one visit's tab closing and the
+    // next opening, picked at random in this range. A run skips the daily
+    // caps and the gap above, not the checks or the reasons to stop the day.
+    muteRunGapMs: [2000, 5000],
+    // Visits in a row, inside a run, that end in an error or find no post
+    // before muting stops for the day. X unreachable, or pages X will not
+    // serve, would otherwise spend every account's tries in one sitting; a run
+    // tries each account once before any second try, so this many leaves
+    // none of them given up on.
+    muteRunMisses: 5,
     // A mute tab still open after this long is closed and counted as a failure.
     muteTabTimeoutMs: 90000,
     // Mutes made since the last check of settings/muted/all. A background tab
@@ -89,6 +99,11 @@
     // How many labels are saved; each label is its own key, LABEL_PREFIX + post id.
     labelCount: 'xsh:labelCount',
   });
+
+  // chrome.storage.session: a Run now in progress, { startedAt, account }.
+  // Session storage empties when the browser closes and when the extension is
+  // reloaded or updated, which ends the run.
+  const RUN_KEY = 'xsh:run';
 
   const LABEL_PREFIX = 'xsh:label:';
   const LABELS = Object.freeze(['slop', 'not_slop']);
@@ -504,6 +519,33 @@
       out.push(h);
     }
     return out.sort((a, b) => (entryOf(r, a).at || 0) - (entryOf(r, b).at || 0) || (a < b ? -1 : 1));
+  }
+
+  // The outcomes a visit's page can report, by job kind. Any other status
+  // counts as an error, one of the account's muteMaxAttempts, so no reply can
+  // keep an account waiting for ever; Run now has no visit cap to bound that.
+  const JOB_STATUSES = Object.freeze({
+    mute: Object.freeze(['muted', 'already', 'followed', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
+    unmute: Object.freeze(['unmuted', 'not-muted', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
+  });
+  function jobResult(kind, result) {
+    const r = result || {};
+    const known = JOB_STATUSES[kind];
+    if (!known || known.includes(r.status)) return r;
+    return { status: 'error', reason: `unknown result: ${String(r.status).slice(0, 40)}` };
+  }
+
+  // Whether a visit's result, already through jobResult, is a miss for
+  // muteRunMisses: nothing clicked and nothing learned about the account.
+  function runMissed(result) {
+    return !!result && (result.status === 'error' || result.status === 'no-post');
+  }
+
+  // How many accounts Run now would visit: every unmute and mute waiting.
+  // Each visit settles its account, counts one of its muteMaxAttempts, or
+  // stops the day, so a run over these ends.
+  function runWaiting(listHandles, settings, rec) {
+    return unmuteCandidates(listHandles, settings, rec).length + muteCandidates(listHandles, settings, rec).length;
   }
 
   // Mutes recorded before 0.8.0 do not say which account made them. They get
@@ -1031,6 +1073,10 @@
     muteEligible,
     muteCandidates,
     unmuteCandidates,
+    runWaiting,
+    RUN_KEY,
+    jobResult,
+    runMissed,
     stampAccount,
     muteCap,
     capNeedsXOpen,

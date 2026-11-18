@@ -255,6 +255,35 @@ made-up account, with no x.com tab open. All 47 checks passed:
   popup's **Export or import** link, under **Your accounts**, opened the page
   in a new tab.
 
+## Run now in Chromium, without X
+
+On 2026-11-18 the unpacked 0.9.0 ran in headless Chromium 157 (through
+Playwright) with x.com and clankwall.vogel.dev resolved to nowhere, so no
+request reached X and every visit tab was an error page whose script never
+answered. The real background worker and popup ran; storage was seeded with 10
+listed accounts and a day already at 25 of 25 mutes.
+
+- The popup offered **Run now** for the 10 accounts waiting. Clicking it stored
+  the run in `chrome.storage.session` and opened a visit tab for the first
+  account 60 ms later; the open popup switched to **Stop** and showed the new
+  visit in today's line without being reopened.
+- Closing that tab recorded the account as a failed try ("the tab was closed
+  before it finished"), and the next visit started 4.84 s later, from the run's
+  own timer rather than the once-a-minute alarm.
+- **Stop** removed the run. Closing the visit tab still open then opened
+  nothing in the next 8 s, and the next visit was set 148 s away, back at the
+  daily pace.
+- Writing and removing the run in session storage from the worker's side
+  turned the open popup's button to **Stop** and back.
+
+A second run the same day, with 6 accounts waiting, closed nothing by hand, so
+each visit waited out the worker's 90 s limit. Visits started 92.2 to 93.3 s
+apart. After the fifth, the run stopped muting for the day with "Run now: 5
+visits in a row did nothing, the last @listed_4: error (no answer from the tab
+in 90 s)", 461 s after the click. Each of the 5 accounts it visited had one
+failed try and none was given up on; the sixth was not visited, and nothing
+opened in the next 10 s. The open popup showed the stop and hid **Run now**.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -278,7 +307,11 @@ these accounts** on real x.com, more than two days in a row, how X responds to
 this pace over weeks, and X in other languages. For unmuting (0.8.0): an
 unmute started by the extension's own worker in its visit tab (the run above
 used a stand-in for the worker), and whether X ever asks to confirm an unmute
-(it did not, once). For export and import: Brave
+(it did not, once). For Run now (0.9.0): any run on real x.com (it has run
+only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
+where X could not be reached), so how X responds to visits a few seconds apart,
+and how long a run of hundreds of accounts takes, are not known.
+For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.
