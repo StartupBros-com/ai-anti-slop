@@ -434,6 +434,23 @@ icons shown and then hidden by a style rule, 300 ms apart.
 - x.com's sidebar showed who was logged in at both widths. No post had two
   icons, no promoted post came up, and there were no exceptions.
 
+Before the 0.9.0 release, the same scripts at the release's code (c369ef1) and
+the same stand-in ran in the same browser and account at 1,024 pixels wide, 8
+screens a page, on more themes and pages. No post was clicked; the theme was
+changed in X's display settings and set back to Lights out afterwards.
+
+- `x.com/home` in X's Default (light) theme: 9 of 9 posts got the icon, 8.1
+  pixels before Grok, in X's grey, #536471 on #ffffff (6.12:1), the same as
+  Grok's.
+- `x.com/home` in Lights out: 10 of 10, 3 of them reposts, before Grok, in
+  #71767b on #000000 (4.58:1), the same as Grok's.
+- A list's timeline, the first under Your Lists: 11 of 11, 6 of them reposts,
+  before Grok. In at least one read, one name was cut short by the icon.
+- The bookmarks page: 9 of 9, before Grok.
+- On every page X's icons moved 0 pixels and no post's height changed. No
+  promoted post came up, and there were no exceptions. The build of X read
+  offered no Dim theme, only Default and Lights out.
+
 ## Popup layout in Chromium
 
 On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
@@ -480,6 +497,13 @@ The store screenshots were then made again with `scripts/store-screenshots.mjs`,
 which runs the unpacked extension with its worker against the real list (787
 accounts), and the popup in them was looked at by eye.
 
+Before the 0.9.0 release the same popup test ran on the unzipped release folder
+in 11 states, each in the light and dark themes, and in 6 forced-colours runs.
+Every check passed in all of them except one, in each of the 22 theme runs: the
+Refresh list button, an icon with no border since the popup was made shorter,
+fails the test's rule that a control's edge contrasts 3:1 with the popup,
+because it has no edge. Its icon contrasts 7.48:1 in light and 7.7:1 in dark.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -509,12 +533,13 @@ where X could not be reached), so how X responds to visits a few seconds apart,
 and how long a run of hundreds of accounts takes, are not known.
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
-X's light and dim themes, a theme switched with a thread open (the icon keeps
+X's Dim theme (the build read before the release offered none), a theme
+switched with a thread open (the icon keeps
 the grey it read when placed, as the one in the row did), X in other languages
 (Grok's button is found by its shape, not its name), widths other than 1,024
 and 420 pixels, how X nests More when it draws no Grok (only where the icon
 landed was read), the line of its own under a post without More, promoted
-posts, the notifications, lists and bookmarks pages, a profile's posts by
+posts, the notifications page, a profile's posts by
 other accounts, and x.com drawing its sidebar after the posts (it was there
 first in every run above). For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
