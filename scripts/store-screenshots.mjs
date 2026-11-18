@@ -359,9 +359,7 @@ try {
   // start of the muting section, which the composition fades out.
   const cut = await popup.evaluate(() => Math.ceil(document.querySelector('section.muting').getBoundingClientRect().top + 64));
   const top = await popup.screenshot({ clip: { x: 0, y: 0, width: 400, height: cut } });
-  await popup.evaluate(() => {
-    document.querySelector('details.more').open = true;
-  });
+  // How muting works stays folded, as the popup opens.
   const muting = await shootPart('section.muting');
 
   // ---- 4. labels (on by default), with hiding paused so the labelled reply
@@ -402,7 +400,7 @@ try {
   );
   await shoot(
     'screenshot-2-popup.png',
-    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. The list refreshes every 6 hours, or when you click Refresh list now.', 'Example thread with made-up accounts.', panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
+    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. The list refreshes every 6 hours, or when you click the arrow.', 'Example thread with made-up accounts.', panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
     1280,
     800,
   );

@@ -733,7 +733,7 @@ test('popup: one row per bot, showing what applies now, without writing anything
   assert.equal(p.document.getElementById('bot-grok').hasAttribute('aria-describedby'), false);
   assert.equal(p.document.getElementById('bot-grok').disabled, false);
   assert.equal(p.document.getElementById('mentions').checked, false);
-  assert.equal(p.document.getElementById('botsSum').textContent, 'Show 5 · Hide here 1 · Mute on X 0', 'the folded section counts its rows');
+  assert.equal(p.document.getElementById('botsSum').textContent, 'Show 5 · Hide 1 · Mute 0', 'the folded section counts its rows');
   assert.equal(p.document.getElementById('listsSum').textContent, 'Always show 2 · Also hide 0');
   assert.deepEqual(p.chrome.store['xsh:settings'], settings, 'rendering saves nothing');
 });
@@ -757,7 +757,7 @@ test("popup: changing a bot's row saves only that bot, keeping other settings an
   });
   assert.equal(rowMode(p, 'grok'), 'hide', 'a saved row wins over showGrok');
   assert.equal(rowMode(p, 'askperplexity'), 'mute');
-  assert.equal(p.document.getElementById('botsSum').textContent, 'Show 3 · Hide here 2 · Mute on X 1');
+  assert.equal(p.document.getElementById('botsSum').textContent, 'Show 3 · Hide 2 · Mute 1');
 });
 
 test('popup: Save writes both boxes in one write; the tag box saves hideBotMentions', async () => {
@@ -791,6 +791,10 @@ test('popup: muting binds to the account logged in on this tab, and refuses with
   const box = p.document.getElementById('mute');
   assert.equal(box.checked, false);
   assert.equal(p.document.getElementById('muteHint').hidden, false, 'off: the Always-show hint');
+  // The hint is one click away, in How muting works, not in a fold inside it.
+  const hintFold = p.document.getElementById('muteHint').closest('details');
+  assert.equal(Boolean(hintFold && hintFold.matches('details.more')), true, 'the hint is in How muting works');
+  assert.equal(Boolean(hintFold.parentElement.closest('details')), false, 'that fold is not inside another');
   assert.equal(p.document.getElementById('muteOn').hidden, true);
   // No x.com tab: stays off and says why.
   box.checked = true;
@@ -871,6 +875,9 @@ test('popup: the bar stops at the cap, and a stop line from today hides while mu
   assert.equal(off.document.getElementById('muteNext').hidden, true);
   assert.equal(off.document.getElementById('muteOn').hidden, true);
   assert.equal(off.document.getElementById('muteHint').hidden, false);
+  // The totals sit in How muting works, outside muteOn: they hide on their own.
+  assert.equal(off.document.getElementById('muteTotals').hidden, true);
+  assert.equal(over.document.getElementById('muteTotals').hidden, false);
 });
 
 test('popup and manifest: every icon file they name exists', () => {
@@ -1015,17 +1022,22 @@ test('popup: Refresh list now stays enabled (aria-disabled, not disabled) while 
     });
   };
   const btn = p.document.getElementById('refresh');
+  // An icon button: named by aria-label and title, its drawing kept through a refresh.
+  const name = () => [btn.getAttribute('aria-label'), btn.getAttribute('title')];
+  assert.deepEqual(name(), ['Refresh list now', 'Refresh list now']);
+  assert.equal(btn.querySelectorAll('svg').length, 1);
   btn.dispatchEvent(new p.window.Event('click'));
   btn.dispatchEvent(new p.window.Event('click'));
   await settle();
   assert.deepEqual(sent, ['xsh:refresh']);
   assert.equal(btn.getAttribute('aria-disabled'), 'true');
   assert.equal(btn.disabled, false, 'a disabled button would drop keyboard focus');
-  assert.equal(btn.textContent, 'Refreshing…');
+  assert.deepEqual(name(), ['Refreshing…', 'Refreshing…']);
   release();
   await settle();
   assert.equal(btn.hasAttribute('aria-disabled'), false);
-  assert.equal(btn.textContent, 'Refresh list now');
+  assert.deepEqual(name(), ['Refresh list now', 'Refresh list now']);
+  assert.equal(btn.querySelectorAll('svg').length, 1, 'the icon is still drawn after a refresh');
   btn.dispatchEvent(new p.window.Event('click'));
   await settle();
   assert.deepEqual(sent, ['xsh:refresh', 'xsh:refresh'], 'it can refresh again once the first is done');
@@ -1428,13 +1440,32 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
     $('capWhy').textContent,
     'No setting goes above 100: hiding already covers this browser, and muting only adds the X apps. At 100 a day, muting the 249 accounts left takes 3 days; Run now visits them all at once.',
   );
-  // A boolean, not the element: a failed assert carrying a DOM node hangs the runner.
-  assert.equal(Boolean($('capWhy').closest('details')), false, 'the cap note is in view, not inside a fold');
+  // Why none goes higher is one click away, in How muting works, a fold of
+  // its own in the muting section. A boolean, not the element: a failed
+  // assert carrying a DOM node hangs the runner.
+  const fold = $('capWhy').closest('details');
+  assert.equal(Boolean(fold && fold.matches('details.more')), true, 'the cap note is in How muting works');
+  assert.equal(fold.querySelector(':scope > summary').textContent, 'How muting works');
+  assert.equal(Boolean(fold.parentElement.closest('details')), false, 'that fold is not inside another');
+  assert.equal(Boolean(fold.closest('section.muting')), true);
+  // What a number above 25 changes is said beside the choice, in view, and
+  // the select is described by it.
+  assert.equal($('capNote').hidden, false);
+  assert.equal($('capNote').textContent, 'Runs only while x.com is open in a tab.');
+  assert.equal(Boolean($('capNote').closest('details')), false, 'the x.com note is not folded');
+  assert.equal(Boolean($('capNote').closest('.caprow .caplabel')), true, 'the note is under Mutes a day, beside the select');
+  assert.equal($('muteCap').getAttribute('aria-describedby'), 'capNote');
   choose(p, 'muteCap', '50');
   await settle();
   assert.deepEqual(p.chrome.store['xsh:settings'], { muteEnabled: true, muteAccount: 'startupbros', muteCap: 50 });
   assert.equal(choice(p, 'muteCap'), '50');
   assert.equal($('muteToday').textContent, 'Today (UTC): 2 of 50 mutes, 5 of 100 visits');
+  assert.equal($('capNote').hidden, false);
+  assert.equal($('capNote').textContent, 'Runs only while x.com is open in a tab.');
+  choose(p, 'muteCap', '25');
+  await settle();
+  assert.equal($('capNote').hidden, true, '25 runs whenever the browser is open: no note');
+  assert.equal($('capNote').textContent, '');
   // A stored number that is not offered reads as 25; with nothing left to mute, one sentence.
   const odd = loadPopup({
     'xsh:list': { handles: [], fetchedAt: Date.now(), source: 's' },
@@ -2406,10 +2437,12 @@ test('popup: Run now names what is waiting and sends the start; during a run it 
   await settle();
   const $ = (id) => p.document.getElementById(id);
   assert.equal($('runRow').hidden, false);
+  assert.equal($('runWhat').hidden, false, 'the caution shows with the button');
+  assert.equal(Boolean($('runWhat').closest('details')), false, 'and is not folded');
   assert.equal($('runNow').textContent, 'Run now');
   assert.equal(
     $('runWhat').textContent,
-    'Mutes and unmutes the 4 accounts waiting now, a few seconds apart, past your number a day, until none are left or you press Stop. That is more scripted clicking at once than any daily number.',
+    'Mutes and unmutes the 4 accounts waiting now, past your number a day. That is more scripted clicking at once than any daily number.',
   );
   assert.match($('muteToday').textContent, / · next visit in 2 min$/);
   $('runNow').dispatchEvent(new p.window.Event('click'));
@@ -2435,6 +2468,7 @@ test('popup: Run now is not offered while muting is off, after the day has stopp
     const p = runPopup(store);
     await settle();
     assert.equal(p.document.getElementById('runRow').hidden, true, JSON.stringify(store['xsh:mutes'].days));
+    assert.equal(p.document.getElementById('runWhat').hidden, true, 'the caution hides with the button');
   }
 });
 

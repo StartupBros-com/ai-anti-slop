@@ -151,9 +151,9 @@ whenever the tab comes back into view. The userscript does not mute.
 | Show everything for a while | Tick **Pause hiding** | **Pause / resume hiding** |
 | Always see an account | Under **Your accounts**, add its handle to **Always show these accounts**, then click **Save** | **Edit always-show list** |
 | Hide an account that is not on the list | Under **Your accounts**, add its handle to **Also hide these accounts, and mute them when muting is on**, then click **Save** | **Edit extra accounts to hide** |
-| Show, hide or mute an answer bot | Pick **Show**, **Hide here** or **Mute on X** in its row under **Bots that answer when tagged** (see [Bots](#bots)) | **Show / hide @grok**, or **Show or hide a bot** for any of the six; there is no Mute |
-| Hide posts that tag a bot | Under **Bots that answer when tagged**, tick **Also hide posts that tag a bot set to Hide or Mute** | **Hide / show posts that tag a hidden bot** |
-| Fetch the list now | **Refresh list now** | **Refresh list now** |
+| Show, hide or mute an answer bot | Pick **Show**, **Hide here** or **Mute on X** in its row under **Bots like @grok** (see [Bots](#bots)) | **Show / hide @grok**, or **Show or hide a bot** for any of the six; there is no Mute |
+| Hide posts that tag a bot | Under **Bots like @grok**, tick **Also hide posts that tag a bot set to Hide or Mute** | **Hide / show posts that tag a hidden bot** |
+| Fetch the list now | The circular arrow beside the list's count (**Refresh list now**) | **Refresh list now** |
 | Mute listed accounts on your X account | Tick **Mute listed accounts on X** (see [Muting](#muting)) | Not available |
 | Mute more accounts a day | Pick 50 or 100 under **Mutes a day** (see [How many a day](#how-many-a-day)) | Not available |
 | Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
@@ -161,10 +161,12 @@ whenever the tab comes back into view. The userscript does not mute.
 | Back up or move your settings | Under **Your accounts**, click **Export or import**, then **Export settings**; import the file on the same page (see [Export and import](#export-and-import)) | Not available |
 | Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export Also hide as a list**, or pick their file under **Import** | Not available |
 
-**Bots that answer when tagged**, **Your accounts** and **Label replies** start
-folded; click a heading to open it. A folded heading shows its counts, such as
-"Show 5 · Hide here 1 · Mute on X 0", "Always show 2 · Also hide 0" or "On ·
-12 saved".
+**Bots like @grok**, **Your accounts** and **Label replies** start folded;
+click a heading to open it. A folded heading shows its counts on the same line,
+such as "Show 5 · Hide 1 · Mute 0", "Always show 2 · Also hide 0" or "On · 12
+saved". **How muting works**, under the muting switch, folds the same way and
+holds what muting does in detail, why no number goes above 100, and the totals
+so far.
 
 **Save** saves both boxes at once. On an x.com tab, the popup opens with the
 count of what it hid there, "N posts hidden on this tab", and under it "From M
@@ -358,8 +360,10 @@ Under **Mutes a day** the popup offers 25, 50 and 100.
 - No setting goes above 100, and a stored value other than 25, 50 or 100 counts
   as 25. Hiding already covers this browser, so muting only adds the X apps;
   at 100 a day, the 773 accounts listed on 2026-11-08 take 8 days. The popup
-  shows that figure for the accounts it has left to mute. **Run now** visits
-  them without waiting for the next day.
+  shows that figure, under **How muting works**, for the accounts it has left
+  to mute. **Run now** visits them without waiting for the next day.
+- At 50 or 100, **Mutes a day** has a line under it: "Runs only while x.com
+  is open in a tab."
 
 A lower number means less scripted clicking on your account each day. No
 number makes it allowed: X's rules forbid scripting the X website at any rate
@@ -432,8 +436,9 @@ lists each reason.
 
 ### What it records
 
-The popup shows today's counts and the totals in three lines, with a bar
-between the first two that fills toward the day's number of mutes (25 here):
+The popup shows who muting runs as and today's counts, with a bar between them
+that fills toward the day's number of mutes (25 here). The third line, the
+totals so far, is under **How muting works**:
 
 ```
 Muting as @you
@@ -679,7 +684,8 @@ after the colon says why the update was refused:
 | `feed larger than 1000000 bytes`, `too many handles`, `feed is mostly not handles (N invalid lines)` | The response does not look like a handle list. |
 | `empty list`, `list shrank from X to Y` | The new list was empty, or under half the size of the stored one. |
 
-Click **Refresh list now** to try again. Otherwise the extension tries again at
+Click the circular arrow beside the list's count (**Refresh list now**) to try
+again. Otherwise the extension tries again at
 its next 6-hourly refresh, or at browser start if one is due. The userscript
 stores the reason too but has no popup to show it in; while an x.com tab is
 open, it retries at most every 30 minutes until a fetch works.
