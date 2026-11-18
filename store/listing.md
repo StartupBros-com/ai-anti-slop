@@ -1,6 +1,19 @@
 # Chrome Web Store listing
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.7.1,
+The live listing is
+<https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha>
+(item id `apchbmongdogokfagedphbkempkhccha`). AI Anti-Slop 0.7.1 passed review
+and was published automatically on 2026-11-17. That day the live page showed
+version 0.7.1, the description below word for word except for one line that
+0.8.0 changes (0.7.1's muting section said "It never blocks, never unmutes,
+and does not use the X API."), the category Social
+Networking, and the three data types ticked under **Data usage**. The package
+it served was byte for byte the v0.7.1 release's extension files, except that
+the store added an `update_url` to `manifest.json` and a
+`_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
+`README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
+
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.8.0,
 field by field. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
@@ -36,10 +49,10 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). It hides only accounts on that list or on your own lists; a reply by any other account stays, however it was written. The list refreshes every 6 hours. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity.
+AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
-- A post is hidden when its author is on the list or in your Also hide box. Quotes and mentions of a listed account stay visible.
+- A post is hidden when its author is on the list, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
 - On an x.com tab, the popup counts what that tab hid. Pause hiding shows every post again.
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
@@ -53,7 +66,7 @@ SETTINGS FILES
 
 MUTING (optional, off until you turn it on)
 - When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open.
-- It skips accounts you follow and accounts in Always show. It never blocks, never unmutes, and does not use the X API.
+- It skips accounts you follow and accounts in Always show. If an account it muted leaves the list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
@@ -69,8 +82,9 @@ The MUTING paragraph is the one to cut, with the muting UI, if a hide-only
 store build is ever made. It has no such build today: the store zip is the
 same extension as the GitHub release.
 
-**Category:** Social Media & Networking ("extensions designed to enhance
-social media platforms", in Google's category list).
+**Category:** Social Networking, as the dashboard and the live listing name it.
+Google's category list calls it Social Media & Networking ("extensions designed
+to enhance social media platforms").
 
 **Language:** English.
 
@@ -116,7 +130,9 @@ system one.
 Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or on lists the user keeps, with an optional mute of the same accounts on the user's X account that is off until the user turns it on.
 ```
 
-**Permission justifications:**
+**Permission justifications:** the dashboard takes all host access, the
+clankwall host and the x.com content scripts, in a single **Host permission
+justification** field, which holds the last two rows of this table joined.
 
 | Permission | Justification |
 |---|---|
@@ -125,8 +141,10 @@ Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or o
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on, it adds Slop and Not slop buttons under replies and reads a reply's text when the user clicks one. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
-**Remote code:** No. All JavaScript ships in the package. The list it downloads
-is plain text, one handle per line, read as data and never run.
+**Remote code:** the dashboard asked no remote-code question when 0.7.1 was
+submitted, so nothing was entered. If it asks, the answer is No: all
+JavaScript ships in the package, and the list it downloads is plain text, one
+handle per line, read as data and never run.
 
 **Data usage.** The docs show the checkbox labels only in a screenshot, so the
 names below may differ from the dashboard's; tick the dashboard's nearest box
@@ -134,7 +152,7 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 
 | Box | Tick | Why |
 |---|---|---|
-| Personally identifiable information | Yes | X handles: the user's own handle while muting is on (`xsh:settings`), and other people's handles in the user's lists, the muting record (`xsh:mutes`) and labels (`xsh:label:<post id>`). |
+| Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
 | Website content | Yes | Labels keep up to 1,000 characters of the labelled reply's text. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. A narrow case, but ticking it is the safer reading. |
 | User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Slop and Not slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
@@ -166,18 +184,26 @@ carries the Limited Use statement on the project's own page.
   have the same policy requirements and will go through the same review
   process."
 - Regions: all.
-- Under **Submit for review**, untick automatic publishing to publish by hand
-  after approval. An approved item not published within 30 days goes back to
-  draft and needs resubmitting.
+- **Submit for review** opens a dialog with one checkbox, ticked by default,
+  that publishes the item automatically once it passes review. Untick it to
+  publish by hand after approval; an approved item not published within 30
+  days goes back to draft and needs resubmitting. AI Anti-Slop leaves it
+  ticked.
+- Decide before submitting. As the dashboard stood on 2026-11-17: while a
+  review was pending with automatic publishing on, the item's ⋮ menu (in the
+  header of its Store listing page; the Status page has none) offered **Defer
+  publish**. With automatic publishing off, that menu had no way to turn it
+  back on, so the only route was **Cancel review** and a new submit. After
+  **Cancel review**, the **Submit for review** button stayed greyed out until
+  the page was reloaded.
 
 ## Test instructions tab
 
 Optional. Google says the tab is useful when an item needs restricted
 credentials for full access; seeing AI Anti-Slop work needs an X login, so fill
-it in (no credentials are given):
+in Additional instructions (no credentials are given; the box takes at most
+500 characters):
 
 ```
-AI Anti-Slop needs no account of its own. To see hiding: log in to any X account, open a reply thread on x.com, open the extension's popup, and add the handle of one replier under Your accounts > Also hide these accounts, then Save. That reply disappears; the popup counts it; Pause hiding brings it back. Accounts on the downloaded list (shown as "N accounts on the list" in the popup) are hidden the same way.
-
-Muting is off by default. To turn it on, open x.com logged in, keep that tab active, open the popup and tick "Mute listed accounts on X". It then mutes at most 25, 50 or 100 accounts a day (50 and 100 only while an x.com tab is open) by clicking X's own Mute item in background tabs. It does not use the X API, block anyone or unmute anyone. Testing it mutes real accounts on the reviewer's X account; they can be unmuted at x.com/settings/muted/all.
+Needs an X login, no account of its own. Hiding: open a reply thread on x.com, open the popup, add one replier's handle under Your accounts > Also hide these accounts, then Save. That reply disappears and the popup counts it; Pause hiding brings it back. Muting is off by default: with a logged-in x.com tab in front, turn on "Mute listed accounts on X". It mutes real accounts on your X account (25, 50 or 100 a day) via X's own Mute item, no X API; unmute at x.com/settings/muted/all.
 ```

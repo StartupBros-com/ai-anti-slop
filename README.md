@@ -16,8 +16,9 @@ Hiding works on the page in your desktop browser, in this browser profile
 only, and the Pause switch shows the posts again. Muting is off until you turn
 it on in the extension's popup. It then mutes up to 25 accounts a day (or 50 or
 100, which run only while you have x.com open) by clicking X's own Mute on
-x.com, so the mutes apply in the X app too. It never blocks anyone, never
-unmutes, and does not use the X API. It is free and MIT-licensed.
+x.com, so the mutes apply in the X app too. It unmutes an account it muted
+once the account leaves the list. It never blocks anyone and does not use the
+X API. It is free and MIT-licensed.
 
 Muting is automation of the X website, which X's rules say "may result in the
 permanent suspension of your account". Read [Muting](#muting) before you turn
@@ -53,7 +54,7 @@ own Mute and Block, act on your X account.
 | Applies in the X app | No | Yes | Yes | Yes |
 | Covering a list of hundreds | Install once; the list refreshes itself | 25 accounts a day by default, so the 773 listed on 2026-11-08 take about a month; 8 days at 100 a day | Mute each account from its post or profile | Block each account from its post or profile |
 | The account can find out | No | No, as with Mute on X | No: "Muted accounts will not know that you've muted them" | Yes: if it visits your profile, "they will see they have been blocked" |
-| Undo | Pause, or add the handle to Always show | Unmute each account on X; AI Anti-Slop never unmutes | Unmute each account | Unblock each account |
+| Undo | Pause, or add the handle to Always show | Add the handle to Always show while muting is on, or unmute it on X; an account that leaves the list is unmuted by itself | Unmute each account | Unblock each account |
 
 The Mute and Block columns come from X's help pages on
 [muting](https://help.x.com/en/using-x/x-mute) and
@@ -65,18 +66,28 @@ because the mutes are X's own.
 
 ### Extension (Chrome or another Chromium browser, desktop)
 
+Install it from the Chrome Web Store:
+<https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha>.
+The store updates it by itself.
+
+Then open x.com and click the extension's icon: a red square with a
+crossed-out speech bubble. If it is not on the toolbar, open the puzzle-piece
+**Extensions** button and click the pin next to AI Anti-Slop. The popup shows
+how many accounts are listed and when the list was last updated.
+
+#### Unpacked
+
+To run the code on `main`, which can be ahead of the store copy, or a release
+from GitHub instead of the store, load the extension unpacked:
+
 1. Download the `.zip` from the
    [latest release](https://github.com/StartupBros-com/ai-anti-slop/releases/latest)
    and unzip it. Or `git clone https://github.com/StartupBros-com/ai-anti-slop`
-   for the code on `main`, which can be ahead of the release.
+   for the code on `main`.
 2. Open `chrome://extensions` (`brave://extensions` in Brave) and turn on
    **Developer mode**.
 3. Click **Load unpacked** and pick the folder that contains `manifest.json`.
-4. Open x.com, then click the extension's icon: a red square with a
-   crossed-out speech bubble. If it is not on the toolbar, open the
-   puzzle-piece **Extensions** button and click the pin next to AI Anti-Slop.
-   The popup shows how many accounts are listed and when the list was last
-   updated.
+4. Open x.com and click the extension's icon, as above.
 
 An unpacked extension does not update itself. To get a new version, copy its
 files into the folder you loaded before, replacing the old ones (or `git pull`
@@ -89,13 +100,14 @@ Human Replies Only from. The list
 itself refreshes without any of this: on install, on browser start when it is due,
 and every 6 hours.
 
-#### Moving to a web store copy
+#### Moving from an unpacked copy to the store copy
 
-AI Anti-Slop is not in a web store yet. When it is, a store copy will be a
-different extension to the browser, with its own id and its own storage, so
-nothing carries over from an unpacked copy: not your settings, your **Always
-show** and **Also hide** boxes, the mute record or your labels. Both copies run
-until you remove one, and with muting on in both, both mute. To switch:
+The [store copy](https://chromewebstore.google.com/detail/apchbmongdogokfagedphbkempkhccha)
+is a different extension to the browser, with its own id and its own storage,
+so nothing carries over from an unpacked copy: not your settings, your
+**Always show** and **Also hide** boxes, the mute record or your labels. Both
+copies run until you remove one, and with muting on in both, both mute. To
+switch:
 
 1. In the unpacked copy's popup, open **Your accounts**, click **Export or
    import**, then **Export settings** (0.6.0 or later; in an older copy, copy
@@ -108,7 +120,8 @@ until you remove one, and with muting on in both, both mute. To switch:
    you used it, muting again: a settings file carries neither.
 
 The store copy starts a new mute record. Accounts the unpacked copy already
-muted are visited again and found already muted, without a click. Each of
+muted are visited again and found already muted, without a click, so the
+store copy never unmutes them, even if they leave the list. Each of
 those visits counts against the day's visit cap (twice your **Mutes a day**),
 so with a long list it can take several days to reach accounts that are not
 muted yet. Mutes already made stay on your X account either way.
@@ -242,8 +255,9 @@ A listing can be a mistake (clankwall's homepage says "Flags aren’t proof of
 AI use."), and AI Anti-Slop mutes every listed account it reaches, including
 one listed by mistake. Accounts you follow are skipped. Look through the
 [list](https://clankwall.vogel.dev/api/usernames.txt) for accounts you know
-and add them to **Always show** first: undoing a mute means unmuting the
-account on X yourself, because AI Anti-Slop never unmutes.
+and add them to **Always show** first. AI Anti-Slop unmutes an account it
+muted once it leaves the list or you add it to Always show (see
+[Unmuting](#unmuting)), but until then the mute is on your X account.
 
 ### Turning it on
 
@@ -293,7 +307,33 @@ account-wide is a much bigger step than hiding its replies); an account in
 Always show; an account you follow; or someone whose post was hidden only for
 tagging a bot. When X's menu offers "Unfollow @handle", AI Anti-Slop
 records that you follow the account and moves on. An account that is already
-muted is recorded without a click. AI Anti-Slop never unmutes and never blocks.
+muted is recorded without a click, and is never unmuted: that mute is yours.
+AI Anti-Slop never blocks.
+
+### Unmuting
+
+While muting is on, AI Anti-Slop unmutes an account it muted once it would no
+longer mute it: clankwall took it off the list, you added it to **Always
+show**, you took it out of **Also hide** and it is not listed, or you moved a
+bot's row off **Mute on X**. It visits the account's profile, opens the ⋯ menu
+of one of its posts and clicks X's own "Unmute @handle" item, the way it
+mutes. If the menu offers Mute instead, the account was already unmuted, and
+nothing is clicked.
+
+- Unmutes go before new mutes and count against the same number a day.
+- It unmutes only mutes it made, as the account muting is on for. An account
+  it found already muted (by you, in the X app or with another tool) is never
+  unmuted, and neither is a mute made while muting was on for another account.
+- It waits for nothing: an account a list update drops is unmuted at the daily
+  pace, and muted again if a later update brings it back. An update that drops
+  more than half the list is refused, and while no list has been fetched
+  nothing is unmuted.
+- A visit that fails (no post on the profile, or the ⋯ menu did not open) is
+  tried once more. After a second failure the account is left muted; unmute
+  it by hand at `x.com/settings/muted/all`.
+- Turning muting off stops unmuting too. The mutes it made stay.
+- Mutes recorded before 0.8.0 count as made by the account muting is on for
+  the first time muting runs on 0.8.0.
 
 ### How many a day
 
@@ -328,8 +368,9 @@ with the reason, when:
 
 - the tab is logged out, or logged in as a different account from the one
   muting was turned on from;
-- the ⋯ menu does not have exactly one Mute item, or X asks for a confirmation
-  (AI Anti-Slop leaves it unanswered);
+- the ⋯ menu does not have exactly one Mute item (or, to unmute, exactly one
+  Unmute item), or X asks for a confirmation (AI Anti-Slop leaves it
+  unanswered);
 - a check does not find a new mute on `x.com/settings/muted/all`, or cannot
   read that page.
 
@@ -361,8 +402,8 @@ So far: 3 muted (3 seen on your muted list, 0 not found there), 1 already muted,
 Skipped means no post, or 2 failed visits.
 
 The record is `xsh:mutes` in the extension's local storage: one entry per
-account visited, with its status, the time, X's notice text, and whether a
-check found it on your muted list.
+account visited, with its status, the time, X's notice text, whether a check
+found it on your muted list, and, for a mute it made, the account it muted as.
 
 ## Labels
 
@@ -551,6 +592,7 @@ again on the next UTC day.
 | `@handle: wrong-account (logged in as @a, not @b)` | x.com is logged in as another account. | Log in as @b again, or untick muting and tick it again from the account you want. |
 | `@handle: refused (N exact Mute items in the menu [...])` | The ⋯ menu had no item labelled exactly "Mute @handle", or more than one. The brackets list the labels it saw. | If they are not in English, set X's language to English. If only this account's menu is different, add it to Always show. |
 | `@handle: refused (X asked for a confirmation; left it unanswered)` | Clicking Mute brought up a confirmation. | Mute that account by hand if you want to, or add it to Always show. |
+| `@handle: unmute refused (N exact Unmute items … in the menu [...])` | To unmute an account it had muted, the ⋯ menu needed exactly one item labelled "Unmute @handle" and no Mute item. The brackets list the labels it saw. | If they are not in English, set X's language to English. Otherwise unmute the account by hand at `x.com/settings/muted/all`. |
 | `not on settings/muted/all after muting: @handle` | A new mute was not in the top rows of your muted accounts. | Look for it at `x.com/settings/muted/all`, and see [Limits](#limits). |
 | `settings/muted/all check: error (…)` | Your muted accounts page could not be read. | Open `x.com/settings/muted/all` and check that it loads. |
 
@@ -600,8 +642,10 @@ reads (see [Limits](#limits)). Please open an issue.
 - The feed lists handles, not accounts. An account that renames itself
   escapes until the list catches up, and a handle that is released and
   re-registered would hide its new owner, and with muting on, mute it.
-- The name is the aim, not a promise. Only accounts on the list are hidden;
-  a reply by an account that is not on it stays, however it was written.
+- The name is the aim, not a promise. Only posts by accounts on the list or in
+  **Also hide these accounts**, or by a bot set to Hide or Mute, are hidden. A
+  reply by any other account stays, however it was written, unless it tags
+  such a bot and you turned on hiding posts that tag one.
 - The list is someone else's judgement. If the feed goes away, the last good
   list stays in use.
 - Hiding only works in a browser where it is installed, so it never covers the
@@ -631,8 +675,10 @@ reads (see [Limits](#limits)). Please open an issue.
   tab on 2026-11-06, X drew its first 7 to 9 rows. Mutes made elsewhere between
   checks (by hand, in the X app, or by another tool) push the extension's
   newest mutes down that list, and a mute that is there but not drawn reads as missing
-  and stops the day. Don't mute by hand or run another muting tool while
-  AI Anti-Slop is muting.
+  and stops the day. On 2026-11-18 an account muted again 16 s after an unmute
+  stayed below an account muted after its first mute, so the extension's
+  re-mute of an account it unmuted earlier may read as missing the same way.
+  Don't mute by hand or run another muting tool while AI Anti-Slop is muting.
 - Muting runs only while the browser is open with the extension loaded and
   logged in to x.com. It picks up again the next time the browser runs.
 - At 50 or 100 a day, any x.com tab of yours counts as "x.com open", including
@@ -671,7 +717,9 @@ instead (see [Bots](#bots)), which has **Hide here**.
 
 ### If an account leaves the list, is it unmuted?
 
-No. AI Anti-Slop never unmutes. Unmute it on X.
+Yes, if AI Anti-Slop muted it and muting is still on. It is unmuted ahead of
+new mutes, within the number a day you picked (see [Unmuting](#unmuting)). A
+mute you made yourself is left alone.
 
 ### How do I remove it?
 
@@ -740,7 +788,8 @@ author's post is left showing.
 Hiding was checked on real x.com on 2026-11-03 (four pages, 0 mismatches), and
 versions 0.2.0 to 0.5.0 ran in headless Chromium against fixture pages. Muting
 has run in Brave on the maintainer's own account since 2026-11-07; 0.5.0's
-labels and daily setting have not run in Brave yet.
+labels and daily setting have not run in Brave yet. One unmute from 0.8.0's
+page code ran on real x.com on 2026-11-18.
 [docs/TESTING.md](docs/TESTING.md) has each run, its method and results, and
 what has not been tested.
 

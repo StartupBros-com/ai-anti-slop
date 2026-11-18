@@ -51,7 +51,7 @@ export function page(cells) {
 // gives the worker's reply to a save (default: saved), `saves` records each
 // save and `labelChange(id, label)` stands in for a change in another tab.
 // With `present`, `present()` asks the tab what the worker's x.com check asks.
-export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false } = {}) {
+export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null } = {}) {
   const { window, document, MutationObserver } = parseHTML(html);
   const location = { pathname };
   let subscriber = null;
@@ -115,7 +115,7 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     document,
     location,
     MutationObserver: TestObserver,
-    XSlopHideAdapter: adapter,
+    ...(chrome ? { chrome } : { XSlopHideAdapter: adapter }),
     console,
     setTimeout,
     clearTimeout,
@@ -151,7 +151,7 @@ export const meLink = (me) => `<nav><a data-testid="AppTabBar_Profile_Link" href
 // menu did on 2026-11-06; clicking the item labelled "Mute" (or "Mute @h")
 // shows X's toast, or a confirmation sheet when `confirmSheet` is set.
 // `clicks` records each menu item clicked, by label.
-export function wireMenu(document, { items, handle, confirmSheet = false, clicks = [] }) {
+export function wireMenu(document, { items, handle, confirmSheet = false, clicks = [], toastText = `@${handle} has been muted.Undo` }) {
   for (const caret of document.querySelectorAll('[data-testid="caret"]')) {
     caret.addEventListener('click', () => {
       const menu = document.createElement('div');
@@ -167,7 +167,7 @@ export function wireMenu(document, { items, handle, confirmSheet = false, clicks
             out.setAttribute('data-testid', 'confirmationSheetDialog');
           } else {
             out.setAttribute('data-testid', 'toast');
-            out.textContent = `@${handle} has been muted.Undo`;
+            out.textContent = toastText;
           }
           document.body.appendChild(out);
         });

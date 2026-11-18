@@ -125,6 +125,68 @@ test('mute job: the page timeout reports an error instead of hanging', async () 
   assert.deepEqual(await t.done, { id: 'j1', status: 'error', reason: 'timed out in the page' });
 });
 
+// The same profile visit, for an account AI Anti-Slop muted that muting no
+// longer picks. X's menu on a muted account's post offered "Unmute" on
+// 2026-11-06; no unmute had been clicked live when these were written, so the
+// toast text here is a stand-in.
+const UNMUTE_MENU = ['Not interested in this post', `Follow @${H}`, `Add/remove @${H} from Lists`, 'Unmute', `Block @${H}`, 'Report post'];
+const delisted = stateWith(['other'], { muteEnabled: true, muteAccount: ME });
+
+function unmuteRun({ items = UNMUTE_MENU, cells = [postWithCaret({ author: H })], me = ME, confirmSheet = false, confirm = true } = {}) {
+  const t = runContent(profile(cells, { me }), { pathname: `/${H}`, state: delisted, job: job({ kind: 'unmute' }), confirm });
+  const clicks = wireMenu(t.document, { items, handle: H, confirmSheet, toastText: `@${H} has been unmuted.` });
+  return { t, clicks };
+}
+
+test('unmute job: clicks the one exact Unmute item, never "Unmute this conversation", and reports the toast', async () => {
+  const { t, clicks } = unmuteRun({ items: [...UNMUTE_MENU, 'Unmute this conversation'] });
+  assert.deepEqual(await t.done, { id: 'j1', status: 'unmuted', toast: `@${H} has been unmuted.` });
+  assert.deepEqual(clicks, ['Unmute']);
+  assert.deepEqual(t.confirms, ['j1'], 'the worker was asked once, just before the click');
+});
+
+test('unmute job: "Unmute @handle" is the same item', async () => {
+  const { t, clicks } = unmuteRun({ items: [`Follow @${H}`, `Unmute @${H}`, `Block @${H}`] });
+  assert.equal((await t.done).status, 'unmuted');
+  assert.deepEqual(clicks, [`Unmute @${H}`]);
+});
+
+test('unmute job: a menu that offers Mute means it is no longer muted; nothing is clicked or asked', async () => {
+  const { t, clicks } = unmuteRun({ items: [`Follow @${H}`, 'Mute', `Block @${H}`] });
+  assert.deepEqual(await t.done, { id: 'j1', status: 'not-muted' });
+  assert.deepEqual(clicks, []);
+  assert.deepEqual(t.confirms, []);
+});
+
+// Planted negatives: a menu we do not recognise is refused, never guessed at.
+test('unmute job: no Unmute item, two of them, or Unmute beside Mute is refused without a click', async () => {
+  for (const items of [[`Follow @${H}`, 'Unmute this conversation'], ['Unmute', `Unmute @${H}`], ['Unmute', 'Mute']]) {
+    const { t, clicks } = unmuteRun({ items });
+    const r = await t.done;
+    assert.equal(r.status, 'refused');
+    assert.match(r.reason, /exact Unmute items/);
+    assert.deepEqual(clicks, []);
+  }
+});
+
+test('unmute job: no click when the worker does not confirm', async () => {
+  const { t, clicks } = unmuteRun({ confirm: false });
+  const r = await t.done;
+  assert.deepEqual(clicks, []);
+  assert.deepEqual(r, { id: 'j1', status: 'error', reason: 'the worker did not confirm the unmute' });
+});
+
+test('unmute job: a confirmation sheet is left unanswered; another account or no post stops before any click', async () => {
+  let run = unmuteRun({ confirmSheet: true });
+  assert.equal((await run.t.done).status, 'refused');
+  run = unmuteRun({ me: 'someone_else' });
+  assert.equal((await run.t.done).status, 'wrong-account');
+  assert.deepEqual(run.clicks, []);
+  run = unmuteRun({ cells: [] });
+  assert.deepEqual(await run.t.done, { id: 'j1', status: 'no-post', reason: 'no post by the account on its profile' });
+  assert.deepEqual(run.clicks, []);
+});
+
 test('check job: reports the muted-list rows the page renders, newest first', async () => {
   const rows = ['Slop_A', 'slop_b', 'other'].map(
     (h) => `<div data-testid="UserCell"><a href="/${h}"><img alt=""></a><a href="/${h}">@${h}</a></div>`,
@@ -157,4 +219,79 @@ test('stats report the logged-in account the popup binds muting to', async () =>
   const t = runContent(page([meLink('StartupBros')]), { state: stateWith([]) });
   await tick();
   assert.equal(t.content.stats().me, 'startupbros');
+});
+
+// Once an update or reload invalidates the extension, chrome.runtime.sendMessage
+// throws synchronously. The page must neither raise an unhandled rejection nor
+// click or report anything.
+test('content: sendMessage throwing synchronously raises no rejection, clicks nothing, reports nothing', async () => {
+  const unhandled = [];
+  const onUnhandled = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const sent = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: { local: { get: async () => ({ 'xsh:list': { handles: [H], fetchedAt: 1 }, 'xsh:settings': { muteEnabled: true, muteAccount: ME } }) }, onChanged: { addListener() {} } },
+      runtime: {
+        id: 'xshtest',
+        onMessage: { addListener() {} },
+        sendMessage(msg) {
+          sent.push(msg.type);
+          throw new Error('Extension context invalidated.');
+        },
+      },
+    };
+    const t = runContent(page([meLink(ME), postWithCaret({ author: H })]), { pathname: '/home', chrome });
+    const clicks = wireMenu(t.document, { items: MENU, handle: H });
+    for (let i = 0; i < 8; i++) await tick();
+    // The sighting and the job ask both threw; the page is still fine.
+    assert.ok(sent.includes('xsh:job'), 'the job ask was tried');
+    assert.ok(sent.includes('xsh:sighting'), 'the sighting was tried');
+    // A job handed to the page directly: the confirmation fails, so no click, and the report is swallowed.
+    await t.content.runJob(job());
+    for (let i = 0; i < 8; i++) await tick();
+    assert.ok(sent.includes('xsh:job-go'), 'the confirmation was tried');
+    assert.ok(sent.includes('xsh:job-result'), 'the report was tried');
+    assert.deepEqual(clicks, [], 'no click without the worker\'s yes');
+    assert.deepEqual(unhandled, [], 'no unhandled rejection');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
+
+// chrome.storage throws the same way. The label read runs from a timer, where
+// a throw is an uncaught exception, not a rejection.
+test('content: a label read throwing synchronously after an update raises nothing', async () => {
+  const thrown = [];
+  const onThrown = (e) => thrown.push(e);
+  process.on('uncaughtException', onThrown);
+  process.on('unhandledRejection', onThrown);
+  try {
+    const labelReads = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: {
+        local: {
+          // The page loaded while the extension was there; the label read comes after it was cut off.
+          get(keys) {
+            if (keys.includes('xsh:list')) return Promise.resolve({ 'xsh:list': { handles: [], fetchedAt: 1 }, 'xsh:settings': { labeling: true } });
+            labelReads.push(keys);
+            throw new Error('Extension context invalidated.');
+          },
+        },
+        onChanged: { addListener() {} },
+      },
+      runtime: { id: 'xshtest', onMessage: { addListener() {} }, sendMessage: async () => null },
+    };
+    const t = runContent(page([post({ author: 'op', status: '1' }), post({ author: 'reply_a', status: '2' })]), { pathname: '/op/status/1', chrome });
+    for (let i = 0; i < 8; i++) await tick();
+    await new Promise((r) => setTimeout(r, 20));
+    assert.ok(t.document.querySelector('[data-xsh-bar="2"]'), 'the label pair rendered, so labels were read');
+    assert.equal(labelReads.length, 1, 'the label read was tried and threw');
+    assert.deepEqual(thrown, [], 'nothing uncaught');
+  } finally {
+    process.off('uncaughtException', onThrown);
+    process.off('unhandledRejection', onThrown);
+  }
 });

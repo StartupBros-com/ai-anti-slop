@@ -40,8 +40,14 @@ function area(store, onChanged, name) {
 
 const EXT_ID = 'xshtestextensionid';
 
-function fakeChrome() {
-  const store = {};
+// `browser` is the browser's own table of open tabs, which outlives a worker:
+// a second worker after an update shares the first one's. tabs.get answers
+// from it as Chrome does without the "tabs" permission: id, window and whether
+// the tab is in front, no address; a closed tab is an error, and a tab id that
+// is not an integer throws before any promise exists.
+const newBrowser = () => ({ live: new Map(), nextId: 100 });
+
+function fakeChrome(store = {}, browser = newBrowser()) {
   const session = {};
   const alarmTable = {};
   const onChanged = event();
@@ -49,16 +55,23 @@ function fakeChrome() {
   // opened for a job that is still open, without URLs (there is no "tabs"
   // permission). `answer(id, msg)` is a tab's reply to tabs.sendMessage; by
   // default no content script is there. A tab in `failRemove` will not close.
-  const tabs = { opened: [], removed: [], nextId: 100, onRemoved: event(), list: [], queries: 0, asked: [], failRemove: new Set() };
+  const tabs = { opened: [], removed: [], browser, onRemoved: event(), list: [], queries: 0, asked: [], failRemove: new Set() };
   tabs.answer = () => Promise.reject(new Error('Could not establish connection. Receiving end does not exist.'));
   tabs.create = async (info) => {
-    const tab = { id: tabs.nextId++, ...info };
+    const tab = { id: browser.nextId++, windowId: 1, ...info };
     tabs.opened.push(tab);
+    browser.live.set(tab.id, { id: tab.id, windowId: tab.windowId, active: info.active !== false });
     return tab;
+  };
+  tabs.get = (id) => {
+    if (!Number.isInteger(id)) throw new TypeError('Error in invocation of tabs.get(integer tabId, optional function callback)');
+    const t = browser.live.get(id);
+    return t ? Promise.resolve(structuredClone(t)) : Promise.reject(new Error(`No tab with id: ${id}.`));
   };
   tabs.remove = async (id) => {
     if (tabs.failRemove.has(id)) throw new Error(`No tab with id: ${id}.`);
     tabs.removed.push(id);
+    browser.live.delete(id);
     tabs.onRemoved.fire(id, {});
   };
   tabs.query = async () => {
@@ -97,8 +110,10 @@ function fakeChrome() {
   };
 }
 
-function loadBackground(responder) {
-  const chrome = fakeChrome();
+// A second worker may share the first one's local storage (`store`) and open
+// tabs (`browser`) with an empty session: what a reload or update looks like.
+function loadBackground(responder, store, browser) {
+  const chrome = fakeChrome(store, browser);
   const requests = [];
   const fetch = async (url, init) => {
     requests.push({ url, init });
@@ -1717,7 +1732,7 @@ test('settings page: settings that change after the preview are shown again, not
   assert.equal(p.$('muteNote').className, 'warn');
   assert.equal(
     p.$('muteNote').textContent,
-    'Muting is on as @me_here. After this import it can also mute 1 more account: @spam_b. It mutes up to 50 a day, skips accounts you follow, and never unmutes.',
+    'Muting is on as @me_here. After this import it can also mute 1 more account: @spam_b. It mutes up to 50 a day and skips accounts you follow.',
   );
   p.click('confirm');
   await settle();
@@ -1734,7 +1749,7 @@ test('settings page: a bot set to Mute on X is named in the muting note', async 
   assert.equal(
     p.$('muteNote').textContent,
     'Muting is on as @me_here. After this import it can also mute 1 more account: @askperplexity. Bots among them: @AskPerplexity. ' +
-      'It mutes up to 25 a day, skips accounts you follow, and never unmutes.',
+      'It mutes up to 25 a day and skips accounts you follow.',
   );
 });
 
@@ -1756,7 +1771,7 @@ test('settings page: a line with more than 12 accounts lists all of them under S
   assert.equal(
     mute.firstChild.textContent,
     `Muting is on as @me_here. After this import it can also mute 14 more accounts: ${at(hs.slice(0, 12))} and 2 more. ` +
-      'It mutes up to 25 a day, skips accounts you follow, and never unmutes.',
+      'It mutes up to 25 a day and skips accounts you follow.',
   );
   assert.equal(mute.querySelector('details summary').textContent, 'Show all 14 accounts');
   assert.equal(mute.querySelector('details p').textContent, at(hs));
@@ -1836,4 +1851,308 @@ test('popup: Export or import opens the options page', async () => {
   p.document.getElementById('files').dispatchEvent(new p.window.Event('click'));
   await settle();
   assert.equal(opened, 1);
+});
+
+// ------------------------------------------------------------ unmuting
+
+const mutedAs = (account, at = Date.now() - 86400000) => ({ status: 'muted', at, account, toast: null, confirmed: true });
+
+test('background: an account it muted that left the list is unmuted before any new mute, against the same cap', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  await alarm(bg);
+  const tab = lastTab(bg);
+  assert.equal(tab.url, 'https://x.com/gone');
+  assert.equal(tab.active, false);
+  const job = await send(bg, { type: 'xsh:job' }, tab.id);
+  assert.deepEqual([job.kind, job.handle, job.account], ['unmute', 'gone', ME]);
+  assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), true);
+  await send(bg, { type: 'xsh:job-result', result: { id: job.id, status: 'unmuted', toast: '@gone has been unmuted.' } }, tab.id);
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.handles.gone.status, 'unmuted');
+  assert.deepEqual([m.days[today()].unmutes, m.days[today()].mutes, m.days[today()].visits], [1, 0, 1]);
+  assert.deepEqual(m.sinceCheck, [], 'an unmute waits for no check of the muted list');
+  assert.deepEqual(bg.chrome.tabs.removed, [tab.id]);
+  due(bg);
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_b', 'then the mutes');
+});
+
+test('background: unmutes stop at the daily cap, shared with mutes', async () => {
+  const day = { mutes: 20, unmutes: 5, visits: 25, stopped: null };
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) }, days: { [today()]: day } } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+});
+
+test('background: moving a muted account to Always show unmutes it', async () => {
+  const bg = await muteBackground({
+    handles: ['friend', 'slop_b'],
+    settings: { muteEnabled: true, muteAccount: ME, allowlist: 'friend' },
+    mutes: { ...lib.emptyMutes(), handles: { friend: mutedAs(ME) } },
+  });
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/friend');
+  assert.equal((await send(bg, { type: 'xsh:job' }, lastTab(bg).id)).kind, 'unmute');
+});
+
+// Planted negative: only mutes it made as this account are undone. An account
+// the user muted (recorded `already`) that left the list is never visited, so
+// nothing can click its Unmute; neither are followed or skipped accounts, a
+// mute made as another account, or anything while the stored list is empty.
+test('background: never unmutes what the user muted, what another account muted, or while the list is empty', async () => {
+  const handles = {
+    mine: { status: 'already', at: 1 },
+    fol: { status: 'followed', at: 1 },
+    np: { status: 'no-post', at: 1, attempts: 2 },
+    other: mutedAs('someone_else'),
+  };
+  let bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened.map((t) => t.url), ['https://x.com/slop_b']);
+  bg = await muteBackground({ handles: [], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+});
+
+test('background: a mute recorded before 0.8.0 is stamped with the account muting is on for, then unmuted once it leaves the list', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: { status: 'muted', at: 1, confirmed: true } } } });
+  await alarm(bg);
+  assert.equal(bg.chrome.store['xsh:mutes'].handles.gone.account, ME);
+  assert.equal(lastTab(bg).url, 'https://x.com/gone');
+});
+
+// Planted negatives: back on the list, or added to Also hide, between the visit
+// starting and the click: the job is dropped and the mute stays recorded.
+test('background: an unmute job is dropped at the claim or just before the click when the account is wanted muted again', async () => {
+  for (const when of ['claim', 'click']) {
+    for (const change of ['list', 'extra']) {
+      const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+      await alarm(bg);
+      const tab = lastTab(bg);
+      assert.equal(tab.url, 'https://x.com/gone');
+      const job = when === 'click' ? await send(bg, { type: 'xsh:job' }, tab.id) : null;
+      if (change === 'list') bg.chrome.store['xsh:list'] = { ...bg.chrome.store['xsh:list'], handles: ['gone', 'slop_b'] };
+      else await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME, extraList: 'gone' } });
+      await settle();
+      if (when === 'claim') assert.equal(await send(bg, { type: 'xsh:job' }, tab.id), null, `${when} ${change}`);
+      else assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), false, `${when} ${change}`);
+      assert.deepEqual(bg.chrome.tabs.removed, [tab.id]);
+      assert.equal(bg.chrome.store['xsh:mutes'].handles.gone.status, 'muted', 'dropped unrecorded');
+    }
+  }
+});
+
+test('background: a failed unmute keeps the mute recorded, is tried once more, then left muted', async () => {
+  const bg = await muteBackground({ handles: ['slop_b'], mutes: { ...lib.emptyMutes(), handles: { gone: mutedAs(ME) } } });
+  for (const attempt of [1, 2]) {
+    await alarm(bg);
+    const tab = lastTab(bg);
+    assert.equal(tab.url, 'https://x.com/gone');
+    const job = await send(bg, { type: 'xsh:job' }, tab.id);
+    await send(bg, { type: 'xsh:job-result', result: { id: job.id, status: 'error', reason: 'the ⋯ menu did not open' } }, tab.id);
+    const e = bg.chrome.store['xsh:mutes'].handles.gone;
+    assert.deepEqual([e.status, e.unmuteAttempts], ['muted', attempt]);
+    due(bg);
+  }
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_b', 'given up on: the mutes go on');
+  assert.equal(bg.chrome.store['xsh:mutes'].days[today()].unmutes, 0);
+});
+
+test("popup: today's line and the totals count unmutes once there are some", async () => {
+  const p = loadPopup({
+    'xsh:list': { handles: ['a'], fetchedAt: Date.now(), source: 's' },
+    'xsh:settings': { muteEnabled: true, muteAccount: 'startupbros' },
+    'xsh:mutes': {
+      ...lib.emptyMutes(),
+      handles: { a: { status: 'muted', confirmed: true }, g: { status: 'unmuted' } },
+      days: { [lib.utcDay(Date.now())]: { mutes: 2, unmutes: 1, visits: 4, stopped: null } },
+    },
+  });
+  await settle();
+  assert.equal(p.document.getElementById('muteToday').textContent, 'Today (UTC): 3 of 25 (2 mutes, 1 unmute), 4 of 50 visits');
+  assert.equal(p.document.getElementById('muteBar').getAttribute('value'), '3');
+  assert.equal(
+    p.document.getElementById('muteTotals').textContent,
+    'So far: 1 muted (1 seen on your muted list, 0 not found there), 1 unmuted, 0 already muted, 0 you follow, 0 skipped.',
+  );
+});
+
+test('background: muted, moved to Always show, unmuted, moved back: muted again ahead of an account never visited', async () => {
+  const bg = await muteBackground({ handles: ['slop_a', 'slop_b'] });
+  const visit = async (url, kind, status, verb) => {
+    if (bg.chrome.store['xsh:mutes']) due(bg);
+    await alarm(bg);
+    const tab = lastTab(bg);
+    assert.equal(tab.url, url);
+    const job = await send(bg, { type: 'xsh:job' }, tab.id);
+    assert.equal(job.kind, kind);
+    assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), true);
+    await send(bg, { type: 'xsh:job-result', result: { id: job.id, status, toast: `@slop_a has been ${verb}.` } }, tab.id);
+    return bg.chrome.store['xsh:mutes'];
+  };
+  let m = await visit('https://x.com/slop_a', 'mute', 'muted', 'muted');
+  assert.deepEqual(m.sinceCheck, ['slop_a']);
+  await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME, allowlist: 'slop_a' } });
+  await settle();
+  m = await visit('https://x.com/slop_a', 'unmute', 'unmuted', 'unmuted');
+  assert.equal(m.handles.slop_a.status, 'unmuted');
+  assert.deepEqual(m.sinceCheck, [], 'nothing left for the muted-list check to find');
+  await bg.chrome.storage.local.set({ 'xsh:settings': { muteEnabled: true, muteAccount: ME } });
+  await settle();
+  m = await visit('https://x.com/slop_a', 'mute', 'muted', 'muted');
+  assert.deepEqual([m.handles.slop_a.status, m.handles.slop_a.account], ['muted', ME]);
+  assert.deepEqual([m.days[today()].mutes, m.days[today()].unmutes, m.days[today()].visits, m.days[today()].stopped], [2, 1, 3, null]);
+});
+
+// ------------------------------------------------------------ stranded visit after an update
+
+// A visit in progress in a first worker, then an update: a second worker with
+// the same local storage and open tabs, and empty session storage.
+async function updatedWorker() {
+  const first = await muteBackground();
+  await alarm(first);
+  const tabId = lastTab(first).id;
+  assert.deepEqual(first.chrome.store['xsh:visit'], { tabId, windowId: 1, startedAt: first.chrome.store['xsh:visit'].startedAt }, 'the visit is kept in local storage');
+  const second = loadBackground(() => ok('slop_a\nslop_b'), first.chrome.store, first.chrome.tabs.browser);
+  return { first, second, tabId };
+}
+
+// Fire the update in the second worker; what it closed, and whether the key is left.
+async function sweepAfterUpdate(second) {
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  return { removed: second.chrome.tabs.removed, key: 'xsh:visit' in second.chrome.store };
+}
+
+test('update: a worker with empty session storage closes exactly the stranded visit tab and removes the key', async () => {
+  const { second, tabId } = await updatedWorker();
+  assert.deepEqual(second.chrome.session, {});
+  assert.deepEqual(await sweepAfterUpdate(second), { removed: [tabId], key: false });
+});
+
+test('update: a tab the browser no longer has, one in another window, or the one in front of the user is not closed', async () => {
+  const cases = {
+    gone: (t) => t.browser.live.delete(t.id),
+    'another window': (t) => (t.browser.live.get(t.id).windowId = 2),
+    'in front': (t) => (t.browser.live.get(t.id).active = true),
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const { second, tabId } = await updatedWorker();
+    change({ browser: second.chrome.tabs.browser, id: tabId });
+    assert.deepEqual(await sweepAfterUpdate(second), { removed: [], key: false }, name);
+  }
+});
+
+test('update: a visit stamped in the future (the clock went back) or a key without a usable tab id closes no tab', async () => {
+  const cases = {
+    future: (v) => (v.startedAt = Date.now() + 60000),
+    'no time': (v) => delete v.startedAt,
+    'tab id as text': (v) => (v.tabId = String(v.tabId)),
+    'no tab id': (v) => delete v.tabId,
+    'no window id': (v) => delete v.windowId,
+  };
+  for (const [name, change] of Object.entries(cases)) {
+    const { second } = await updatedWorker();
+    change(second.chrome.store['xsh:visit']);
+    assert.deepEqual(await sweepAfterUpdate(second), { removed: [], key: false }, name);
+    // The serial chain is not stuck: the next visit still opens.
+    second.chrome.store['xsh:mutes'].nextAt = 0;
+    const before = second.chrome.tabs.opened.length;
+    second.chrome.alarms.onAlarm.fire({ name: 'xsh-mute' });
+    await settle();
+    assert.equal(second.chrome.tabs.opened.length, before + 1, `${name}: the next visit opened`);
+  }
+});
+
+test('update: install and chrome_update close no tab', async () => {
+  for (const reason of ['install', 'chrome_update']) {
+    const { second } = await updatedWorker();
+    second.chrome.runtime.onInstalled.fire({ reason });
+    await settle();
+    assert.deepEqual(second.chrome.tabs.removed, [], reason);
+  }
+});
+
+test('update: a key older than the tab timeout closes no tab, and is removed', async () => {
+  const { second } = await updatedWorker();
+  second.chrome.store['xsh:visit'].startedAt = Date.now() - lib.DEFAULTS.muteTabTimeoutMs - 1;
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+  assert.equal('xsh:visit' in second.chrome.store, false);
+});
+
+test('update: browser startup removes the key and closes no tab', async () => {
+  const { second } = await updatedWorker();
+  second.chrome.runtime.onStartup.fire();
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+  assert.equal('xsh:visit' in second.chrome.store, false);
+});
+
+test('update: no key, no tab closed', async () => {
+  const second = loadBackground(() => ok(''), {});
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(second.chrome.tabs.removed, []);
+});
+
+test('update: never closes the tab of a job the new worker started itself', async () => {
+  const { second } = await updatedWorker();
+  // The new worker's alarm tick runs first and starts its own visit, which
+  // takes over the key; onInstalled then runs the sweep.
+  second.chrome.store['xsh:mutes'].nextAt = 0;
+  second.chrome.alarms.onAlarm.fire({ name: 'xsh-mute' });
+  second.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  const mine = second.chrome.tabs.opened.at(-1);
+  assert.ok(mine, 'the new worker opened a tab');
+  assert.deepEqual(second.chrome.tabs.removed, [], 'nothing was closed');
+  assert.equal(second.chrome.session['xsh:job'].tabId, mine.id);
+  assert.equal(second.chrome.store['xsh:visit'].tabId, mine.id);
+});
+
+test('update: the sweep skips a key that names the current session job', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  const tab = lastTab(bg);
+  bg.chrome.runtime.onInstalled.fire({ reason: 'update' });
+  await settle();
+  assert.deepEqual(bg.chrome.tabs.removed, []);
+  assert.equal(bg.chrome.store['xsh:visit'].tabId, tab.id);
+});
+
+test('visit key: a finished job leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  const tab = lastTab(bg);
+  await send(bg, { type: 'xsh:job' }, tab.id);
+  await send(bg, { type: 'xsh:job-result', result: { id: bg.chrome.session['xsh:job'].id, status: 'already' } }, tab.id);
+  await settle();
+  assert.equal('xsh:job' in bg.chrome.session, false);
+  assert.equal('xsh:visit' in bg.chrome.store, false);
+});
+
+test('visit key: a tab the user closed leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  bg.chrome.tabs.onRemoved.fire(lastTab(bg).id, {});
+  await settle();
+  assert.equal('xsh:visit' in bg.chrome.store, false);
+});
+
+test('visit key: a job dropped because muting was turned off leaves no key', async () => {
+  const bg = await muteBackground();
+  await alarm(bg);
+  assert.ok(bg.chrome.store['xsh:visit']);
+  const tab = lastTab(bg);
+  const claimed = await send(bg, { type: 'xsh:job' }, tab.id);
+  bg.chrome.store['xsh:settings'] = { muteEnabled: false, muteAccount: null };
+  assert.equal(await send(bg, { type: 'xsh:job-go', id: claimed.id }, tab.id), false);
+  await settle();
+  assert.equal('xsh:job' in bg.chrome.session, false, 'the job is gone');
+  assert.equal('xsh:visit' in bg.chrome.store, false);
 });

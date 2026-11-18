@@ -1,6 +1,7 @@
 // AI Anti-Slop background service worker: keeps the handle list fresh in
 // chrome.storage.local, and, when the user has turned muting on, mutes listed
-// accounts one at a time in background tabs it opens and closes itself. Its
+// accounts one at a time in background tabs it opens and closes itself, and
+// unmutes accounts it muted once muting no longer picks them. Its
 // only network request is the feed URL; muting goes through X's own page.
 importScripts('lib.js');
 
@@ -11,6 +12,7 @@ const MUTE_ALARM = 'xsh-mute';
 const JOB_ALARM = 'xsh-job-timeout';
 const JOB_KEY = 'xsh:job'; // chrome.storage.session: the one job in flight
 const JOB_TABS_KEY = 'xsh:jobTabs'; // chrome.storage.session: tabs opened for jobs
+const VISIT_KEY = 'xsh:visit'; // chrome.storage.local: { tabId, windowId, startedAt } of the visit in progress, to close its tab after an update
 const PRESENT_TIMEOUT_MS = 1500;
 
 async function settings() {
@@ -58,7 +60,33 @@ const mutesRec = async () => (await chrome.storage.local.get(K.mutes))[K.mutes] 
 const saveMutes = (rec) => chrome.storage.local.set({ [K.mutes]: rec });
 const getJob = async () => (await chrome.storage.session.get(JOB_KEY))[JOB_KEY] || null;
 const setJob = (job) => chrome.storage.session.set({ [JOB_KEY]: job });
-const clearJob = () => chrome.storage.session.remove(JOB_KEY);
+// Every path that ends a job goes through clearJob, so the local copy of the
+// visit goes with it.
+const clearJob = async () => {
+  await chrome.storage.session.remove(JOB_KEY);
+  await chrome.storage.local.remove(VISIT_KEY);
+};
+
+// An update or reload clears session storage but leaves the visit's tab open.
+// Called inside serial(). Closes the tab the previous worker opened, only if
+// the visit is younger than the tab timeout and this worker has no job on that
+// tab; the key goes either way. Without the "tabs" permission a tab's address
+// is hidden, so what is checked is what can be seen: the tab still exists, in
+// the window the visit opened it in, and is not the tab in front of the user.
+// Not ruled out: a browser quit and reopened within the tab timeout of a visit,
+// with an update installing on that launch, can hand the same id and window to
+// another tab.
+async function sweepStrandedVisit(closeTab) {
+  const rec = (await chrome.storage.local.get(VISIT_KEY))[VISIT_KEY];
+  if (!rec) return;
+  const job = await getJob();
+  if (job && job.tabId === rec.tabId) return; // this worker's own visit
+  await chrome.storage.local.remove(VISIT_KEY);
+  const age = Date.now() - rec.startedAt; // NaN, or below 0 once the clock went back, is not fresh
+  if (!closeTab || !(age >= 0 && age < L.DEFAULTS.muteTabTimeoutMs)) return;
+  const tab = await chrome.tabs.get(rec.tabId).catch(() => null); // a malformed id throws; serial() catches it
+  if (tab && tab.windowId === rec.windowId && !tab.active) await chrome.tabs.remove(rec.tabId).catch(() => {});
+}
 
 // Every read-modify-write of the mute record and the job goes through this
 // chain, so an alarm, a tab's report and a sighting never interleave.
@@ -146,9 +174,10 @@ async function userHasXOpen() {
   }
 }
 
-// Open one job's tab in the background. The tab is never made active.
+// Open one job's tab in the background. The tab is never made active. A mute
+// or unmute job opens the account's profile; a check opens the muted list.
 async function startJob(kind, handle, account, now) {
-  const url = kind === 'mute' ? `https://x.com/${handle}` : 'https://x.com/settings/muted/all';
+  const url = kind === 'check' ? 'https://x.com/settings/muted/all' : `https://x.com/${handle}`;
   const tab = await chrome.tabs.create({ url, active: false });
   await noteJobTab(tab.id);
   const job = {
@@ -161,21 +190,26 @@ async function startJob(kind, handle, account, now) {
     claimed: false,
     pageTimeoutMs: L.DEFAULTS.muteTabTimeoutMs - 20000,
   };
+  await chrome.storage.local.set({ [VISIT_KEY]: { tabId: tab.id, windowId: tab.windowId, startedAt: now } });
   await setJob(job);
   chrome.alarms.create(JOB_ALARM, { when: now + L.DEFAULTS.muteTabTimeoutMs });
   return job;
 }
 
-// Whether a job may still go ahead. Settings can change while its tab loads
-// and waits for a post: muting turned off, another account, a bot's row moved
-// off Mute on X, an account added to Always show. A mute job must still be for
-// an account muting may visit.
+// Whether a job may still go ahead. Settings and the list can change while
+// its tab loads and waits for a post: muting turned off, another account, a
+// bot's row moved off Mute on X, an account added to Always show, an account
+// back on the list. A mute job must still be for an account muting may visit;
+// an unmute job, for one it would still unmute.
 async function stillWanted(job) {
   const s = await settings();
   if (!muting(s) || s.muteAccount !== job.account) return false;
-  if (job.kind !== 'mute') return true;
+  if (job.kind === 'check') return true;
   const list = await stored();
-  return L.muteEligible(list && list.handles, s).includes(job.handle);
+  const handles = list && list.handles;
+  if (job.kind === 'mute') return L.muteEligible(handles, s).includes(job.handle);
+  if (job.kind === 'unmute') return L.unmuteCandidates(handles, s, await mutesRec()).includes(job.handle);
+  return false;
 }
 
 // Drop a job unrecorded and close its tab. The visit it cost stays counted.
@@ -200,7 +234,9 @@ async function finishJob(job, result) {
   const now = Date.now();
   let rec = await mutesRec();
   if (job.kind === 'mute') {
-    rec = L.recordOutcome(rec, job.handle, result, now);
+    rec = L.recordOutcome(rec, job.handle, result, now, job.account);
+  } else if (job.kind === 'unmute') {
+    rec = L.recordUnmute(rec, job.handle, result, now);
   } else if (result.status === 'checked') {
     rec = L.recordCheck(rec, result.rows, now).rec;
   } else {
@@ -253,15 +289,22 @@ async function tickWith(xOpen) {
     return;
   }
   if (!muting(s)) return;
-  let rec = await mutesRec();
+  const got = await mutesRec();
+  let rec = L.stampAccount(got, s.muteAccount);
+  if (rec !== got) await saveMutes(rec);
   if (now < (rec.nextAt || 0)) return;
   const cap = L.muteCap(s);
   const b = L.muteBudget(rec, L.utcDay(now), cap);
   if (b.stopped) return;
   const list = await stored();
-  const candidates = L.muteCandidates(list && list.handles, s, rec);
+  const handles = list && list.handles;
+  // Unmutes go first: an account that left the list was most likely listed
+  // by mistake. Both share today's cap.
+  const unmutes = L.unmuteCandidates(handles, s, rec);
+  const candidates = L.muteCandidates(handles, s, rec);
+  const next = unmutes.length ? { kind: 'unmute', handle: unmutes[0] } : candidates.length ? { kind: 'mute', handle: candidates[0] } : null;
   const pending = (rec.sinceCheck || []).length;
-  let canVisit = b.mutesLeft > 0 && b.visitsLeft > 0 && candidates.length > 0;
+  let canVisit = b.mutesLeft > 0 && b.visitsLeft > 0 && next !== null;
   if (pending >= L.DEFAULTS.muteCheckEvery) {
     await startJob('check', null, s.muteAccount, now);
     return;
@@ -275,18 +318,20 @@ async function tickWith(xOpen) {
     return;
   }
   if (!canVisit) return;
-  await startJob('mute', candidates[0], s.muteAccount, now);
+  await startJob(next.kind, next.handle, s.muteAccount, now);
   rec = L.countVisit(rec, now);
   await saveMutes(rec);
 }
 
-chrome.runtime.onInstalled.addListener(() => {
+chrome.runtime.onInstalled.addListener((details) => {
+  serial(() => sweepStrandedVisit(!!details && details.reason === 'update')).catch(() => {});
   ensureAlarm();
   ensureMuteAlarm();
   refresh();
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  serial(() => sweepStrandedVisit(false)).catch(() => {}); // tab ids restart with the browser
   ensureAlarm();
   ensureMuteAlarm();
   refreshIfDue();

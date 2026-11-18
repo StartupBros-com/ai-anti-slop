@@ -366,6 +366,28 @@
     return { action: 'click', index: hits[0] };
   }
 
+  // Which item of a post's ⋯ menu undoes a mute AI Anti-Slop made: the one
+  // exact Unmute item ("unmute" on 2026-11-06, or "unmute @h"), never "unmute
+  // this conversation". A menu that offers Mute instead means the account is
+  // no longer muted. Returns
+  //   { action: 'click', index }                 the one exact Unmute item
+  //   { action: 'done', status: 'not-muted' }    not muted: nothing to click
+  //   { action: 'refuse', status, reason, stopDay }
+  function chooseUnmuteItem(items, handle) {
+    const labels = (items || []).map(norm);
+    const h = String(handle || '').toLowerCase();
+    const hits = labels.map((l, i) => (l === 'unmute' || l === `unmute @${h}` ? i : -1)).filter((i) => i >= 0);
+    const mute = labels.some((l) => l === 'mute' || l === `mute @${h}`);
+    if (hits.length === 1 && !mute) return { action: 'click', index: hits[0] };
+    if (hits.length === 0 && mute) return { action: 'done', status: 'not-muted' };
+    return {
+      action: 'refuse',
+      status: 'refused',
+      reason: `${hits.length} exact Unmute items${mute ? ' and a Mute item' : ''} in the menu [${labels.join(' | ')}]`,
+      stopDay: true,
+    };
+  }
+
   // A fresh record of what muting has done: per account and per UTC day.
   function emptyMutes() {
     return { handles: {}, days: {}, front: [], nextAt: 0, sinceCheck: [] };
@@ -429,13 +451,55 @@
       if (!ok.has(h)) continue;
       const st = entryOf(r, h);
       if (isSettled(st)) continue;
-      (st ? retry : fresh).push(h);
+      // An account it unmuted cleanly that is wanted again is not a failed
+      // try, so it goes with the accounts not visited yet.
+      const cleared = st && (st.status === 'unmuted' || st.status === 'not-muted');
+      (st && !cleared ? retry : fresh).push(h);
     }
     return [...fresh, ...retry];
   }
 
+  // Accounts to unmute, oldest mute first: ones AI Anti-Slop muted itself, as
+  // the account muting is on for now, that muteEligible no longer picks (off
+  // the list and not in Also hide, moved to Always show, or a bot whose row
+  // left Mute on X). Never an account it found already muted: the user muted
+  // that one. None at all while the stored list is empty, so a first fetch
+  // that failed never reads as every account leaving the list. An account
+  // whose unmute failed muteMaxAttempts times stays muted.
+  function unmuteCandidates(listHandles, settings, rec) {
+    const account = settings && settings.muteAccount;
+    if (!account || !listHandles || listHandles.length === 0) return [];
+    const r = rec || emptyMutes();
+    const eligible = new Set(muteEligible(listHandles, settings));
+    const out = [];
+    for (const h of Object.keys(r.handles || {})) {
+      const e = entryOf(r, h);
+      if (!e || e.status !== 'muted' || e.account !== account || eligible.has(h)) continue;
+      if ((e.unmuteAttempts || 0) >= DEFAULTS.muteMaxAttempts) continue;
+      out.push(h);
+    }
+    return out.sort((a, b) => (entryOf(r, a).at || 0) - (entryOf(r, b).at || 0) || (a < b ? -1 : 1));
+  }
+
+  // Mutes recorded before 0.8.0 do not say which account made them. They get
+  // the account muting is on for when this version first runs, which made them
+  // unless the user switched accounts before updating. Returns the same object
+  // when there is nothing to stamp, so the caller writes only on a change.
+  function stampAccount(rec, account) {
+    const r0 = rec || emptyMutes();
+    if (!account) return r0;
+    const todo = Object.keys(r0.handles || {}).filter((h) => {
+      const e = entryOf(r0, h);
+      return e && e.status === 'muted' && !e.account;
+    });
+    if (!todo.length) return r0;
+    const r = structuredCloneish(r0);
+    for (const h of todo) entryOf(r, h).account = account;
+    return r;
+  }
+
   function dayOf(rec, today) {
-    return (rec.days && rec.days[today]) || { mutes: 0, visits: 0, stopped: null };
+    return (rec.days && rec.days[today]) || { mutes: 0, unmutes: 0, visits: 0, stopped: null };
   }
 
   // The daily mute cap the user picked: 25, 50 or 100. Anything else,
@@ -453,17 +517,20 @@
   }
 
   // What today's caps leave at the given daily cap (the default when cap is
-  // not one of muteCaps). Visits are capped at twice the mutes. `stopped` is
-  // set when muting stopped itself for the day (an unexpected menu, a wrong
-  // account, a mute not on the list).
+  // not one of muteCaps). Mutes and unmutes share the cap: mutesLeft is what
+  // is left of it for either. Visits are capped at twice the cap. `stopped`
+  // is set when muting stopped itself for the day (an unexpected menu, a
+  // wrong account, a mute not on the list).
   function muteBudget(rec, today, cap) {
     const c = DEFAULTS.muteCaps.includes(cap) ? cap : DEFAULTS.muteDailyCap;
     const d = dayOf(rec || emptyMutes(), today);
+    const unmutes = d.unmutes || 0;
     return {
-      mutesLeft: Math.max(0, c - d.mutes),
+      mutesLeft: Math.max(0, c - d.mutes - unmutes),
       visitsLeft: Math.max(0, 2 * c - d.visits),
       stopped: d.stopped || null,
       mutes: d.mutes,
+      unmutes,
       visits: d.visits,
       cap: c,
       visitCap: 2 * c,
@@ -480,7 +547,9 @@
   //   refused      the menu was not one we act on: stops muting for the day
   //   wrong-account, login   the tab is not logged in as the bound account: stops the day
   //   error        timeout, closed tab, a menu that did not open: retried, up to muteMaxAttempts
-  function recordOutcome(rec, handle, outcome, now) {
+  // A mute records `account`, the account the job ran as, so it is unmuted
+  // only as that account.
+  function recordOutcome(rec, handle, outcome, now, account) {
     const r = structuredCloneish(rec || emptyMutes());
     const today = utcDay(now);
     const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
@@ -490,6 +559,7 @@
     if (outcome.reason) entry.reason = String(outcome.reason).slice(0, 200);
     if (status === 'muted') {
       d.mutes += 1;
+      if (account) entry.account = account;
       entry.toast = outcome.toast ? String(outcome.toast).slice(0, 120) : null;
       entry.confirmed = null;
       r.sinceCheck = [...(r.sinceCheck || []), handle];
@@ -506,6 +576,43 @@
     }
     if (entry.status) setEntry(r, handle, entry);
     r.front = (r.front || []).filter((h) => h !== handle);
+    r.days[today] = d;
+    return r;
+  }
+
+  // Fold one unmute visit's outcome into the record (a new object). The visit
+  // was already counted when its tab opened. Outcomes:
+  //   unmuted      clicked the Unmute item: counts against today's cap
+  //   not-muted    the menu offered Mute: unmuted already, so nothing to click
+  //   no-post, error   tried again, up to muteMaxAttempts, then left muted
+  //   refused, wrong-account, login   stops the day; tried again on a later day
+  // Until an unmute succeeds the entry stays `muted`, so a failed visit never
+  // loses the record that AI Anti-Slop made the mute.
+  function recordUnmute(rec, handle, outcome, now) {
+    const r = structuredCloneish(rec || emptyMutes());
+    const today = utcDay(now);
+    const d = Object.assign({ mutes: 0, unmutes: 0, visits: 0, stopped: null }, r.days[today]);
+    const prev = entryOf(r, handle);
+    const status = outcome.status;
+    const reason = outcome.reason ? String(outcome.reason).slice(0, 200) : null;
+    if (status === 'unmuted') d.unmutes += 1;
+    if (prev && prev.status === 'muted') {
+      if (status === 'unmuted' || status === 'not-muted') {
+        const e = { status, at: now, mutedAt: prev.at || null };
+        if (prev.account) e.account = prev.account;
+        if (status === 'unmuted') e.toast = outcome.toast ? String(outcome.toast).slice(0, 120) : null;
+        setEntry(r, handle, e);
+        // No longer muted, so the next check of the muted list has nothing to find.
+        r.sinceCheck = (r.sinceCheck || []).filter((x) => x !== handle);
+      } else if (status === 'error' || status === 'no-post') {
+        prev.unmuteAttempts = (prev.unmuteAttempts || 0) + 1;
+        prev.unmuteAt = now;
+        if (reason) prev.unmuteReason = reason;
+      }
+    }
+    if (['refused', 'wrong-account', 'login'].includes(status)) {
+      d.stopped = `@${handle}: ${status === 'refused' ? 'unmute refused' : status}${reason ? ` (${reason.slice(0, 160)})` : ''}`;
+    }
     r.days[today] = d;
     return r;
   }
@@ -575,6 +682,7 @@
       muted: vals.filter((e) => e.status === 'muted').length,
       confirmed: vals.filter((e) => e.status === 'muted' && e.confirmed === true).length,
       notFound: vals.filter((e) => e.status === 'muted' && e.confirmed === false).length,
+      unmuted: vals.filter((e) => e.status === 'unmuted').length,
       already: vals.filter((e) => e.status === 'already').length,
       followed: vals.filter((e) => e.status === 'followed').length,
       skipped: vals.filter((e) => e.status === 'no-post' || e.status === 'failed').length,
@@ -893,13 +1001,17 @@
     shouldHideMention,
     utcDay,
     chooseMuteItem,
+    chooseUnmuteItem,
     emptyMutes,
     muteEligible,
     muteCandidates,
+    unmuteCandidates,
+    stampAccount,
     muteCap,
     capNeedsXOpen,
     muteBudget,
     recordOutcome,
+    recordUnmute,
     recordCheck,
     countVisit,
     stopDay,

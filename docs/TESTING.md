@@ -63,6 +63,21 @@ check job then read 7 rows of `x.com/settings/muted/all`, with the new mute
 first. On 3 of 4 profiles, the first post appeared 2 to 3 s before its ⋯
 button, so the job waits for the button.
 
+Unmuting was tested the same way on 2026-11-18 (UTC), with the code of commit
+d329f56 (0.8.0, not yet released), on the maintainer's own X account. A
+stand-in for the worker gave the page an unmute job for one listed account on
+that account's muted list, with the account in **Always show**, and said yes
+when the page asked to confirm. On the account's profile, X's post menu offered
+"Unmute" and no Mute item. The page asked to confirm once and clicked it, and
+6.8 s after the job started X showed "@… has been unmuted.", with no Undo and
+no confirmation sheet. A check job then read 7 rows of
+`x.com/settings/muted/all` without the account. A mute job then muted it again
+("@… has been muted.Undo", 6.3 s), so it was unmuted for about 16 s, and a last
+check found it on the list. It was second there, under an account muted
+between the first two checks (not by this run), although the re-mute was the
+newer of the two: a re-mute 16 s after an unmute did not move the account to
+the top of the list.
+
 The unpacked extension was run in Chromium 156 (headless, through Playwright)
 with x.com answered by a local HTTPS server of fixture pages; Playwright's own
 request routing did not reach the tabs the extension opened. The 6 most recent
@@ -254,13 +269,16 @@ from `x.com/settings/muted/all`.
 
 ## Not tested
 
-Hiding in Brave (muting has run there, above), Tampermonkey, Violentmonkey in
+Hiding in Brave (muting has run there, above), a real extension update in the middle of a visit (the closing of the stranded tab has only run against fakes), Tampermonkey, Violentmonkey in
 Firefox, the 6-hour refresh actually firing, reposts, and the notifications
 page. For the 0.7.0 and 0.7.1 renames: whether a userscript manager updates an
 installed 0.6.x or 0.7.0 script in place (the script keeps its `@name` and
 `@namespace` for that) and shows the `@name:en` name. For muting: a bot row set to **Mute on X** and accounts from **Also hide
 these accounts** on real x.com, more than two days in a row, how X responds to
-this pace over weeks, and X in other languages. For export and import: Brave
+this pace over weeks, and X in other languages. For unmuting (0.8.0): an
+unmute started by the extension's own worker in its visit tab (the run above
+used a stand-in for the worker), and whether X ever asks to confirm an unmute
+(it did not, once). For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.
