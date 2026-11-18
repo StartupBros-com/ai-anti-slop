@@ -704,3 +704,10 @@ test('recordCheck: a handle on the check list that is no longer muted is not mis
   assert.deepEqual(missing, []);
   assert.equal(r.days[DAY], undefined);
 });
+
+test('labelsOn: on unless turned off; anything but true or no value is off', () => {
+  assert.equal(lib.labelsOn(undefined), true);
+  assert.equal(lib.labelsOn({}), true);
+  assert.equal(lib.labelsOn({ labeling: true }), true);
+  for (const v of [false, 'true', null, 0, 1]) assert.equal(lib.labelsOn({ labeling: v }), false, String(v));
+});

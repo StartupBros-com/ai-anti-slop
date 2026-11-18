@@ -84,7 +84,7 @@
     muteMaxAttempts: 2,
     // Accounts seen while browsing, muted ahead of the rest of the list.
     muteFrontMax: 50,
-    // Labels (extension only, off unless the user turns them on): at most
+    // Labels (extension only, on unless the user turns them off): at most
     // this many saved, each keeping at most this many characters of reply text.
     labelMax: 2000,
     labelTextMax: 1000,
@@ -762,6 +762,14 @@
   // stored under its own key (LABEL_PREFIX + the post id) in the extension's
   // local storage and leaves the browser only in a file the user exports.
 
+  // Whether labels are on. They are until the user turns them off: settings
+  // that never had the switch (a new install, or one from before labels were
+  // on by default) count as on. Any value but true or none at all is off.
+  function labelsOn(settings) {
+    const v = settings ? settings.labeling : undefined;
+    return v === undefined || v === true;
+  }
+
   const STATUS_PATH_RE = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d{1,25})(?:[/?#]|$)/;
   const X_ORIGIN_RE = /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com(?=\/)/i;
 
@@ -1090,6 +1098,7 @@
     muteSummary,
     LABEL_PREFIX,
     LABELS,
+    labelsOn,
     statusOf,
     statusPageOf,
     labelRecord,
@@ -1239,10 +1248,11 @@
 // X's own Mute item, then reports back, and the worker closes the tab. It never
 // calls X's API.
 //
-// Labels, when the user has turned them on (extension only): on a post's
-// own page, each post below it gets a small Slop / Not slop pair. A click
-// there, and the Undo it offers, are the only things this script acts on in
-// the user's own tabs, and only a click the browser marks as the user's own.
+// Labels, unless the user has turned them off (extension only): on a post's
+// own page, each post below it gets one icon button, Hide as slop, at the end
+// of its row of action icons. A click there, and the Undo it offers, are the
+// only things this script acts on in the user's own tabs, and only a click
+// the browser marks as the user's own.
 // A click shows on the page at once and is handed to the background worker
 // to save only when its 6-second Undo window ends, so an undone click is
 // never saved and never reaches muting.
@@ -1271,10 +1281,11 @@
   const hiddenAuthors = new Set();
   const hiddenMentions = new Set(); // distinct posts hidden for tagging a bot
 
-  // Labels (see the header). BAR marks the pair, its value the post id.
+  // Labels (see the header). BAR marks the holder of a post's button, its
+  // value the post id.
   const BAR = 'data-xsh-bar';
   let labeling = false;
-  let listed = new Set(); // the list itself, for the note beside the pair
+  let listed = new Set(); // the list itself, for the button's tooltip
   let allowBox = new Set(); // Always show, as typed
   let extraBox = new Set(); // Also hide, as typed
   const labels = new Map(); // post id -> 'slop' | 'not_slop' | null, once read
@@ -1315,17 +1326,32 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
-  // The label bar's look, added only once labelling is turned on, so a page
-  // with labelling off gets nothing beyond the hide rule.
+  // The button's look, added only while labels are on, so a page with them
+  // off gets nothing beyond the hide rule. It copies X's own action icons: a
+  // 19px glyph in X's grey (taken from the reply icon beside it), red with a
+  // round tint on hover, filled red once the reply is labelled. The tint
+  // circle is also the hit area, 35x36 px. A post without an action row gets
+  // the button in a row of its own under the text.
   function injectBarStyle() {
     if (document.getElementById('xsh-bar-style')) return;
     const st = document.createElement('style');
     st.id = 'xsh-bar-style';
     st.textContent =
-      `[${BAR}]{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 8px 56px;font:13px/1.3 system-ui,sans-serif;color:rgb(113,118,123)}` +
-      `[${BAR}] button{font:inherit;color:inherit;background:transparent;border:1px solid rgba(113,118,123,.6);border-radius:999px;padding:2px 10px;cursor:pointer}` +
-      `[${BAR}] button[aria-pressed="true"][data-xsh-label="slop"]{color:#fff;background:rgb(244,33,46);border-color:rgb(244,33,46)}` +
-      `[${BAR}] button[aria-pressed="true"][data-xsh-label="not_slop"]{color:#fff;background:rgb(0,150,100);border-color:rgb(0,150,100)}` +
+      // In X's row, 8px on top of the row's 4px gap: the 12px between bookmark and share.
+      `[${BAR}]{display:flex;flex:none;align-items:center;margin-left:8px;color:rgb(113,118,123)}` +
+      `[${BAR}][data-xsh-own-row]{margin:4px 0 8px 64px}` +
+      `[${BAR}] button{position:relative;display:flex;align-items:center;justify-content:center;width:19px;height:20px;margin:0;padding:0;border:0;background:none;color:inherit;cursor:pointer;transition:color .15s ease-out}` +
+      `[${BAR}] button::before{content:"";position:absolute;inset:-8px;border-radius:9999px;transition:background-color .15s ease-out}` +
+      `[${BAR}] svg{position:relative;width:18.75px;height:18.75px;overflow:visible}` +
+      `[${BAR}] .xsh-fill{fill:none}` +
+      `[${BAR}] button[aria-pressed="true"]{color:rgb(244,33,46)}` +
+      `[${BAR}] button[aria-pressed="true"] .xsh-fill{fill:currentColor}` +
+      `[${BAR}] button[aria-pressed="true"] .xsh-cross{display:none}` +
+      `@media (hover:hover){[${BAR}] button:hover{color:rgb(244,33,46)}[${BAR}] button:hover::before{background:rgba(244,33,46,.1)}}` +
+      `[${BAR}] button:focus-visible{outline:none}` +
+      `[${BAR}] button:focus-visible::before{box-shadow:0 0 0 2px rgb(29,155,240)}` +
+      `@media (forced-colors:active){[${BAR}] button:focus-visible{outline:2px solid Highlight}[${BAR}] button[aria-pressed="true"]{color:Highlight}}` +
+      `@media (prefers-reduced-motion:reduce){[${BAR}] button,[${BAR}] button::before{transition:none}}` +
       `[${TOAST}]{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;pointer-events:none;font:14px/1.4 system-ui,sans-serif}` +
       `[${TOAST}] [data-xsh-toast-box]{display:flex;gap:12px;align-items:center;max-width:min(90vw,480px);padding:10px 14px;border-radius:8px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 12px rgba(0,0,0,.35);pointer-events:auto}` +
       `[${TOAST}] [hidden]{display:none!important}` +
@@ -1382,7 +1408,7 @@
   }
 
   // While the page's post is mounted, remember every post above it in the
-  // document. Returns true when that adds one, which may already have a pair.
+  // document. Returns true when that adds one, which may already have a button.
   // A post above it that is first mounted after the page's post has been
   // unmounted (a long chain scrolled far up) is not caught.
   function noteAncestors(focal) {
@@ -1407,7 +1433,7 @@
     return false;
   }
 
-  // The post a pair would label, or null: on a post's own page (not its
+  // The post a button would label, or null: on a post's own page (not its
   // quotes, likes or a photo), a post below the page's post with its own link
   // and author. The page's post and the posts above it get none.
   function labelTarget(article) {
@@ -1437,34 +1463,64 @@
     return parts.join('').trim();
   }
 
+  // The post's button holder, wherever it sits inside the post (not inside a
+  // post nested in it).
   function barOf(article) {
-    for (const c of article.children) if (c.hasAttribute(BAR)) return c;
+    for (const b of article.querySelectorAll(`[${BAR}]`)) if (b.closest(ARTICLE) === article) return b;
     return null;
   }
 
+  // The row of action icons (reply, repost, like, ...) that X draws under a
+  // post, found from its reply button, or null.
+  function actionRow(article) {
+    const reply = article.querySelector('[data-testid="reply"]');
+    const row = reply && reply.closest('[role="group"]');
+    return row && row.closest(ARTICLE) === article ? row : null;
+  }
+
   // X opens a post on a click anywhere in it, and has keyboard shortcuts:
-  // none of these events, done in the pair or the notice, reaches its handlers.
+  // none of these events, done on the button or in the notice, reaches its
+  // handlers.
   const STOPPED = ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup'];
+
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const BUBBLE = 'M5.5 4.5h13a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H12l-4.75 3.9V17H5.5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z';
+  const CROSS = 'M9.5 8.25l5 5m0-5l-5 5';
+  let iconSeq = 0;
+
+  function svgEl(name, attrs) {
+    const el = document.createElementNS(SVG_NS, name);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    return el;
+  }
+
+  // A speech bubble with an X in it. Labelled, the bubble fills and the X is
+  // cut out of it, by a mask of the icon's own (a mask shared between icons
+  // would stop drawing once the post holding it is hidden).
+  function makeIcon() {
+    const id = `xsh-cross-${++iconSeq}`;
+    const svg = svgEl('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true', focusable: 'false' });
+    const mask = svgEl('mask', { id });
+    mask.appendChild(svgEl('rect', { width: '24', height: '24', fill: '#fff' }));
+    mask.appendChild(svgEl('path', { d: CROSS, stroke: '#000', 'stroke-width': '1.75', 'stroke-linecap': 'round' }));
+    svg.appendChild(mask);
+    svg.appendChild(svgEl('path', { class: 'xsh-fill', d: BUBBLE, mask: `url(#${id})`, stroke: 'currentColor', 'stroke-width': '1.75', 'stroke-linejoin': 'round' }));
+    svg.appendChild(svgEl('path', { class: 'xsh-cross', d: CROSS, fill: 'none', stroke: 'currentColor', 'stroke-width': '1.75', 'stroke-linecap': 'round' }));
+    return svg;
+  }
 
   function makeBar() {
     const bar = document.createElement('div');
     bar.setAttribute(BAR, '');
-    bar.setAttribute('role', 'group');
-    bar.setAttribute('aria-label', 'AI Anti-Slop label');
-    for (const [label, text] of [
-      ['slop', 'Slop'],
-      ['not_slop', 'Not slop'],
-    ]) {
-      const b = document.createElement('button');
-      b.setAttribute('type', 'button');
-      b.setAttribute('data-xsh-label', label);
-      b.setAttribute('aria-pressed', 'false');
-      b.textContent = text;
-      bar.appendChild(b);
-    }
-    const note = document.createElement('span');
-    note.setAttribute('data-xsh-note', '');
-    bar.appendChild(note);
+    bar.setAttribute('data-xsh-note', '');
+    const b = document.createElement('button');
+    b.setAttribute('type', 'button');
+    b.setAttribute('data-xsh-label', 'slop');
+    b.setAttribute('aria-pressed', 'false');
+    b.setAttribute('aria-label', 'Hide as slop');
+    b.setAttribute('title', 'Hide as slop');
+    b.appendChild(makeIcon());
+    bar.appendChild(b);
     for (const type of STOPPED) bar.addEventListener(type, (e) => onBarEvent(e, bar));
     return bar;
   }
@@ -1477,21 +1533,41 @@
     return '';
   }
 
-  // Bring a pair up to date. Writes only what differs, so its own mutations
-  // settle on the next pass.
+  // Bring a button up to date. Writes only what differs, so its own
+  // mutations settle on the next pass. The note goes in the tooltip.
   function renderBar(bar, id, author) {
-    const cur = labels.get(id) || null;
-    for (const b of bar.querySelectorAll('[data-xsh-label]')) {
-      const v = String(b.getAttribute('data-xsh-label') === cur);
-      if (b.getAttribute('aria-pressed') !== v) b.setAttribute('aria-pressed', v);
-    }
-    const note = bar.querySelector('[data-xsh-note]');
-    const text = notes.get(id) || boxNote(author);
-    if (note && note.textContent !== text) note.textContent = text;
+    const on = labels.get(id) === 'slop';
+    const b = bar.querySelector('[data-xsh-label]');
+    const note = notes.get(id) || boxNote(author);
+    if (bar.getAttribute('data-xsh-note') !== note) bar.setAttribute('data-xsh-note', note);
+    if (!b) return;
+    if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
+    const tip = (on ? 'Labelled slop: click to remove the label' : 'Hide as slop') + (note ? ` (${note})` : '');
+    if (b.getAttribute('title') !== tip) b.setAttribute('title', tip);
   }
 
-  // Add, update or remove the pair on one post. X reuses a post's nodes for
-  // another post, so the pair is re-keyed whenever the post's link changes.
+  // Put the button at the end of the post's action row, or under the post
+  // when it has none (yet: X fills a post in over several passes). Its grey
+  // is the reply icon's, read when it moves.
+  function placeBar(article, bar) {
+    const row = actionRow(article);
+    const parent = row || article;
+    if (bar.parentNode === parent) return;
+    parent.appendChild(bar);
+    if (row) {
+      bar.removeAttribute('data-xsh-own-row');
+      const icon = row.querySelector('[data-testid="reply"] svg');
+      const color = icon && typeof getComputedStyle === 'function' ? getComputedStyle(icon).color : '';
+      if (color) bar.setAttribute('style', `color:${color}`);
+    } else {
+      bar.setAttribute('data-xsh-own-row', '');
+      bar.removeAttribute('style');
+    }
+  }
+
+  // Add, update or remove the button on one post. X reuses a post's nodes
+  // for another post, so the button is re-keyed whenever the post's link
+  // changes.
   function syncBar(article) {
     if (!labeling) return;
     const t = labelTarget(article);
@@ -1500,18 +1576,16 @@
       if (bar) bar.remove();
       return;
     }
-    if (!bar) {
-      bar = makeBar();
-      article.appendChild(bar);
-    }
+    if (!bar) bar = makeBar();
+    placeBar(article, bar);
     if (bar.getAttribute(BAR) !== t.id) bar.setAttribute(BAR, t.id);
     if (bar.getAttribute('data-xsh-author') !== t.author) bar.setAttribute('data-xsh-author', t.author);
     renderBar(bar, t.id, t.author);
     if (!asked.has(t.id)) readLabel(t.id);
   }
 
-  // Bring the pairs on these posts up to date, or on every post when a post
-  // above the page's post has just been found: it may already have a pair.
+  // Bring the buttons on these posts up to date, or on every post when a
+  // post above the page's post has just been found: it may already have one.
   function syncBars(arts) {
     if (!labeling) return;
     const focal = L.statusPageOf(location.pathname);
@@ -1525,7 +1599,7 @@
     }
   }
 
-  // Read stored labels for posts as their pairs appear, a batch at a time.
+  // Read stored labels for posts as their buttons appear, a batch at a time.
   function readLabel(id) {
     asked.add(id);
     toRead.add(id);
@@ -1576,8 +1650,10 @@
     if (entry) overlay = overlay.filter((o) => o !== entry);
   }
 
-  // A click on Slop or Not slop. Clicking the label a post already has
-  // clears it. The page changes now; the save waits for the window to end.
+  // A click on Hide as slop. On a post already labelled slop it clears the
+  // label; on one labelled Not slop (only older versions drew that button)
+  // it labels it slop. The page changes now; the save waits for the window
+  // to end.
   function labelClick(article, which, btn) {
     const t = labelTarget(article);
     if (!t || !labeling) return;
@@ -1590,7 +1666,7 @@
     // have reused this post's nodes, or the page may have changed.
     const msg = { label, handle: t.author, url: t.url, page: location.pathname, text: postText(article) };
     // The box the click adds the account to, as the worker's save will.
-    const field = label === 'slop' ? 'extraList' : label === 'not_slop' ? 'allowlist' : null;
+    const field = label === 'slop' ? 'extraList' : null;
     const entry = field && !(field === 'extraList' ? viewExtraBox : viewAllowBox).has(t.author) ? { handle: t.author, field } : null;
     if (entry) overlay.push(entry);
     pending = { id: t.id, which, had, prev, note: notes.get(t.id), label, msg, entry, btn, timer: setTimeout(commit, UNDO_MS) };
@@ -1599,19 +1675,24 @@
     refreshView();
     rescanAll();
     renderId(t.id);
-    showToast(clickText(label, entry), true);
-    // A Slop click hides the button it was made with: focus moves to Undo.
+    const cell = article.closest(CELL) || article;
+    showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), label === 'slop' && viewAllowBox.has(t.author)), true);
+    // A click that hides the reply hides the button too: focus moves to Undo.
     if (btn && document.activeElement === btn && btn.closest(`[${ATTR}]`)) {
       const u = undoButton();
       if (u) u.focus();
     }
   }
 
-  function clickText(label, entry) {
-    if (label === null) return 'Label removed.';
-    const name = label === 'slop' ? 'Slop' : 'Not slop';
-    if (!entry) return `Labelled ${name}.`;
-    return `Labelled ${name}. @${entry.handle} added to ${entry.field === 'extraList' ? 'Also hide' : 'Always show'}.`;
+  // What the notice says a click did. gone: the reply is hidden now (not so
+  // while hiding is paused or the account is in Always show). allowed: the
+  // account is in Always show, as one labelled Not slop before 0.9.0 is, so
+  // the label hides nothing.
+  function clickText(label, entry, handle, gone, allowed) {
+    if (label === null) return 'Slop label removed.';
+    const did = gone ? `Hid @${handle}` : `Labelled @${handle} as slop`;
+    const text = entry ? `${did} and added it to Also hide.` : `${did}.`;
+    return allowed ? `${text} It still shows: it is in Always show.` : text;
   }
 
   // Put a post's label back as it was before a click.
@@ -1663,8 +1744,8 @@
       );
   }
 
-  // Refused or lost: the page goes back to what is stored, and the pair says
-  // why.
+  // Refused or lost: the page goes back to what is stored, and the button's
+  // tooltip says why.
   function refused(p, reason) {
     dropEntry(p.entry);
     const note = `not saved: ${reason}`;
@@ -1681,7 +1762,7 @@
       notes.set(p.id, note);
     }
     // Otherwise a newer click on this post was already sent, and its answer
-    // decides what the pair shows.
+    // decides what the button shows.
     refreshView();
     rescanAll();
     renderId(p.id);
@@ -1879,7 +1960,7 @@
     listed = new Set(handles);
     allowBox = L.parseAllowlist(st.allowlist);
     extraBox = L.parseAllowlist(st.extraList);
-    labeling = !!(st.labeling === true && adapter.saveLabel);
+    labeling = !!(L.labelsOn(st) && adapter.saveLabel);
     if (labeling) {
       injectBarStyle();
       makeToast();

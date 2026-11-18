@@ -16,7 +16,7 @@ export const tick = () => new Promise((r) => setTimeout(r, 0));
 // [role="link"] card inside the article carrying its own User-Name block.
 // `mention` tags an account in the post's own text; `quoteMention` tags one in
 // the quoted post's text only (an "@grok is this true?" seen through a quote).
-export function post({ author, quote = null, mention = null, quoteMention = null, status = '1', authorBlock = true }) {
+export function post({ author, quote = null, mention = null, quoteMention = null, status = '1', authorBlock = true, actions = false }) {
   const userName = authorBlock
     ? `<div data-testid="User-Name"><div><a href="/${author}" role="link"><span>Name</span></a></div>` +
       `<div><a href="/${author}" role="link" tabindex="-1"><span>@${author}</span></a>` +
@@ -27,9 +27,14 @@ export function post({ author, quote = null, mention = null, quoteMention = null
     ? `<div role="link" tabindex="0"><div data-testid="User-Name"><a href="/${quote}"><span>@${quote}</span></a></div>` +
       `<div data-testid="tweetText">quoted text${quoteMention ? ` <a href="/${quoteMention}" role="link">@${quoteMention}</a>` : ''}</div></div>`
     : '';
+  // The row of action icons X draws under a post, with `actions`.
+  const row = actions
+    ? `<div role="group" aria-label="Post actions"><div><button data-testid="reply" type="button"><div><svg viewBox="0 0 24 24"></svg></div></button></div>` +
+      `<div><button data-testid="like" type="button"><div><svg viewBox="0 0 24 24"></svg></div></button></div></div>`
+    : '';
   return (
     `<div data-testid="cellInnerDiv" data-fixture="${status}"><div><article data-testid="tweet" role="article" tabindex="0">` +
-    `${userName}${text}${quoteCard}</article></div></div>`
+    `${userName}${text}${quoteCard}${row}</article></div></div>`
   );
 }
 

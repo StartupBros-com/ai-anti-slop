@@ -33,8 +33,8 @@ in the page:
   runs only as the account you turned it on from;
 - with hiding posts that tag a bot turned on, the @-links in each post's own
   text, to see whether it tags a bot set to Hide or Mute;
-- with labels turned on, the text of a reply when you click **Slop** or
-  **Not slop** under it.
+- with labels on (they are unless you turn them off), the text of a reply
+  when you click **Hide as slop** on it.
 
 None of this is sent anywhere. What is kept is listed below.
 
@@ -49,7 +49,7 @@ Sync does not copy it to other devices.
 | `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, and an optional list address (the popup has no setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
 | `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
-| `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the reply's own text, the address of the page you labelled it on, whether the author was on the list, in **Also hide** or in **Always show**, and whether the reply was hidden. At most 2,000 labels. | Only when labels are on and you click **Slop** or **Not slop**. |
+| `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the reply's own text, the address of the page you labelled it on, whether the author was on the list, in **Also hide** or in **Always show**, and whether the reply was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a reply. Labels are on unless you turn them off; nothing is saved until you click. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
 
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
@@ -88,8 +88,9 @@ nothing else to X. At a daily cap of 50 or 100, before a visit outside
 **Run now** it asks your open tabs whether one of them is an x.com tab. It uses only each tab's id and whether
 the browser has unloaded it; it does not read tab addresses or titles.
 
-A **Slop** label adds the account to **Also hide**; a **Not slop** label adds it
-to **Always show**. With muting on, an account in **Also hide** can be visited
+A slop label, made with **Hide as slop**, adds the account to **Also hide**.
+Versions before 0.9.0 also had **Not slop**, which added it to **Always
+show**. With muting on, an account in **Also hide** can be visited
 and muted like a listed one.
 
 **Export labels** saves your labels as a `.jsonl` file through your browser's
@@ -114,7 +115,8 @@ no remotely hosted code.
 
 Labels keep the text of replies written by other people, so you can review or
 share your own record of what you marked. That text stays in your browser
-profile until you delete its label (click the reply's saved label again), click
+profile until you delete its label (pause hiding, then click the reply's
+filled **Hide as slop** button), click
 **Delete all labels** (it asks for a second click), or remove the extension. A
 file you exported stays where you saved it.
 
@@ -135,8 +137,8 @@ including the Limited Use requirements.
   which names that handle on each mute it made, until you remove the extension.
   Mutes already made stay on your X account; undo them at
   `https://x.com/settings/muted/all`.
-- Turning labels off removes the buttons. Clicking a reply's saved label again
-  deletes that one label. **Delete all labels** deletes every saved label and
+- Turning labels off removes the buttons. Clicking a reply's filled **Hide as
+  slop** button deletes that one label. **Delete all labels** deletes every saved label and
   the label count. Accounts a label added to **Also hide** or
   **Always show** stay there; remove them in the popup.
 - Removing the extension deletes everything it stored in the browser.

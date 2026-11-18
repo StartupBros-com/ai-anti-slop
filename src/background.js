@@ -550,7 +550,7 @@ async function saveLabel(msg) {
   const key = id ? L.LABEL_PREFIX + id : null;
   const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, ...(key ? [key] : [])]);
   const s = got[K.settings] || {};
-  if (s.labeling !== true) return { ok: false, reason: 'labels are off' };
+  if (!L.labelsOn(s)) return { ok: false, reason: 'labels are off' };
   const list = got[K.list];
   const r = L.labelRecord(msg, { handles: list && list.handles, source: list && list.source, settings: s }, Date.now());
   if (!r.ok) return { ok: false, reason: r.reason };

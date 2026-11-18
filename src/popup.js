@@ -110,8 +110,8 @@
   let deleteArmed = false;
   function renderLabels(s, n) {
     if (n === 0) deleteArmed = false;
-    $('labeling').checked = s.labeling === true;
-    setText($('labelsSum'), `${s.labeling === true ? 'On' : 'Off'} · ${n} saved`);
+    $('labeling').checked = L.labelsOn(s);
+    setText($('labelsSum'), `${L.labelsOn(s) ? 'On' : 'Off'} · ${n} saved`);
     setText($('export'), `Export labels (${n})`);
     // A button that is disabled while it has focus drops focus to the page;
     // hand it to the labels switch first.

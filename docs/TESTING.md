@@ -320,6 +320,53 @@ being closed. Headless Chromium kept the tab visible with another tab in
 front, with its window minimised and with the page frozen, so that save has
 run only in the unit tests.
 
+## Hide as slop icon in Chromium, without X
+
+On 2026-11-18 the unpacked extension with the one-icon label button (its
+manifest still says 0.9.0) ran in headless Chromium 157 through Playwright,
+against a local server answering for x.com and for the list's host, as in the
+run above. The stand-in thread draws a row of action icons under each reply,
+laid out the way X lays out its own (four wide items, then two narrow ones) and
+styled plainly; one reply has no row. Labels were never switched on: the
+settings had no `labeling` key. 30 of 30 checks passed.
+
+- All 9 replies got one button, named "Hide as slop" with no text, and the
+  post the page is about got none. On the 8 replies with a row it was the
+  row's last child; the reply without one got it on a line of its own.
+- On the shown replies the button measured 19 by 20 pixels, level with the
+  row's first icon, with a 35 by 36 pixel hit area (its `::before`). It took
+  the row's own icon colour: rgb(83, 100, 113) on the light page and
+  rgb(113, 118, 123) on the dark one.
+- Hovering turned it rgb(244, 33, 46) over a circle of the same red at 10%
+  opacity. Tab from Share landed on it and drew a 2-pixel ring of
+  rgb(29, 155, 240).
+- A click hid the reply and the account's other reply, and the notice said
+  "Hid @xsh_demo_a and added it to Also hide." with **Undo**. Once the 6
+  seconds ended the label was saved as slop and the account was in Also hide.
+- With hiding paused, the labelled reply showed with its icon filled red and
+  pressed, the × cut out of it, and a tooltip starting "Labelled slop: click
+  to remove the label". Clicking it said "Slop label removed."; when the window
+  ended the label was gone, the icon was empty again and Also hide was
+  unchanged.
+- A label saved as `not_slop` straight into storage, with its account in
+  Always show as a Not slop click left it, drew the icon empty. A click on it
+  saved slop over it; the reply kept showing, and the notice said "Labelled
+  @xsh_demo_d as slop and added it to Also hide. It still shows: it is in
+  Always show."
+- Turning labels off in storage removed every button.
+- No request left the two local hosts.
+
+The Undo run above was repeated on the same build, with its expected notice
+changed to the new wording: 27 of 28 passed, and the hidden-tab check again
+could not run. The first click's handler finished 7.5 ms after the click and a
+later one 0.6 ms after, both before the next paint.
+
+Before the code was written, the icon was injected by hand into one live x.com
+thread, in X's dark theme, for a screenshot. That page is where the 8-pixel
+margin before the button comes from: X's row has a 4-pixel gap, and Bookmark
+and Share sit 12 pixels apart. The extension itself has not drawn the button on
+x.com yet.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -347,7 +394,8 @@ used a stand-in for the worker), and whether X ever asks to confirm an unmute
 only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
 where X could not be reached), so how X responds to visits a few seconds apart,
 and how long a run of hundreds of accounts takes, are not known.
-For the label Undo window: the save when a tab is
+For the Hide as slop icon (0.9.0): the extension drawing it on real x.com, X's
+light and dim themes, a narrow window and Brave. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on
 real x.com or in Brave. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
