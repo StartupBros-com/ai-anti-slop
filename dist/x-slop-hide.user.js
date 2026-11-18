@@ -1764,6 +1764,15 @@
 
   function extensionAdapter() {
     const K = L.STORAGE_KEYS;
+    // sendMessage throws synchronously once the extension context is gone
+    // (reload or update), before any promise exists: make it a rejection.
+    const send = (msg) => {
+      try {
+        return Promise.resolve(chrome.runtime.sendMessage(msg));
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    };
     const read = () =>
       chrome.storage.local.get([K.list, K.settings]).then((o) => ({ list: o[K.list], settings: o[K.settings] }));
     return {
@@ -1779,11 +1788,11 @@
         });
       },
       // The worker answers with a job only for a tab it opened for one.
-      getJob: () => chrome.runtime.sendMessage({ type: 'xsh:job' }).catch(() => null),
+      getJob: () => send({ type: 'xsh:job' }).catch(() => null),
       confirmJob: (job) =>
-        chrome.runtime.sendMessage({ type: 'xsh:job-go', id: job.id }).then((ok) => ok === true, () => false),
-      reportJob: (result) => chrome.runtime.sendMessage({ type: 'xsh:job-result', result }).catch(() => {}),
-      noteSighting: (handle) => chrome.runtime.sendMessage({ type: 'xsh:sighting', handle }).catch(() => {}),
+        send({ type: 'xsh:job-go', id: job.id }).then((ok) => ok === true, () => false),
+      reportJob: (result) => send({ type: 'xsh:job-result', result }).catch(() => {}),
+      noteSighting: (handle) => send({ type: 'xsh:sighting', handle }).catch(() => {}),
       // Asked by the worker before a mute visit at 50 or 100 a day: is an
       // x.com tab of the user's own open? fn answers no in a job's tab.
       answerPresent(fn) {

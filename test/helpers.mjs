@@ -51,7 +51,7 @@ export function page(cells) {
 // gives the worker's reply to a save (default: saved), `saves` records each
 // save and `labelChange(id, label)` stands in for a change in another tab.
 // With `present`, `present()` asks the tab what the worker's x.com check asks.
-export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false } = {}) {
+export function runContent(html, { pathname = '/home', state = {}, job = null, confirm = true, labels = null, present = false, chrome = null } = {}) {
   const { window, document, MutationObserver } = parseHTML(html);
   const location = { pathname };
   let subscriber = null;
@@ -115,7 +115,7 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     document,
     location,
     MutationObserver: TestObserver,
-    XSlopHideAdapter: adapter,
+    ...(chrome ? { chrome } : { XSlopHideAdapter: adapter }),
     console,
     setTimeout,
     clearTimeout,

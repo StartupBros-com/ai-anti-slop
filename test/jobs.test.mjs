@@ -220,3 +220,42 @@ test('stats report the logged-in account the popup binds muting to', async () =>
   await tick();
   assert.equal(t.content.stats().me, 'startupbros');
 });
+
+// Once an update or reload invalidates the extension, chrome.runtime.sendMessage
+// throws synchronously. The page must neither raise an unhandled rejection nor
+// click or report anything.
+test('content: sendMessage throwing synchronously raises no rejection, clicks nothing, reports nothing', async () => {
+  const unhandled = [];
+  const onUnhandled = (e) => unhandled.push(e);
+  process.on('unhandledRejection', onUnhandled);
+  try {
+    const sent = [];
+    const chrome = {
+      id: 'xshtest',
+      storage: { local: { get: async () => ({ 'xsh:list': { handles: [H], fetchedAt: 1 }, 'xsh:settings': { muteEnabled: true, muteAccount: ME } }) }, onChanged: { addListener() {} } },
+      runtime: {
+        id: 'xshtest',
+        onMessage: { addListener() {} },
+        sendMessage(msg) {
+          sent.push(msg.type);
+          throw new Error('Extension context invalidated.');
+        },
+      },
+    };
+    const t = runContent(page([meLink(ME), postWithCaret({ author: H })]), { pathname: '/home', chrome });
+    const clicks = wireMenu(t.document, { items: MENU, handle: H });
+    for (let i = 0; i < 8; i++) await tick();
+    // The sighting and the job ask both threw; the page is still fine.
+    assert.ok(sent.includes('xsh:job'), 'the job ask was tried');
+    assert.ok(sent.includes('xsh:sighting'), 'the sighting was tried');
+    // A job handed to the page directly: the confirmation fails, so no click, and the report is swallowed.
+    await t.content.runJob(job());
+    for (let i = 0; i < 8; i++) await tick();
+    assert.ok(sent.includes('xsh:job-go'), 'the confirmation was tried');
+    assert.ok(sent.includes('xsh:job-result'), 'the report was tried');
+    assert.deepEqual(clicks, [], 'no click without the worker\'s yes');
+    assert.deepEqual(unhandled, [], 'no unhandled rejection');
+  } finally {
+    process.off('unhandledRejection', onUnhandled);
+  }
+});
