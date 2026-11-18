@@ -468,3 +468,63 @@ test("the notice is a polite status kept outside X's cells, empty between clicks
   assert.equal(absent(el.closest('[data-testid="cellInnerDiv"]')), true);
   assert.equal(toastOpen(t), true);
 });
+
+test("a refusal of the click before keeps the Undo of the click still in its window, and puts the refused reply back", async () => {
+  const answer = (m) => (m.handle === 'reply_a' ? { ok: false, reason: 'too many labels' } : { ok: true, label: m.label });
+  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on(), labels: { worker: true, answer }, clock: true });
+  await settle();
+  click(t, button(t, '2', 'slop'));
+  click(t, button(t, '3', 'slop'));
+  await settle();
+  assert.deepEqual(['2', '4'].map((s) => t.hidden(s)), [false, false], 'the refused click is put back');
+  assert.deepEqual(pressed(t, '2'), [], 'the stored label, read again');
+  assert.equal(note(t, '2'), 'not saved: too many labels');
+  assert.equal(toastText(t), 'Labelled Slop. @reply_b added to Also hide.');
+  assert.equal(undoBtn(t).hasAttribute('hidden'), false, 'the waiting click can still be undone');
+  assert.equal(t.hidden('3'), true);
+  click(t, undoBtn(t));
+  assert.equal(t.hidden('3'), false);
+  t.advance(60000);
+  await settle();
+  assert.deepEqual(t.saves.map((s) => s.handle), ['reply_a']);
+});
+
+test('a refused click under a newer click on the same post: Undo goes back to the stored label and says why, and a save leaves no stale note', async () => {
+  const answer = (m) => (m.label === 'slop' ? { ok: false, reason: 'too many labels' } : { ok: true, label: m.label });
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { worker: true, answer }, clock: true });
+  await settle();
+  click(t, button(t, '2', 'slop'));
+  click(t, button(t, '2', 'not_slop'));
+  await settle();
+  assert.deepEqual(pressed(t, '2'), ['not_slop'], 'the newer click still shows');
+  assert.equal(note(t, '2'), 'in Always show');
+  assert.equal(toastText(t), 'Labelled Not slop. @reply_a added to Always show.');
+  click(t, undoBtn(t));
+  await settle();
+  assert.deepEqual(pressed(t, '2'), [], 'Slop was never stored');
+  assert.equal(note(t, '2'), 'not saved: too many labels');
+  // The same two clicks, with the newer one saved.
+  const u = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: { worker: true, answer }, clock: true });
+  await settle();
+  click(u, button(u, '2', 'slop'));
+  click(u, button(u, '2', 'not_slop'));
+  u.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(pressed(u, '2'), ['not_slop']);
+  assert.equal(note(u, '2'), 'in Always show');
+});
+
+test('a label stored from elsewhere while a click on the same post waits leaves the click shown, and Undo goes back to the stored label', async () => {
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {}, clock: true });
+  await settle();
+  click(t, button(t, '2', 'not_slop'));
+  // Another tab stores Slop for the same post.
+  t.labelChange('2', 'slop');
+  await settle();
+  assert.deepEqual(pressed(t, '2'), ['not_slop']);
+  click(t, undoBtn(t));
+  assert.deepEqual(pressed(t, '2'), ['slop']);
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves, []);
+});

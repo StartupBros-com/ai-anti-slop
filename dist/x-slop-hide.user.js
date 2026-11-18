@@ -1663,16 +1663,30 @@
       );
   }
 
-  // Refused or lost: the page goes back as it was, and the pair says why.
+  // Refused or lost: the page goes back to what is stored, and the pair says
+  // why.
   function refused(p, reason) {
     dropEntry(p.entry);
-    // Unless another click or tab has changed the label since.
-    if (labels.get(p.id) === p.label) restoreLabel(p);
-    notes.set(p.id, `not saved: ${reason}`);
+    const note = `not saved: ${reason}`;
+    if (pending && pending.id === p.id) {
+      // A newer click on this post is still in its window and stays shown.
+      // Its Undo goes back to the stored label, with this note.
+      pending.had = false;
+      pending.note = note;
+    } else if (labels.get(p.id) === p.label) {
+      // The label before this click may itself have been a click that was
+      // never saved: read the stored one again.
+      labels.delete(p.id);
+      asked.delete(p.id);
+      notes.set(p.id, note);
+    }
+    // Otherwise a newer click on this post was already sent, and its answer
+    // decides what the pair shows.
     refreshView();
     rescanAll();
     renderId(p.id);
-    showToast(`Not saved: ${reason}`, false);
+    // A newer click still in its window keeps its notice and its Undo.
+    if (!pending) showToast(`Not saved: ${reason}`, false);
   }
 
   // Undo the click still in its window: nothing was saved, so nothing is
@@ -1768,6 +1782,14 @@
   }
 
   function onLabelChange(id, label) {
+    if (pending && pending.id === id) {
+      // A click on this post is still in its window and stays shown. Its
+      // Undo goes back to the label now stored.
+      pending.had = true;
+      pending.prev = label || null;
+      asked.add(id);
+      return;
+    }
     labels.set(id, label || null);
     asked.add(id);
     renderId(id);
