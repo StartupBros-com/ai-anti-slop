@@ -442,7 +442,7 @@ test('recordCheck confirms mutes seen in the rows and stops the day for any miss
   assert.deepEqual(miss.missing, ['m2']);
   assert.equal(miss.rec.handles.m2.confirmed, false);
   assert.equal(miss.rec.days[DAY].stopped, 'not on settings/muted/all after muting: @m2');
-  assert.deepEqual(lib.muteSummary(miss.rec), { muted: 2, confirmed: 1, notFound: 1, unmuted: 0, already: 0, followed: 0, skipped: 0 });
+  assert.deepEqual(lib.muteSummary(miss.rec), { muted: 2, confirmed: 1, notFound: 1, unmuted: 0, already: 0, followed: 0, skipped: 0, gone: 0 });
 });
 
 test('noteSighting moves an account to the front, once, capped at muteFrontMax', () => {
@@ -712,4 +712,66 @@ test('labelsOn: on unless turned off; anything but true or no value is off', () 
   assert.equal(lib.labelsOn({}), true);
   assert.equal(lib.labelsOn({ labeling: true }), true);
   for (const v of [false, 'true', null, 0, 1]) assert.equal(lib.labelsOn({ labeling: v }), false, String(v));
+});
+
+test('gone: kept for both job kinds, settles at the first visit, and is no Run now miss', () => {
+  for (const kind of ['mute', 'unmute']) {
+    assert.deepEqual(lib.jobResult(kind, { status: 'gone', reason: 'Account suspended' }), { status: 'gone', reason: 'Account suspended' });
+  }
+  assert.equal(lib.runMissed({ status: 'gone' }), false);
+  const r = lib.recordOutcome(lib.emptyMutes(), 'dead_a', { status: 'gone', reason: 'This account doesn’t exist' }, NOW);
+  assert.deepEqual(r.handles.dead_a, { status: 'gone', at: NOW, reason: 'This account doesn’t exist' });
+  assert.deepEqual(r.days[DAY], { mutes: 0, visits: 0, stopped: null });
+  assert.deepEqual(r.sinceCheck, [], 'nothing for the muted-list check to find');
+  assert.deepEqual(lib.muteCandidates(['dead_a', 'live_b'], {}, r), ['live_b']);
+  // A profile first seen with no post, found gone on its second try, settles too.
+  const once = { ...lib.emptyMutes(), handles: { dead_a: { status: 'no-post', at: NOW - 1, attempts: 1 } } };
+  assert.deepEqual(lib.muteCandidates(['dead_a'], {}, once), ['dead_a']);
+  assert.deepEqual(lib.muteCandidates(['dead_a'], {}, lib.recordOutcome(once, 'dead_a', { status: 'gone' }, NOW)), []);
+  const t = lib.muteSummary(r);
+  assert.equal(t.gone, 1);
+  assert.equal(t.skipped, 0);
+});
+
+test('recordUnmute: a deleted or suspended account is left muted and not tried again', () => {
+  const r = lib.recordUnmute({ ...lib.emptyMutes(), handles: { a: mutedBy(ACCT) } }, 'a', { status: 'gone', reason: 'Account suspended' }, NOW);
+  assert.equal(r.handles.a.status, 'muted');
+  assert.equal(r.handles.a.unmuteAttempts, 2);
+  assert.equal(r.handles.a.unmuteReason, 'Account suspended');
+  assert.deepEqual(lib.unmuteCandidates(['x'], onAcct, r), []);
+  assert.deepEqual(r.days[DAY], { mutes: 0, unmutes: 0, visits: 0, stopped: null });
+});
+
+const NO_ROWS = { status: 'error', reason: 'settings/muted/all showed no rows' };
+const NO_ROWS_STOP = 'settings/muted/all check: error (settings/muted/all showed no rows)';
+const pendingOne = () => ({ ...lib.emptyMutes(), handles: { m1: { status: 'muted', confirmed: null } }, sinceCheck: ['m1'] });
+
+test('recordCheckFailed: a first failure waits 15 minutes with the mutes still waiting; a second in a row stops the day', () => {
+  const r = lib.recordCheckFailed(pendingOne(), NO_ROWS, NOW, ACCT);
+  assert.deepEqual(r.checkRetry, { at: NOW + 15 * 60000, account: ACCT, reason: NO_ROWS_STOP });
+  assert.deepEqual(r.sinceCheck, ['m1']);
+  assert.equal(r.handles.m1.confirmed, null);
+  assert.equal(lib.muteBudget(r, DAY).stopped, null);
+  assert.equal(lib.checkWaitMs(r, ACCT, NOW + 60000), 14 * 60000);
+  assert.equal(lib.checkWaitMs(r, ACCT, NOW + 15 * 60000), 0);
+  assert.equal(lib.checkWaitMs(r, 'someone_else', NOW), 0, 'the wait belongs to the account the check ran as');
+  assert.equal(lib.checkWaitMs(lib.emptyMutes(), ACCT, NOW), 0);
+  const again = lib.recordCheckFailed(r, NO_ROWS, NOW + 15 * 60000, ACCT);
+  assert.equal(again.days[DAY].stopped, NO_ROWS_STOP, 'the same reason the troubleshooting table lists');
+  assert.equal(again.checkRetry, undefined);
+  assert.deepEqual(again.sinceCheck, ['m1'], 'still waiting for the next check');
+  // As another account, a failure is a first one.
+  const other = lib.recordCheckFailed(r, NO_ROWS, NOW + 1, 'someone_else');
+  assert.equal(lib.muteBudget(other, DAY).stopped, null);
+  assert.equal(other.checkRetry.account, 'someone_else');
+});
+
+test('recordCheckFailed: a good check in between starts the count again', () => {
+  let r = lib.recordCheckFailed(pendingOne(), NO_ROWS, NOW, ACCT);
+  r = lib.recordCheck(r, ['m1'], NOW + 15 * 60000).rec;
+  assert.equal(r.checkRetry, undefined);
+  assert.equal(r.handles.m1.confirmed, true);
+  r = lib.recordCheckFailed({ ...r, sinceCheck: ['m1'] }, NO_ROWS, NOW + 20 * 60000, ACCT);
+  assert.equal(lib.muteBudget(r, DAY).stopped, null, 'fail, good, fail: no stop');
+  assert.equal(r.checkRetry.at, NOW + 35 * 60000);
 });

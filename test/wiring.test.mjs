@@ -2590,3 +2590,89 @@ test('background: in a run, a visit that does something starts the count of visi
   assert.equal(m.handles.m1.status, 'failed');
   assert.equal(m.handles.m5.status, 'muted');
 });
+
+test('background: a check that cannot read the muted list is tried again 15 minutes on; a second failure stops the day', async () => {
+  const five = ['m1', 'm2', 'm3', 'm4', 'm5'];
+  const handles = Object.fromEntries(five.map((h) => [h, { status: 'muted', confirmed: null, account: ME, at: 1 }]));
+  const bg = await muteBackground({
+    handles: [...five, 'slop_z'],
+    mutes: { ...lib.emptyMutes(), handles, sinceCheck: five, days: { [today()]: { mutes: 5, visits: 5, stopped: null } } },
+  });
+  const rec = () => bg.chrome.store['xsh:mutes'];
+  const noRows = { status: 'error', reason: 'settings/muted/all showed no rows' };
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all');
+  const before = Date.now();
+  await answer(bg, noRows);
+  assert.equal(rec().days[today()].stopped, null, 'one failure does not stop the day');
+  assert.deepEqual(rec().sinceCheck, five);
+  const wait = rec().checkRetry.at - before;
+  assert.ok(wait >= 15 * 60000 - 2000 && wait <= 15 * 60000 + 2000, `about 15 minutes, got ${wait} ms`);
+  due(bg);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, 1, 'during the wait nothing opens, slop_z included');
+  rec().checkRetry.at = Date.now() - 1;
+  due(bg);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, 2);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all');
+  await answer(bg, noRows);
+  assert.equal(rec().days[today()].stopped, 'settings/muted/all check: error (settings/muted/all showed no rows)');
+  due(bg);
+  await alarm(bg);
+  assert.equal(bg.chrome.tabs.opened.length, 2, 'stopped for the day: slop_z waits');
+});
+
+test('background: pressing Run now while a failed check waits does not skip the wait', async () => {
+  const t = fakeTimers();
+  const five = ['m1', 'm2', 'm3', 'm4', 'm5'];
+  const handles = Object.fromEntries(five.map((h) => [h, { status: 'muted', confirmed: null, account: ME, at: 1 }]));
+  const checkRetry = { at: Date.now() + 10 * 60000, account: ME, reason: 'settings/muted/all check: error (x)' };
+  const bg = await muteBackground({ handles: [...five, 'slop_z'], mutes: { ...capUsed(handles), sinceCheck: five, checkRetry }, timers: t });
+  assert.deepEqual(await runOn(bg), { ok: true, waiting: 1 });
+  await settle();
+  assert.deepEqual(bg.chrome.tabs.opened, [], 'neither the check nor slop_z before the wait is over');
+  assert.ok(bg.chrome.session['xsh:run'], 'the run waits with it');
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, []);
+  bg.chrome.store['xsh:mutes'].checkRetry.at = Date.now() - 1;
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all');
+  await answer(bg, { status: 'checked', rows: [...five].reverse() });
+  assert.equal(bg.chrome.store['xsh:mutes'].checkRetry, undefined);
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_z');
+});
+
+test('background: in a run, deleted or suspended accounts settle and are not visits that did nothing', async () => {
+  const t = fakeTimers();
+  const handles = ['dead_1', 'dead_2', 'dead_3', 'dead_4', 'dead_5', 'dead_6', 'live_a'];
+  const bg = await muteBackground({ handles, mutes: capUsed(), timers: t });
+  await runOn(bg);
+  await settle();
+  for (const h of handles.slice(0, 6)) {
+    assert.equal(lastTab(bg).url, `https://x.com/${h}`);
+    await answer(bg, { status: 'gone', reason: 'Account suspended' });
+    assert.equal(bg.chrome.session['xsh:run'].misses || 0, 0, `@${h} is not a miss`);
+    await nextStep(bg, t);
+  }
+  assert.equal(lastTab(bg).url, 'https://x.com/live_a', 'six in a row did not stop the run');
+  const m = bg.chrome.store['xsh:mutes'];
+  assert.equal(m.days[today()].stopped, null);
+  for (const h of handles.slice(0, 6)) assert.deepEqual(m.handles[h].status, 'gone');
+  assert.deepEqual(lib.muteCandidates(handles, { muteEnabled: true, muteAccount: ME }, m), ['live_a'], 'none is visited again');
+});
+
+test('popup: a failed check waiting for its second try says so, during a run too; deleted or suspended accounts are counted', async () => {
+  const handles = { m1: { status: 'muted', confirmed: null, account: ME, at: 1 }, dead_1: { status: 'gone', at: 1 }, dead_2: { status: 'gone', at: 1 } };
+  const checkRetry = { at: Date.now() + 14.5 * 60000, account: ME, reason: 'settings/muted/all check: error (x)' };
+  const p = runPopup(popupStore({ ...capUsed(handles), sinceCheck: ['m1'], checkRetry }));
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  assert.match($('muteToday').textContent, / · your muted list did not load, next try in 15 min$/);
+  assert.doesNotMatch($('muteToday').textContent, /next visit/);
+  assert.match($('muteTotals').textContent, /, 0 skipped, 2 deleted or suspended\.$/);
+  await p.chrome.storage.session.set({ 'xsh:run': { startedAt: Date.now(), account: ME } });
+  await settle();
+  assert.match($('muteToday').textContent, / · your muted list did not load, next try in 15 min$/);
+});

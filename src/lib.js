@@ -55,6 +55,10 @@
     // Mutes made since the last check of settings/muted/all. A background tab
     // renders only its first 9 rows (seen 2026-11-06), so check well before that.
     muteCheckEvery: 5,
+    // After a check that could not read settings/muted/all, how long until it
+    // is tried again: one of X's 15-minute rate-limit windows. A second
+    // failure in a row stops the day.
+    muteCheckRetryMs: 15 * 60000,
     // Attempts at one account that end in a timeout or error before it is left alone.
     muteMaxAttempts: 2,
     // Accounts seen while browsing, muted ahead of the rest of the list.
@@ -289,6 +293,26 @@
     return false;
   }
 
+  // What x.com/<handle> says when the account is gone, or null for any other
+  // page. Gone means deleted or deactivated ("This account doesn't exist") or
+  // suspended ("Account suspended"), and the value is X's heading, such as
+  // those. On 2026-11-19 such a profile had an emptyState box, no profile
+  // header (no UserName, no userActions ⋯ button) and a tab title with no
+  // "(@handle)". A live profile, one behind X's "temporarily restricted"
+  // caution page, and one whose lookup X refused ("Something went wrong")
+  // each lacked at least one of these, so it takes all of them.
+  function profileGone(doc) {
+    if (!doc || !doc.querySelector) return null;
+    const col = doc.querySelector('[data-testid="primaryColumn"]') || doc;
+    const box = col.querySelector('[data-testid="emptyState"]');
+    if (!box) return null;
+    if (col.querySelector('[data-testid="UserName"], [data-testid="userActions"]')) return null;
+    if (/\(@[A-Za-z0-9_]{1,15}\)/.test(String(doc.title || ''))) return null;
+    const head = box.querySelector('[data-testid="empty_state_header_text"]') || box;
+    const text = String(head.textContent || '').replace(/\s+/g, ' ').trim();
+    return text.slice(0, 80) || 'no account at this address';
+  }
+
   // The handle of the account that wrote this post, lowercased, or null.
   // It reads the first User-Name block that is not inside a quote card, so
   // quoted posts and @-mentions never count as the author.
@@ -421,7 +445,8 @@
   // Statuses that end work on an account. 'error' does not, until it has
   // happened muteMaxAttempts times, and neither does a first 'no-post': on
   // 2026-11-06, 3 of 4 profiles showed their first post before its ⋯ button.
-  const SETTLED = new Set(['muted', 'already', 'followed', 'no-post', 'failed']);
+  // 'gone' (deleted or suspended) settles at once and is never visited again.
+  const SETTLED = new Set(['muted', 'already', 'followed', 'no-post', 'failed', 'gone']);
 
   function isSettled(st) {
     if (!st || !SETTLED.has(st.status)) return false;
@@ -500,8 +525,8 @@
   // counts as an error, one of the account's muteMaxAttempts, so no reply can
   // keep an account waiting for ever; Run now has no visit cap to bound that.
   const JOB_STATUSES = Object.freeze({
-    mute: Object.freeze(['muted', 'already', 'followed', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
-    unmute: Object.freeze(['unmuted', 'not-muted', 'no-post', 'error', 'refused', 'wrong-account', 'login']),
+    mute: Object.freeze(['muted', 'already', 'followed', 'no-post', 'gone', 'error', 'refused', 'wrong-account', 'login']),
+    unmute: Object.freeze(['unmuted', 'not-muted', 'no-post', 'gone', 'error', 'refused', 'wrong-account', 'login']),
   });
   function jobResult(kind, result) {
     const r = result || {};
@@ -512,6 +537,8 @@
 
   // Whether a visit's result, already through jobResult, is a miss for
   // muteRunMisses: nothing clicked and nothing learned about the account.
+  // 'gone' is not one: the visit learned the account is deleted or suspended,
+  // and lists hold runs of those (4 of the 18 visits in one run on 2026-11-19).
   function runMissed(result) {
     return !!result && (result.status === 'error' || result.status === 'no-post');
   }
@@ -586,6 +613,8 @@
   //   followed     the user follows the account: left alone
   //   no-post      no post by the account with a ⋯ button on its profile:
   //                tried once more, then left alone
+  //   gone         the profile says the account is deleted or suspended:
+  //                left alone from then on (profileGone)
   //   refused      the menu was not one we act on: stops muting for the day
   //   wrong-account, login   the tab is not logged in as the bound account: stops the day
   //   error        timeout, closed tab, a menu that did not open: retried, up to muteMaxAttempts
@@ -627,6 +656,8 @@
   //   unmuted      clicked the Unmute item: counts against today's cap
   //   not-muted    the menu offered Mute: unmuted already, so nothing to click
   //   no-post, error   tried again, up to muteMaxAttempts, then left muted
+  //   gone         deleted or suspended, so there is nothing to click: left
+  //                muted and not tried again
   //   refused, wrong-account, login   stops the day; tried again on a later day
   // Until an unmute succeeds the entry stays `muted`, so a failed visit never
   // loses the record that AI Anti-Slop made the mute.
@@ -648,6 +679,10 @@
         r.sinceCheck = (r.sinceCheck || []).filter((x) => x !== handle);
       } else if (status === 'error' || status === 'no-post') {
         prev.unmuteAttempts = (prev.unmuteAttempts || 0) + 1;
+        prev.unmuteAt = now;
+        if (reason) prev.unmuteReason = reason;
+      } else if (status === 'gone') {
+        prev.unmuteAttempts = DEFAULTS.muteMaxAttempts;
         prev.unmuteAt = now;
         if (reason) prev.unmuteReason = reason;
       }
@@ -674,6 +709,7 @@
       if (!e.confirmed) missing.push(h);
     }
     r.sinceCheck = [];
+    delete r.checkRetry;
     if (missing.length) {
       const today = utcDay(now);
       const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
@@ -681,6 +717,33 @@
       r.days[today] = d;
     }
     return { rec: r, missing };
+  }
+
+  // Fold a check that could not read settings/muted/all into the record (a
+  // new object). The mutes since the last check stay waiting for the next
+  // one. The first failure sets checkRetry, the time muteCheckRetryMs on
+  // when the check, as the same account, may run again (checkWaitMs); a
+  // failure while that is set stops the day. Kept apart from nextAt, which
+  // Run now clears, so pressing Run now does not skip the wait.
+  function recordCheckFailed(rec, result, now, account) {
+    const r = structuredCloneish(rec || emptyMutes());
+    const res = result || {};
+    const why = `settings/muted/all check: ${res.status}${res.reason ? ` (${res.reason})` : ''}`;
+    const who = account || null;
+    if (r.checkRetry && r.checkRetry.account === who) {
+      delete r.checkRetry;
+      return stopDay(r, now, why);
+    }
+    r.checkRetry = { at: now + DEFAULTS.muteCheckRetryMs, account: who, reason: why.slice(0, 200) };
+    return r;
+  }
+
+  // Milliseconds until a failed check may run again as this account; 0 when
+  // none is waiting.
+  function checkWaitMs(rec, account, now) {
+    const c = rec && rec.checkRetry;
+    if (!c || c.account !== (account || null)) return 0;
+    return Math.max(0, (Number(c.at) || 0) - now);
   }
 
   // A profile tab was opened: it counts against today's visit cap whatever it finds.
@@ -728,6 +791,7 @@
       already: vals.filter((e) => e.status === 'already').length,
       followed: vals.filter((e) => e.status === 'followed').length,
       skipped: vals.filter((e) => e.status === 'no-post' || e.status === 'failed').length,
+      gone: vals.filter((e) => e.status === 'gone').length,
     };
   }
 
@@ -1044,6 +1108,7 @@
     effectiveList,
     mentionTargets,
     insideQuoteCard,
+    profileGone,
     authorHandleOf,
     pageOwner,
     shouldHide,
@@ -1067,6 +1132,8 @@
     recordOutcome,
     recordUnmute,
     recordCheck,
+    recordCheckFailed,
+    checkWaitMs,
     countVisit,
     stopDay,
     noteSighting,

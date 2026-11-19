@@ -295,3 +295,37 @@ test('content: a label read throwing synchronously after an update raises nothin
     process.off('unhandledRejection', onThrown);
   }
 });
+
+// A profile as x.com showed a deleted or suspended account on 2026-11-19.
+const goneBox = (heading) =>
+  `<div data-testid="emptyState"><div data-testid="empty_state_header_text">${heading}</div>` +
+  '<div data-testid="empty_state_body_text">Try searching for another.</div></div>';
+const titled = (html, title) => html.replace('<head></head>', `<head><title>${title}</title></head>`);
+
+test('mute job: a deleted or suspended profile is reported gone at once, with no click', async () => {
+  for (const heading of ['This account doesn’t exist', 'Account suspended']) {
+    const started = Date.now();
+    const t = runContent(titled(profile([goneBox(heading)]), 'Profile / X'), { pathname: `/${H}`, state: muting, job: job({ waitMs: 20000 }) });
+    const clicks = wireMenu(t.document, { items: MENU, handle: H });
+    assert.deepEqual(await t.done, { id: 'j1', status: 'gone', reason: heading });
+    assert.ok(Date.now() - started < 5000, 'without the 20 s wait for a post');
+    assert.deepEqual(clicks, []);
+  }
+});
+
+// Planted negative: X's caution page in front of a live account is not gone;
+// nothing on it is clicked, and it is handled as a profile with no post.
+test("mute job: a profile behind X's caution page is not reported gone", async () => {
+  const cells = ['<button data-testid="userActions" aria-label="More">⋯</button>', goneBox('Caution: This account is temporarily restricted')];
+  const t = runContent(titled(profile(cells), `Some One (@${H}) / X`), { pathname: `/${H}`, state: muting, job: job() });
+  const clicks = wireMenu(t.document, { items: MENU, handle: H });
+  assert.deepEqual(await t.done, { id: 'j1', status: 'no-post', reason: 'no post by the account on its profile' });
+  assert.deepEqual(clicks, []);
+});
+
+test('unmute job: a deleted or suspended profile is reported gone, with no click', async () => {
+  const { t, clicks } = unmuteRun({ cells: [goneBox('Account suspended')] });
+  t.document.title = 'Profile / X';
+  assert.deepEqual(await t.done, { id: 'j1', status: 'gone', reason: 'Account suspended' });
+  assert.deepEqual(clicks, []);
+});

@@ -303,8 +303,9 @@ async function finishJob(job, reported) {
   } else if (result.status === 'checked') {
     rec = L.recordCheck(rec, result.rows, now).rec;
   } else {
-    // An unreadable muted list means mutes cannot be confirmed: stop for the day.
-    rec = L.stopDay(rec, now, `settings/muted/all check: ${result.status}${result.reason ? ` (${result.reason})` : ''}`);
+    // An unreadable muted list means mutes cannot be confirmed: try once more
+    // after a wait, then stop for the day.
+    rec = L.recordCheckFailed(rec, result, now, job.account);
   }
   let run = await getRun();
   if (run && job.kind !== 'check') {
@@ -394,10 +395,13 @@ async function tickWith(xOpen) {
   const candidates = L.muteCandidates(handles, s, rec);
   const next = unmutes.length ? { kind: 'unmute', handle: unmutes[0] } : candidates.length ? { kind: 'mute', handle: candidates[0] } : null;
   const pending = (rec.sinceCheck || []).length;
+  // A check that failed waits before it runs again (L.recordCheckFailed),
+  // and while one is due nothing else is visited. A run waits with it.
+  const checkWait = pending ? L.checkWaitMs(rec, s.muteAccount, now) : 0;
   // A run skips the caps and the x.com-tab rule; nothing else.
   let canVisit = next !== null && (run !== null || (b.mutesLeft > 0 && b.visitsLeft > 0));
   if (pending >= L.DEFAULTS.muteCheckEvery) {
-    await startJob('check', null, s.muteAccount, now);
+    if (!checkWait) await startJob('check', null, s.muteAccount, now);
     return;
   }
   if (!run && canVisit && L.capNeedsXOpen(cap)) {
@@ -405,7 +409,7 @@ async function tickWith(xOpen) {
     canVisit = xOpen === true;
   }
   if (pending && !canVisit) {
-    await startJob('check', null, s.muteAccount, now);
+    if (!checkWait) await startJob('check', null, s.muteAccount, now);
     return;
   }
   if (!canVisit) {
