@@ -279,8 +279,9 @@ and its last error, if any.
   in a tab but shows `network error: Failed to fetch` on the settings page
   usually does not. Removing a list deletes its stored copy.
 - A list that is off is not fetched. Adding a list fetches it at once, and so
-  does switching one on, unless its stored copy is less than 6 hours old.
-  After that every list that is on refreshes every 6 hours, and the circular
+  does switching one on, unless its stored copy is less than 6 hours old or
+  its last try failed less than 30 minutes ago. After that every list that is
+  on refreshes every 6 hours, and the circular
   arrow in the popup refreshes them all.
 - Each list is checked on its own (see [How list updates stay
   safe](#how-list-updates-stay-safe)). One that fails keeps its previous copy
@@ -584,7 +585,7 @@ A record holds:
 | `text` | The first 1,000 characters of the post's own text (not a post it quotes), with its emoji |
 | `page` | The post page it was labelled on, or `null` on any other page, such as the home timeline |
 | `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null` |
-| `lists` | The lists that were on and had the account: `clankwall-ai` (AI flags), `clankwall-all` (All flags), or `u` and letters for a list you added; empty when none had it. Labels saved before this field existed have none |
+| `lists` | Only when a list other than AI flags was on: the lists that were on and had the account, `clankwall-ai` (AI flags), `clankwall-all` (All flags), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
 | `extra`, `allow` | Whether the account was in Also hide or Always show before this click |
 | `hidden` | Whether AI Anti-Slop hid the account's posts on that page then, leaving out Pause and tag hiding |
 

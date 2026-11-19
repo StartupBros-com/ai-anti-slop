@@ -3,7 +3,7 @@
 // lists. Handles are invented.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lib as L, runContent, page, post, tick } from './helpers.mjs';
+import { lib as L, runContent, page, post, tick, src } from './helpers.mjs';
 
 const AI = 'https://clankwall.vogel.dev/api/usernames.txt';
 const ALL = 'https://clankwall.vogel.dev/api/accounts.ndjson';
@@ -442,3 +442,26 @@ test('content: a change to a list record, or to which lists are on, is read agai
   assert.equal(t.hidden('1'), false, 'a label key is not a list key');
 });
 
+
+test('settings page: its list switches are restated in forced-colors mode, as the popup does', () => {
+  const css = src('src/settings.html').replace(/\/\*[\s\S]*?\*\//g, '');
+  const open = '@media (forced-colors: active) {';
+  const start = css.indexOf(open);
+  assert.ok(start >= 0, 'the settings page has a forced-colors block');
+  let depth = 0;
+  let body = null;
+  for (let i = start + open.length - 1; i < css.length; i++) {
+    if (css[i] === '{') depth++;
+    else if (css[i] === '}' && --depth === 0) {
+      body = css.slice(start + open.length, i);
+      break;
+    }
+  }
+  assert.ok(body, 'the block closes');
+  const rule = (sel) => new RegExp(`${sel.replace(/[[\]():']/g, (c) => `\\${c}`)}\\s*\\{([^}]*)\\}`).exec(body);
+  assert.match(rule("input[role='switch']")[1], /border:\s*2px solid ButtonText/);
+  assert.match(rule("input[role='switch']::before")[1], /background:\s*ButtonText/);
+  assert.match(rule("input[role='switch']:checked")[1], /background:\s*Highlight/);
+  assert.match(rule("input[role='switch']:checked")[1], /border-color:\s*ButtonText/);
+  assert.match(rule("input[role='switch']:checked::before")[1], /background:\s*HighlightText/);
+});
