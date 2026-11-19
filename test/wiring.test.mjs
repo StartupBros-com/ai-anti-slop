@@ -1630,10 +1630,17 @@ test('userscript: never shows label buttons, even with labelling saved as on', a
 
 // Run the real settings.js against settings.html. Downloads are recorded
 // from the <a download> click, and a picked file is set on the input.
+// `timers` (fakeTimers) holds the Undo timer; `focused` lists the id of each
+// element the page focused, in order (linkedom keeps no activeElement).
 function loadSettings(store) {
   const { window, document } = parseHTML(src('src/settings.html'));
   const chrome = fakeChrome();
   Object.assign(chrome.store, structuredClone(store));
+  const timers = fakeTimers();
+  const focused = [];
+  window.HTMLElement.prototype.focus = function () {
+    focused.push(this.id);
+  };
   const made = [];
   class TestURL extends URL {
     static createObjectURL(blob) {
@@ -1646,11 +1653,12 @@ function loadSettings(store) {
   document.addEventListener('click', (e) => {
     if (e.target.tagName === 'A' && e.target.hasAttribute('download')) downloads.push(e.target.getAttribute('download'));
   });
-  const ctx = vm.createContext({ window, document, chrome, console, URL: TestURL, Blob });
+  const ctx = vm.createContext({ window, document, chrome, console, URL: TestURL, Blob, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
   vm.runInContext(src('src/lib.js'), ctx, { filename: 'src/lib.js' });
   vm.runInContext(src('src/settings.js'), ctx, { filename: 'src/settings.js' });
   const $ = (id) => document.getElementById(id);
   const click = (id) => $(id).dispatchEvent(new window.Event('click'));
+  const submit = (id) => $(id).dispatchEvent(new window.Event('submit'));
   // A `text` of null fails the test if the page reads the file at all.
   const pickFile = (name, text, size) => {
     const f = {
@@ -1662,8 +1670,15 @@ function loadSettings(store) {
     $('file').dispatchEvent(new window.Event('change'));
   };
   const changes = () => [...document.querySelectorAll('#changes li')].map((li) => li.textContent);
-  return { chrome, document, $, click, pickFile, changes, made, downloads };
+  return { chrome, document, $, click, submit, pickFile, changes, made, downloads, timers, focused };
 }
+
+// What the Settings file row says it holds, for a page with these counts.
+const holds = (show, hide, bots) =>
+  `Always show ${show}, Also hide ${hide}, ${bots} bot choice${bots === 1 ? '' : 's'} and the tag setting. ` +
+  'It leaves out muting, pause, list choices and labels.';
+// The next step every refused import names.
+const PICK = ' Pick a settings file or a text file with one handle per line.';
 
 const LIST = { handles: ['listed', 'grok'], fetchedAt: 1, source: 's' };
 const settingsFile = (o) => JSON.stringify({ format: 'x-slop-hide-settings', version: 1, ...o });
@@ -1683,7 +1698,7 @@ test('settings page: export saves only the account boxes, bot choices and tag se
   };
   const p = loadSettings({ 'xsh:list': LIST, 'xsh:settings': settings });
   await settle();
-  assert.equal(p.$('have').textContent, 'Now: Always show 1 · Also hide 2 · 1 bot choice saved');
+  assert.equal(p.$('have').textContent, holds(1, 2, 1));
   p.click('exportSettings');
   await settle();
   assert.deepEqual(p.downloads, [`ai-anti-slop-settings-${lib.utcDay(Date.now())}.json`]);
@@ -1691,19 +1706,28 @@ test('settings page: export saves only the account boxes, bot choices and tag se
   const out = JSON.parse(await p.made[0].text());
   assert.deepEqual(Object.keys(out).sort(), ['alsoHide', 'alwaysShow', 'bots', 'exported', 'format', 'hideBotMentions', 'version']);
   assert.deepEqual([out.alwaysShow, out.alsoHide, out.bots, out.hideBotMentions], [['pal'], ['spam_a', 'spam_b'], { grok: 'mute' }, true]);
-  assert.equal(p.$('exportMsg').textContent, 'Exported settings: Always show 1, Also hide 2, 1 bot choice.');
+  assert.equal(p.$('msg').textContent, `Exported ai-anti-slop-settings-${lib.utcDay(Date.now())}.json: Always show 1, Also hide 2, 1 bot choice.`);
   p.click('exportList');
   await settle();
   assert.equal(p.downloads[1], `ai-anti-slop-also-hide-${lib.utcDay(Date.now())}.txt`);
   assert.equal(await p.made[1].text(), 'spam_a\nspam_b\n');
+  assert.equal(p.$('msg').textContent, `Exported ai-anti-slop-also-hide-${lib.utcDay(Date.now())}.txt, a list of 2 accounts.`);
   assert.deepEqual(p.chrome.store['xsh:settings'], settings, 'export writes nothing');
 });
 
-test('settings page: Export Also hide as a list is off while Also hide is empty', async () => {
-  const p = loadSettings({ 'xsh:settings': { allowlist: 'pal' } });
+// The button stays enabled, so a click can say why there is nothing to save.
+test('settings page: Export list with Also hide empty saves no file and says why', async () => {
+  const settings = { allowlist: 'pal' };
+  const p = loadSettings({ 'xsh:settings': settings });
   await settle();
-  assert.equal(p.$('exportList').disabled, true);
-  assert.equal(p.$('have').textContent, 'Now: Always show 1 · Also hide 0 · 0 bot choices saved');
+  assert.equal(p.$('have').textContent, holds(1, 0, 0));
+  p.click('exportList');
+  await settle();
+  assert.deepEqual(p.downloads, []);
+  assert.equal(p.made.length, 0);
+  assert.equal(p.$('msg').textContent, 'Also hide is empty, so there is no list to export. Add accounts to it in the popup first.');
+  assert.equal(p.$('msg').classList.contains('bad'), false);
+  assert.deepEqual(p.chrome.store['xsh:settings'], settings);
 });
 
 test('settings page: importing a list previews, writes nothing until Confirm, then adds to Also hide', async () => {
@@ -1716,13 +1740,16 @@ test('settings page: importing a list previews, writes nothing until Confirm, th
   assert.equal(p.$('fileKind').textContent, 'shared.txt: a list of 3 handles, for Also hide');
   assert.deepEqual(p.changes(), ['Also hide gains 2 accounts: @pal, @spam_b.', '@pal will stay shown, because Always show has it.']);
   assert.equal(p.$('muteNote').textContent, 'Muting is off. If you turn it on, it can also mute 1 account from this file: @spam_b.');
+  assert.equal(p.$('muteNote').className, 'callout note');
+  assert.deepEqual(p.focused, ['preview'], 'the preview takes focus when it opens');
   assert.deepEqual(p.chrome.store['xsh:settings'], settings, 'the preview writes nothing');
   p.click('confirm');
   await settle();
   assert.deepEqual(p.chrome.store['xsh:settings'], { allowlist: 'pal', extraList: 'spam_a\npal\nspam_b', paused: false });
   assert.equal(p.$('preview').hidden, true);
   assert.equal(p.$('msg').textContent, 'Imported: Also hide gained 2.');
-  assert.equal(p.$('have').textContent, 'Now: Always show 1 · Also hide 3 · 0 bot choices saved');
+  assert.equal(p.$('have').textContent, holds(1, 3, 0));
+  assert.equal(p.focused.at(-1), 'file', 'focus goes back to the file input');
 });
 
 // Planted negative (issue #27), through the page.
@@ -1765,6 +1792,7 @@ test('settings page: Cancel writes nothing', async () => {
   assert.deepEqual(p.chrome.store['xsh:settings'], settings);
   assert.equal(p.$('preview').hidden, true);
   assert.equal(p.$('msg').textContent, 'Nothing imported.');
+  assert.equal(p.focused.at(-1), 'file', 'focus goes back to the file input');
   p.click('confirm');
   await settle();
   assert.deepEqual(p.chrome.store['xsh:settings'], settings, 'Confirm after Cancel does nothing');
@@ -1776,15 +1804,15 @@ test('settings page: a bad file is refused whole, and an oversize one is not rea
   await settle();
   p.pickFile('list.txt', 'spam_b\nnot a handle\n');
   await settle();
-  assert.equal(p.$('msg').textContent, 'Not imported: line 2 is not an X handle.');
+  assert.equal(p.$('msg').textContent, `Not imported: line 2 is not an X handle.${PICK}`);
   assert.ok(p.$('msg').classList.contains('bad'));
   assert.equal(p.$('preview').hidden, true);
   p.pickFile('big.txt', null, lib.DEFAULTS.maxBytes + 1);
   await settle();
-  assert.equal(p.$('msg').textContent, 'Not imported: the file is larger than 1 MB.');
+  assert.equal(p.$('msg').textContent, `Not imported: the file is larger than 1 MB.${PICK}`);
   p.pickFile('s.json', settingsFile({ bots: { grok: 'block' } }));
   await settle();
-  assert.equal(p.$('msg').textContent, 'Not imported: "bots" has a choice other than show, hide or mute.');
+  assert.equal(p.$('msg').textContent, `Not imported: "bots" has a choice other than show, hide or mute.${PICK}`);
   assert.deepEqual(p.chrome.store['xsh:settings'], settings);
 });
 
@@ -1803,7 +1831,7 @@ test('settings page: settings that change after the preview are shown again, not
   assert.deepEqual(p.chrome.store['xsh:settings'], changed, 'nothing written');
   assert.equal(p.$('stale').hidden, false);
   assert.deepEqual(p.changes(), ['Also hide gains 1 account: @spam_b.']);
-  assert.equal(p.$('muteNote').className, 'warn');
+  assert.equal(p.$('muteNote').className, 'callout warn');
   assert.equal(
     p.$('muteNote').textContent,
     'Muting is on as @me_here. After this import it can also mute 1 more account: @spam_b. It mutes up to 50 a day and skips accounts you follow.',
@@ -3187,33 +3215,44 @@ function flip(s, id, checked) {
   box.dispatchEvent(new s.document.defaultView.Event('change'));
 }
 
-test('settings page: the Lists card is first, retitled, and shows the three built-in lists', async () => {
+const stat = (s, id) => s.$(`stat-${id}`).textContent;
+
+test('settings page: the Lists section is first, retitled, and shows the three built-in lists', async () => {
   const s = loadSettings({ 'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 5 * 60e3 }), 'xsh:settings': {} });
   await settle();
-  assert.equal(s.document.title, 'AI Anti-Slop: lists, export and import');
-  assert.equal(s.document.querySelector('h1').textContent, 'AI Anti-Slop: lists, export and import');
-  assert.equal(s.document.querySelector('section.card h2').textContent, 'Lists');
-  assert.match(s.document.querySelector('#listsCard > p').textContent, /^Replies are hidden from every account on the lists you switch on\. Always show beats every list\.$/);
+  assert.equal(s.document.title, 'AI Anti-Slop settings');
+  assert.equal(s.document.querySelector('h1').textContent, 'Settings');
+  assert.equal(s.document.querySelector('.brand').textContent, 'AI Anti-Slop');
+  assert.equal(s.document.querySelector('main section').id, 'listsCard');
+  assert.equal(s.document.querySelector('#listsCard h2').textContent, 'Lists');
+  assert.equal(s.document.querySelector('#listsCard > p').textContent, 'Replies by any account on a list that is on are hidden. Always show, in the popup, beats every list.');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 2 accounts on 1 list.');
+  assert.deepEqual([...s.document.querySelectorAll('#listRows h3')].map((h) => h.textContent), ['Built in', 'Added by you · 0 of 5']);
+  assert.equal(s.$('ownRows').hidden, true, 'no empty list of added lists');
   assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio']);
   const ai = rowOf(s, 'clankwall-ai');
   const all = rowOf(s, 'clankwall-all');
   const lev = rowOf(s, 'levelsio');
   assert.equal(lev.querySelector('label').textContent, 'levelsio: Blocked for AI reply');
   assert.equal(lev.querySelector('input').checked, false);
-  assert.match(lev.textContent, /off/);
+  assert.equal(stat(s, 'levelsio'), 'Off');
   assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Hides replies only\./);
   assert.equal(lev.querySelector('a').getAttribute('href'), 'https://blockedforaireply.levels.io/');
   assert.equal(lev.querySelector('button'), null, 'a built-in list has no Remove');
   assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
   assert.equal(ai.querySelector('input').getAttribute('role'), 'switch');
+  assert.equal(ai.querySelector('input').getAttribute('aria-describedby'), 'stat-clankwall-ai');
   assert.equal(ai.querySelector('input').checked, true);
   assert.equal(all.querySelector('input').checked, false);
-  assert.match(ai.textContent, /2 accounts · updated 5 min ago/);
-  assert.match(all.textContent, /off/);
+  assert.equal(stat(s, 'clankwall-ai'), '2 accounts · updated 5 min ago');
+  assert.equal(stat(s, 'clankwall-all'), 'Off');
   assert.match(ai.textContent, /Accounts whose replies clankwall scored as AI\. Muting uses this list\./);
   assert.match(all.textContent, /About half of those not on the AI list rest on a single flag/);
+  // Each list's note and link wait behind its own About, named for the list.
+  assert.equal(ai.querySelector('details summary').textContent, 'About clankwall: AI flags');
+  assert.equal(ai.querySelector('details').hasAttribute('open'), false);
   assert.equal(ai.querySelector('a').getAttribute('href'), 'https://clankwall.vogel.dev/?filter=ai');
-  assert.equal(ai.querySelector('a').textContent, 'About this list and asking for removal');
+  assert.equal(ai.querySelector('a').textContent, 'Its page, where you can ask for a removal (clankwall: AI flags)');
   assert.equal(all.querySelector('a').getAttribute('href'), 'https://clankwall.vogel.dev/');
   assert.equal(ai.querySelector('button'), null, 'a built-in list has no Remove');
   // Export and Import are still there.
@@ -3227,7 +3266,7 @@ test('settings page: switching All flags on writes settings.lists and keeps the 
   await settle();
   assert.deepEqual(s.chrome.store['xsh:settings'], { allowlist: 'friend', lists: { 'clankwall-ai': true, 'clankwall-all': true } });
   assert.equal(s.document.getElementById('list-clankwall-all').checked, true);
-  assert.match(rowOf(s, 'clankwall-all').textContent, /not fetched yet/);
+  assert.equal(stat(s, 'clankwall-all'), 'Not downloaded yet');
   flip(s, 'clankwall-all', false);
   await settle();
   assert.equal(s.chrome.store['xsh:settings'].lists['clankwall-all'], false);
@@ -3239,7 +3278,10 @@ test('settings page: the AI switch is checked and disabled while muting is on, a
   const box = s.document.getElementById('list-clankwall-ai');
   assert.equal(box.checked, true);
   assert.equal(box.disabled, true);
-  assert.match(rowOf(s, 'clankwall-ai').textContent, /Muting uses this list\. It stays on while muting is on\./);
+  assert.equal(s.$('lock-clankwall-ai').textContent, 'Stays on while muting is on');
+  assert.equal(box.getAttribute('aria-describedby'), 'stat-clankwall-ai lock-clankwall-ai');
+  assert.match(rowOf(s, 'clankwall-ai').textContent, /Muting uses this list\./);
+  assert.equal(s.$('lock-clankwall-all'), null);
   assert.equal(s.document.getElementById('list-clankwall-all').disabled, false);
   // Even a change event writes nothing.
   box.checked = false;
@@ -3253,9 +3295,16 @@ test('settings page: the AI switch is checked and disabled while muting is on, a
 test('settings page: Add refuses http://, and a good address adds an entry that the background then fetches', async () => {
   const s = loadSettings({ 'xsh:settings': { allowlist: 'friend' } });
   await settle();
+  // The form waits behind its button.
+  assert.equal(s.$('addForm').hidden, true);
+  assert.equal(s.$('addOpen').getAttribute('aria-expanded'), 'false');
+  s.click('addOpen');
+  assert.equal(s.$('addForm').hidden, false);
+  assert.equal(s.$('addOpen').getAttribute('aria-expanded'), 'true');
+  assert.equal(s.focused.at(-1), 'listUrl');
   const add = async (value) => {
     s.$('listUrl').value = value;
-    s.click('addList');
+    s.submit('addForm');
     await settle();
   };
   await add('http://raw.example.com/list.txt');
@@ -3267,10 +3316,15 @@ test('settings page: Add refuses http://, and a good address adds an entry that 
   assert.equal(more.length, 0);
   assert.deepEqual([mine.url, mine.on, /^u[a-z0-9]{1,16}$/.test(mine.id)], ['https://raw.example.com/x/list.txt', true, true]);
   assert.equal(s.chrome.store['xsh:settings'].allowlist, 'friend');
-  assert.equal(s.$('listMsg').textContent, 'Added. Fetching it now.');
+  assert.equal(s.$('listMsg').textContent, 'Added. Downloading it now.');
   assert.equal(s.$('listUrl').value, '');
   const row = rowOf(s, mine.id);
-  assert.equal(row.querySelector('label').textContent, 'raw.example.com/x/list.txt');
+  // Titled by its file name, with the address under it.
+  assert.equal(row.querySelector('label').textContent, 'list.txt');
+  assert.equal(row.querySelector('.where').textContent, 'raw.example.com/x/list.txt');
+  assert.equal(s.$(`rm-${mine.id}`).getAttribute('aria-label'), 'Remove list.txt');
+  assert.equal(s.$('ownH').textContent, 'Added by you · 1 of 5');
+  assert.equal(s.$('ownRows').hidden, false);
   // The same address again, and clankwall's own, are refused.
   await add('https://raw.example.com/x/list.txt');
   assert.match(s.$('listMsg').textContent, /already here/);
@@ -3279,7 +3333,13 @@ test('settings page: Add refuses http://, and a good address adds an entry that 
   assert.equal(s.chrome.store['xsh:settings'].customLists.length, 1);
 });
 
-test('settings page: an added list shows its error, the network hint, and Remove; Remove drops the entry', async () => {
+// A failed download's note: what went wrong, what to do, and the reason as reported.
+const failNote = (s, id) => {
+  const f = rowOf(s, id).querySelector('.fail');
+  return f && { what: f.querySelector('strong').textContent, text: f.querySelector('p').textContent, reported: f.querySelector('.reported').textContent };
+};
+
+test('settings page: an added list shows its error, what to do, and Remove; Remove drops the entry', async () => {
   const mine = { id: 'uabc', url: 'https://raw.example.com/x/list.txt', on: true };
   const s = loadSettings({
     'xsh:settings': { customLists: [mine, { id: 'udef', url: 'https://b.example/l.txt', on: true }] },
@@ -3288,16 +3348,38 @@ test('settings page: an added list shows its error, the network hint, and Remove
   });
   await settle();
   const a = rowOf(s, 'uabc');
-  assert.equal(a.querySelector('.bad').textContent, 'Last refresh failed: network error: Failed to fetch.');
-  assert.match(a.textContent, /its host may not let other sites read it\. A raw GitHub or Gist link works\./);
-  const b = rowOf(s, 'udef');
-  assert.match(b.querySelector('.bad').textContent, /HTTP 404/);
-  assert.doesNotMatch(b.textContent, /Gist link/);
+  assert.equal(stat(s, 'uabc'), 'Download failed');
+  assert.equal(s.$('stat-uabc').classList.contains('bad'), true);
+  assert.deepEqual(failNote(s, 'uabc'), {
+    what: 'The extension could not read the file at this address.',
+    text:
+      'The extension could not read the file at this address. Its host may not let other sites read it, or you may be offline. ' +
+      'A raw GitHub or Gist link to the same file works.',
+    reported: 'Reported: network error: Failed to fetch',
+  });
+  assert.ok(s.$('retry-uabc'), 'a failed list has Try again');
+  // udef still has the copy from its last good download.
+  assert.equal(stat(s, 'udef'), '1 account · last download failed');
+  assert.deepEqual(failNote(s, 'udef'), {
+    what: 'Nothing is at that address any more.',
+    text:
+      'Nothing is at that address any more. Check the address. To change it, remove this list and add the right one. ' +
+      'Until then it hides the 1 account from the last good download.',
+    reported: 'Reported: HTTP 404',
+  });
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 1 account on 3 lists. 2 lists need a look.');
   assert.equal(a.querySelector('a'), null, 'an added list has no About link');
-  a.querySelector('button').dispatchEvent(new s.document.defaultView.Event('click'));
+  s.click('rm-uabc');
   await settle();
   assert.deepEqual(s.chrome.store['xsh:settings'].customLists.map((c) => c.id), ['udef']);
   assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio', 'udef']);
+  // Undo takes the removed row's place, and focus.
+  const first = s.document.querySelector('#ownRows li');
+  assert.equal(first.hasAttribute('data-undo'), true);
+  assert.equal(first.textContent, 'Removed list.txt.Undo');
+  assert.equal(s.$('listMsg').textContent, 'Removed list.txt. Undo is in its place for 10 seconds.');
+  assert.equal(s.focused.at(-1), 'undo');
+  assert.deepEqual(s.timers.due.map((t) => t.ms), [10000]);
 });
 
 test('settings page: the card draws again when a list record changes, and builds names as text', async () => {
@@ -3305,11 +3387,233 @@ test('settings page: the card draws again when a list record changes, and builds
   const s = loadSettings({ 'xsh:settings': { customLists: [{ id: 'uabc', url: `https://a.example/${encodeURI(evil)}`, on: true }] } });
   await settle();
   assert.equal(s.document.querySelector('#listRows img'), null);
-  assert.match(rowOf(s, 'uabc').querySelector('label').textContent, /a\.example\//);
-  assert.match(rowOf(s, 'uabc').textContent, /not fetched yet/);
+  assert.equal(rowOf(s, 'uabc').querySelector('label').textContent, evil, 'the file name, decoded, as text');
+  assert.equal(rowOf(s, 'uabc').querySelector('.where').textContent, 'a.example/%3Cimg%20src=x%20onerror=alert(1)%3E');
+  assert.equal(stat(s, 'uabc'), 'Not downloaded yet');
   await s.chrome.storage.local.set({ 'xsh:list:uabc': record(['h1', 'h2'], 'https://a.example/x') });
   await settle();
-  assert.match(rowOf(s, 'uabc').textContent, /2 accounts · updated just now/);
+  assert.equal(stat(s, 'uabc'), '2 accounts · updated just now');
+});
+
+const LISTS3 = [
+  { id: 'uone', url: 'https://a.example/one.txt', on: true },
+  { id: 'utwo', url: 'https://a.example/two.txt', on: false },
+  { id: 'uthree', url: 'https://a.example/three.txt', on: true },
+];
+
+test('settings page: Undo puts a removed list back with its id, address, switch and place', async () => {
+  const s = loadSettings({ 'xsh:settings': { allowlist: 'friend', customLists: LISTS3 } });
+  await settle();
+  s.click('rm-utwo');
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists, [LISTS3[0], LISTS3[2]]);
+  assert.deepEqual([...s.document.querySelectorAll('#ownRows li')].map((li) => li.getAttribute('data-list') || 'undo'), ['uone', 'undo', 'uthree']);
+  s.click('undo');
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'], { allowlist: 'friend', customLists: LISTS3 });
+  assert.equal(s.$('listMsg').textContent, 'two.txt is back.');
+  assert.equal(s.document.querySelector('#ownRows [data-undo]'), null);
+  assert.equal(s.focused.at(-1), 'list-utwo');
+  // A list that was on says it downloads again; the background fetches it as for any list switched on.
+  s.click('rm-uone');
+  await settle();
+  s.click('undo');
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists, LISTS3);
+  assert.equal(s.$('listMsg').textContent, 'one.txt is back. Downloading it again.');
+});
+
+test('settings page: Undo leaves after 10 seconds and the removal stands', async () => {
+  const s = loadSettings({ 'xsh:settings': { customLists: LISTS3 } });
+  await settle();
+  s.click('rm-uthree');
+  await settle();
+  assert.ok(s.$('undo'));
+  const [timer] = s.timers.due;
+  assert.equal(timer.ms, 10000);
+  timer.fn();
+  await settle();
+  assert.equal(s.$('undo'), null);
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists, [LISTS3[0], LISTS3[1]]);
+  assert.equal(s.focused.at(-1), 'addOpen', 'focus moves to Add when Undo goes');
+});
+
+test('settings page: Undo is refused when the address is back already or five lists are added', async () => {
+  const s = loadSettings({ 'xsh:settings': { customLists: LISTS3 } });
+  await settle();
+  s.click('rm-uone');
+  await settle();
+  s.$('listUrl').value = LISTS3[0].url;
+  s.submit('addForm');
+  await settle();
+  const now = s.chrome.store['xsh:settings'].customLists;
+  assert.equal(now.length, 3);
+  s.click('undo');
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'one.txt is already here.');
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists, now, 'nothing written');
+
+  const five = [1, 2, 3, 4, 5].map((n) => ({ id: `u${n}`, url: `https://a.example/${n}.txt`, on: true }));
+  const t = loadSettings({ 'xsh:settings': { customLists: five } });
+  await settle();
+  t.click('rm-u2');
+  await settle();
+  t.$('listUrl').value = 'https://a.example/6.txt';
+  t.submit('addForm');
+  await settle();
+  const full = t.chrome.store['xsh:settings'].customLists;
+  assert.equal(full.length, 5);
+  t.click('undo');
+  await settle();
+  assert.equal(t.$('listMsg').textContent, '2.txt could not go back: 5 lists are added. Remove one first.');
+  assert.deepEqual(t.chrome.store['xsh:settings'].customLists, full, 'nothing written');
+});
+
+test('settings page: Try again asks the background to download the lists again and says how it went', async () => {
+  const url = 'https://a.example/one.txt';
+  const s = loadSettings({
+    'xsh:settings': { customLists: [{ id: 'uone', url, on: true }] },
+    'xsh:list:uone': record([], url, { fetchedAt: 0, lastError: 'HTTP 500' }),
+  });
+  const sent = [];
+  let answer;
+  s.chrome.runtime.sendMessage = (msg) => {
+    sent.push(msg);
+    return new Promise((resolve) => {
+      answer = resolve;
+    });
+  };
+  await settle();
+  s.click('retry-uone');
+  await settle();
+  assert.deepEqual(sent.map((m) => JSON.stringify(m)), ['{"type":"xsh:refresh"}'], 'the message is made in the page, so compared as JSON');
+  assert.equal(s.$('listMsg').textContent, 'Downloading the lists that are on again…');
+  assert.equal(stat(s, 'uone'), 'Downloading…');
+  assert.equal(s.$('retry-uone').getAttribute('aria-disabled'), 'true');
+  assert.equal(s.$('retry-uone').disabled, false, 'never disabled, so it keeps focus');
+  s.click('retry-uone');
+  await settle();
+  assert.equal(sent.length, 1, 'one download at a time');
+  answer({ ok: false, reason: 'HTTP 500', count: 0 });
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'It failed again. The note under the list says what to try.');
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  assert.equal(stat(s, 'uone'), 'Download failed');
+  assert.equal(s.$('retry-uone').hasAttribute('aria-disabled'), false);
+  assert.equal(s.focused.at(-1), 'retry-uone');
+
+  s.click('retry-uone');
+  await settle();
+  await s.chrome.storage.local.set({ 'xsh:list:uone': record(['h1'], url) });
+  answer({ ok: true, reason: null, count: 1 });
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'Downloaded. Every list that is on is up to date.');
+  assert.equal(stat(s, 'uone'), '1 account · updated just now');
+  assert.equal(s.$('retry-uone'), null);
+  assert.equal(s.focused.at(-1), 'list-uone', 'Try again is gone, so focus goes to the switch');
+});
+
+test('settings page: Try again that cannot reach the background says so', async () => {
+  const url = 'https://a.example/one.txt';
+  const s = loadSettings({
+    'xsh:settings': { customLists: [{ id: 'uone', url, on: true }] },
+    'xsh:list:uone': record([], url, { fetchedAt: 0, lastError: 'HTTP 500' }),
+  });
+  s.chrome.runtime.sendMessage = async () => {
+    throw new Error('Could not establish connection. Receiving end does not exist.');
+  };
+  await settle();
+  s.click('retry-uone');
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'The download could not start: Could not establish connection. Receiving end does not exist.');
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  assert.equal(stat(s, 'uone'), 'Download failed');
+});
+
+// A built-in list that has a copy keeps hiding it after a failed download. The
+// alarm tries a list again only once it is due, so its note promises no time.
+test('settings page: a failed built-in list says when it tries again, and a stale one keeps its copy', async () => {
+  const hour = 60 * 60e3;
+  const s = loadSettings({
+    'xsh:settings': { lists: { levelsio: true, 'clankwall-all': true } },
+    'xsh:list:levelsio': record(['a1', 'a2', 'a3'], 'https://blockedforaireply.levels.io/api/usernames.txt', { fetchedAt: Date.now() - hour, lastError: 'HTTP 503' }),
+    [ALL_KEY]: record([], ALL_URL, { fetchedAt: 0, lastError: 'network error: Failed to fetch' }),
+  });
+  await settle();
+  assert.equal(stat(s, 'levelsio'), '3 accounts · last download failed');
+  assert.deepEqual(failNote(s, 'levelsio'), {
+    what: "The list's site answered with an error.",
+    text: "The list's site answered with an error. It tries again at its next refresh, or press Try again. Until then it hides the 3 accounts from the last good download.",
+    reported: 'Reported: HTTP 503',
+  });
+  assert.equal(stat(s, 'clankwall-all'), 'Download failed');
+  assert.deepEqual(failNote(s, 'clankwall-all'), {
+    what: "The list's site could not be reached.",
+    text: "The list's site could not be reached. You may be offline, or the site may be down. It tries again within 6 hours, or press Try again.",
+    reported: 'Reported: network error: Failed to fetch',
+  });
+  assert.equal(failNote(s, 'clankwall-ai'), null, 'not downloaded yet is not a failure');
+  assert.equal(stat(s, 'clankwall-ai'), 'Not downloaded yet');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 3 accounts on 3 lists. 2 lists need a look.');
+  // Switched off, a list shows no failure.
+  flip(s, 'clankwall-all', false);
+  await settle();
+  assert.equal(stat(s, 'clankwall-all'), 'Off');
+  assert.equal(failNote(s, 'clankwall-all'), null);
+});
+
+// Every reason lib's fetchList gives has its own plain words and next step.
+test('settings page: every download failure reason gets its own explanation', async () => {
+  const cases = [
+    ['HTTP 404', 'Nothing is at that address any more.', 'Check the address.'],
+    ['HTTP 410', 'Nothing is at that address any more.', 'Check the address.'],
+    ['HTTP 500', "The list's site answered with an error.", 'It tries again within 6 hours, or press Try again.'],
+    ['unexpected content-type text/html', 'That address opens a web page, not a list.', 'on GitHub, the Raw button'],
+    ['feed is mostly not handles (7 invalid lines)', "The file there isn't a list of X handles.", 'one handle per line'],
+    ['empty list', "The file there isn't a list of X handles.", 'one handle per line'],
+    ['list shrank from 100 to 10', 'The new copy was much shorter than the last one, so it was not used.', 'remove it and add it again'],
+    ['feed larger than 1000000 bytes', 'The list is bigger than the extension reads.', 'Ask its owner for a smaller file'],
+    ['too many handles', 'The list is bigger than the extension reads.', 'Ask its owner for a smaller file'],
+    ['read error: aborted', 'The download could not be used.', 'It tries again within 6 hours, or press Try again.'],
+  ];
+  const customLists = cases.slice(0, 5).map((c, i) => ({ id: `u${i}`, url: `https://a.example/${i}.txt`, on: true }));
+  for (let start = 0; start < cases.length; start += 5) {
+    const chunk = cases.slice(start, start + 5);
+    const store = { 'xsh:settings': { customLists } };
+    chunk.forEach(([reason], i) => {
+      store[`xsh:list:u${i}`] = record([], customLists[i].url, { fetchedAt: 0, lastError: reason });
+    });
+    const s = loadSettings(store);
+    await settle();
+    chunk.forEach(([reason, what, next], i) => {
+      const n = failNote(s, `u${i}`);
+      assert.equal(n.what, what, reason);
+      assert.ok(n.text.includes(next), `${reason}: ${n.text}`);
+      assert.equal(n.reported, `Reported: ${reason}`);
+    });
+  }
+});
+
+test('settings page: the summary says when no list is on and when hiding is paused', async () => {
+  const off = loadSettings({ 'xsh:settings': { lists: { 'clankwall-ai': false } } });
+  await settle();
+  assert.equal(off.$('summary').textContent, 'No list is on.');
+  const paused = loadSettings({ 'xsh:list': record(['h1'], AI_URL), 'xsh:settings': { paused: true } });
+  await settle();
+  assert.equal(paused.$('summary').textContent, 'Hiding is paused in the popup. When it is on, it hides replies from 1 account on 1 list.');
+});
+
+test('settings page: an open About stays open when the lists draw again', async () => {
+  const s = loadSettings({ 'xsh:settings': {} });
+  await settle();
+  const d = rowOf(s, 'levelsio').querySelector('details');
+  d.setAttribute('open', '');
+  d.dispatchEvent(new s.document.defaultView.Event('toggle'));
+  flip(s, 'clankwall-all', true);
+  await settle();
+  assert.equal(rowOf(s, 'levelsio').querySelector('details').hasAttribute('open'), true);
+  assert.equal(rowOf(s, 'clankwall-ai').querySelector('details').hasAttribute('open'), false);
 });
 
 test('settings page: importing still gets only the AI list handles', async () => {

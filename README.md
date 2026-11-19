@@ -163,7 +163,7 @@ whenever the tab comes back into view. The userscript does not mute.
 | Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
 | Hide a post as slop | Click **Hide as slop**, the speech bubble with an × at the post's top right, just left of Grok's icon and ⋯, on the home timeline or any other page of posts. It is there unless you untick **Show a Hide as slop button on posts on x.com** under **Label posts** (see [Labels](#labels)) | Not available |
 | Back up or move your settings | Under **Your accounts**, click **Export or import**, then **Export settings**; import the file on the same page (see [Export and import](#export-and-import)) | Not available |
-| Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export Also hide as a list**, or pick their file under **Import** | Not available |
+| Share Also hide, or add a list someone shared | Under **Your accounts**, click **Export or import**, then **Export list** under **Also hide as a list**, or pick their file with **Choose a file…** under **Import a file** | Not available |
 
 **Bots like @grok**, **Your accounts** and **Label posts** start folded;
 click a heading to open it. A folded heading shows its counts on the same line,
@@ -252,8 +252,11 @@ The extension hides posts by accounts on every list you switch on, added
 together. **Always show** beats every list, and an account's own pages still
 show its posts. The lists are on the extension's settings page: click **Choose
 lists** under the list count in the popup, or **Export or import** under **Your
-accounts**. Each list there has a switch, its count, when it was last updated
-and its last error, if any.
+accounts**. Each list there has a switch, its count and when it was last
+updated. A list whose last download failed says what went wrong and what to
+do, shows the reason as reported, and has **Try again**, which downloads every
+list that is on again. A list you add has **Remove**, with **Undo** for 10
+seconds after.
 
 | List | Address | Starts |
 |---|---|---|
@@ -279,15 +282,16 @@ and its last error, if any.
   interaction, 2,059 older silent blocks not yet reviewed, and 144 from
   clankwall alone. It says "Flags are judgment calls, not proof." It hides
   only, and only in the extension: the userscript cannot fetch it.
-- **A list you add** is a text file with one handle per line, like an
-  **Export Also hide as a list** file. Lines starting with `#` or `!` are
+- **A list you add** is a text file with one handle per line, like a file
+  from **Export list** under **Also hide as a list**. Lines starting with `#` or `!` are
   skipped. You can add up to 5. The address must start with `https://` and
   hold no user name or password. A list you add hides only.
 - The extension fetches a list you add without asking for a permission, so
   the host has to let other sites read the file. Raw GitHub
   (`raw.githubusercontent.com`) and Gist raw links do. An address that opens
   in a tab but shows `network error: Failed to fetch` on the settings page
-  usually does not. Removing a list deletes its stored copy.
+  usually does not. Removing a list deletes its stored copy; **Undo** puts the
+  list back where it was, and downloads it again if it was on.
 - A list that is off is not fetched. Adding a list fetches it at once, and so
   does switching one on, unless its stored copy is less than 6 hours old or
   its last try failed less than 30 minutes ago. After that every list that is
@@ -623,9 +627,11 @@ close the popup). The userscript has no export or import.
   posts that tag a hidden bot are hidden. It never holds muting on or off,
   **Mutes a day**, the account muting runs as, which lists are on, the
   addresses of lists you added, **Pause hiding** or your labels.
-- **Export Also hide as a list** saves `ai-anti-slop-also-hide-YYYY-MM-DD.txt`,
-  one handle per line. Anyone can import it into their own Also hide.
-- **Import** reads one file you pick: a settings file, or a text file of
+- **Export list**, under **Also hide as a list**, saves
+  `ai-anti-slop-also-hide-YYYY-MM-DD.txt`, one handle per line. Anyone can
+  import it into their own Also hide. With Also hide empty it saves nothing and
+  says so.
+- **Choose a file…**, under **Import a file**, reads one file you pick: a settings file, or a text file of
   handles, one per line, `@` optional, with blank lines and lines starting
   with `#` skipped. A list file goes to Also hide.
 
