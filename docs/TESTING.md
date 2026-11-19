@@ -599,6 +599,44 @@ account. With All flags switched on and all 2,811 of its accounts stored, the
 branch gave the same 527 and the same first account, and a reply seen from an
 account only on All flags left the mute record as it was.
 
+## Several lists on the refresh alarm, and a Gist address, in Chromium
+
+On 2026-11-19 the unpacked extension from the branch for issue #73 (manifest
+0.9.0) ran in headless Chromium 157.0.8103.50 through Playwright. clankwall's
+two lists and a Gist were fetched over the network; two added lists were
+answered by a local stand-in, one sending `access-control-allow-origin: *` and
+one sending no such header. Nothing loaded x.com.
+
+| Step | Result |
+|---|---|
+| Install | AI flags fetched, 786 accounts |
+| All flags switched on and three lists added, in the settings page | "Added. Fetching it now." each time; All flags 2,808 accounts, the stand-in with the header 3, the stand-in without it `network error: Failed to fetch` |
+| A public Gist added by its raw address (the one its Raw button opens) | Read with no host permission for it: the file held 30 lines of code, so its record holds `feed is mostly not handles (30 invalid lines)`, not a network error |
+| Popup opened | "2811 accounts on 5 lists", "From 5 lists, not all fetched yet", and the Gist's error |
+| The stand-in list grown to 4 accounts, then the `xsh-refresh` alarm re-created to fire in 1 s (the 6-hour alarm, with its own handler) | Within 2 s all five lists were tried again: the three that had fetched fetched again (each record's `seq` went from 1 to 2), the stand-in list held 4 accounts, and the two that failed kept their errors with a new attempt time. Each stand-in address was asked twice in the whole run, once when added and once on the alarm. The alarm stayed at every 360 minutes. |
+| The popup, left open across the alarm | "2812 accounts on 5 lists", without being reopened |
+
+So the worker can read a Gist's raw address. A Gist that holds a list of
+handles was not tried: none of the 26 small public text Gists sampled that day
+held one.
+
+## An x.com tab left open across a reload, in Chromium
+
+On 2026-11-19, headless Chromium 157.0.8103.50 loaded the extension built from
+0e65095, with a local stand-in for x.com (no request reached X). The worker
+asked an x.com tab `xsh:present` around a reload from the extensions page
+(`developerPrivate.reload`, what the reload button does):
+
+- Before the reload, the tab answered `true`.
+- After it, the same tab gave "Could not establish connection. Receiving end
+  does not exist." An x.com tab opened after the reload answered `true`.
+- Once the old tab was refreshed, it answered `true`.
+
+So at 50 or 100 a day, a tab left open across a reload does not count as
+x.com open. After 0.9.0 that holds back only the mutes past the day's first
+25 (the README's How many a day); in 0.9.0 and earlier it held back every
+visit.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -629,7 +667,9 @@ any browser but Brave. For deleted and suspended accounts and the muted-list
 retry (after 0.9.0): either one in the extension's own visit tabs on real
 x.com (the unit and wiring tests cover the code, the run above only the
 page check), and X in other languages, where the reason kept is X's heading
-in that language.
+in that language. For the x.com-tab rule (after 0.9.0): an update from the
+Chrome Web Store with an x.com tab open (only a reload from the extensions
+page was tried).
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
 X's Dim theme (the build read before the release offered none), a theme
@@ -648,8 +688,11 @@ real x.com or in Brave. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.
-For choosing lists: any of it in Brave or on real x.com, a Gist address (only
-raw GitHub was tried), the userscript's **Hide every account clankwall
-flagged / AI flags only** menu item in a userscript manager, several lists
-refreshing on the 6-hour alarm, and the shrink guard refusing an update of
-All flags or an added list over the network (the unit tests cover it).
+For choosing lists: any of it in Brave or on real x.com, a Gist that holds a
+list of handles (the Gist read under
+[Several lists on the refresh alarm](#several-lists-on-the-refresh-alarm-and-a-gist-address-in-chromium)
+held code), the userscript's **Hide every account clankwall
+flagged / AI flags only** menu item in a userscript manager, the refresh alarm
+firing on its own after 6 hours (it was re-created to fire early), and the
+shrink guard refusing an update of All flags or an added list over the network
+(the unit tests cover it).

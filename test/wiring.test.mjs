@@ -1138,6 +1138,9 @@ test('userscript: committed dist file matches the sources', () => {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const muteAt = (muteCap, over = {}) => muteBackground({ settings: { muteEnabled: true, muteAccount: ME, muteCap }, ...over });
+// A mute record whose day is past what 25 a day allows, so at 50 or 100 the
+// next visit needs an x.com tab of the user's own.
+const past25 = (over = {}) => ({ ...lib.emptyMutes(), ...over, days: { [today()]: { mutes: 25, unmutes: 0, visits: 25, stopped: null } } });
 
 test('background: at 25 a day muting never looks for an x.com tab, and a stored number other than 25, 50 or 100 reads as 25', async () => {
   for (const muteCap of [25, undefined, 1000, '100', 0, -1]) {
@@ -1182,8 +1185,32 @@ test("background: at 50 or 100 a day, a mute visit waits for an x.com tab of the
   assert.deepEqual(full.chrome.tabs.opened, []);
 });
 
+test("background: at 50 or 100 a day the day's first 25 mutes need no x.com tab, so a tab cut off by an update holds back only the rest", async () => {
+  const day = (d) => ({ mutes: { ...lib.emptyMutes(), days: { [today()]: d } } });
+  for (const cap of [50, 100]) {
+    // Below 25 with no tab of the user's (none open, or one left open across
+    // an update, which cannot answer): the visit starts and no tab is asked.
+    let bg = await muteAt(cap, day({ mutes: 24, visits: 30 }));
+    await alarm(bg);
+    assert.equal(bg.chrome.tabs.opened.length, 1, `${cap}: visits below 25 with no x.com tab`);
+    assert.equal(lastTab(bg).url, 'https://x.com/slop_a');
+    assert.equal(bg.chrome.tabs.queries, 0, `${cap}: never asks the tabs below 25`);
+    assert.equal(bg.chrome.store['xsh:mutes'].days[today()].visits, 31);
+    // Mutes and unmutes reach 25 together: from there the tab is needed.
+    bg = await muteAt(cap, day({ mutes: 20, unmutes: 5, visits: 30 }));
+    await alarm(bg);
+    assert.deepEqual(bg.chrome.tabs.opened, [], `${cap}: 25 done today and no tab, so no visit`);
+    assert.equal(bg.chrome.tabs.queries, 1);
+    // So do 50 visits, with fewer mutes.
+    bg = await muteAt(cap, day({ mutes: 10, visits: 50 }));
+    await alarm(bg);
+    assert.deepEqual(bg.chrome.tabs.opened, [], `${cap}: 50 visits today and no tab, so no visit`);
+    assert.equal(bg.chrome.tabs.queries, 1);
+  }
+});
+
 test('background: the x.com check never counts a job tab, even one that failed to close, skips discarded tabs, and waits 1.5 s for an answer', async () => {
-  const bg = await muteAt(50);
+  const bg = await muteAt(50, { mutes: past25() });
   const t = bg.chrome.tabs;
   // Every tab says yes, as a job tab whose page reloaded after its job would.
   t.list = [{ id: 7 }];
@@ -1224,7 +1251,7 @@ test('background: the x.com check never counts a job tab, even one that failed t
 test("background: the x.com check is asked outside the worker's queue, so a tab that just loaded can ask for its job first", async () => {
   // As content.js does: a tab answers xsh:present only after the worker has
   // answered its xsh:job question, which goes through the worker's queue.
-  const bg = await muteAt(100);
+  const bg = await muteAt(100, { mutes: past25() });
   const t = bg.chrome.tabs;
   t.list = [{ id: 7 }];
   t.answer = (id, msg) => (id === 7 && msg.type === 'xsh:present' ? send(bg, { type: 'xsh:job' }, 7).then((job) => !job) : Promise.reject(new Error('no content script')));
@@ -1234,11 +1261,11 @@ test("background: the x.com check is asked outside the worker's queue, so a tab 
   assert.equal(t.opened.length, 1, 'the visit starts without waiting out the 1.5 s');
   assert.equal(lastTab(bg).url, 'https://x.com/slop_a');
   assert.equal(t.queries, 1);
-  assert.equal(bg.chrome.store['xsh:mutes'].days[today()].visits, 1);
+  assert.equal(bg.chrome.store['xsh:mutes'].days[today()].visits, 26);
 });
 
 test('background: at 50 a day with no x.com tab open, a pending check of the muted list still runs', async () => {
-  const bg = await muteAt(50, { mutes: { ...lib.emptyMutes(), handles: { slop_a: { status: 'muted', confirmed: null } }, sinceCheck: ['slop_a'] } });
+  const bg = await muteAt(50, { mutes: past25({ handles: { slop_a: { status: 'muted', confirmed: null } }, sinceCheck: ['slop_a'] }) });
   await alarm(bg);
   assert.equal(bg.chrome.tabs.queries, 1);
   assert.equal(bg.chrome.tabs.opened.length, 1);
@@ -1452,7 +1479,7 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   // What a number above 25 changes is said beside the choice, in view, and
   // the select is described by it.
   assert.equal($('capNote').hidden, false);
-  assert.equal($('capNote').textContent, 'Runs only while x.com is open in a tab.');
+  assert.equal($('capNote').textContent, 'Mutes past 25 need an x.com tab open.');
   assert.equal(Boolean($('capNote').closest('details')), false, 'the x.com note is not folded');
   assert.equal(Boolean($('capNote').closest('.caprow .caplabel')), true, 'the note is under Mutes a day, beside the select');
   assert.equal($('muteCap').getAttribute('aria-describedby'), 'capNote');
@@ -1462,7 +1489,7 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   assert.equal(choice(p, 'muteCap'), '50');
   assert.equal($('muteToday').textContent, 'Today (UTC): 2 of 50 mutes, 5 of 100 visits');
   assert.equal($('capNote').hidden, false);
-  assert.equal($('capNote').textContent, 'Runs only while x.com is open in a tab.');
+  assert.equal($('capNote').textContent, 'Mutes past 25 need an x.com tab open.');
   choose(p, 'muteCap', '25');
   await settle();
   assert.equal($('capNote').hidden, true, '25 runs whenever the browser is open: no note');
@@ -3064,6 +3091,31 @@ test('popup: a list never fetched, a failing list and no list at all', async () 
   assert.equal(p.document.getElementById('list').textContent, 'No list is on');
   assert.equal(p.document.getElementById('listAge').textContent, '');
   assert.equal(p.document.getElementById('err').hidden, true);
+});
+
+test('popup: while it is open, a list fetched or turned on elsewhere redraws the list lines, and what the user typed stays', async () => {
+  const p = loadPopup({
+    'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 3600e3 }),
+    'xsh:settings': {},
+  });
+  await settle();
+  const $ = (id) => p.document.getElementById(id);
+  assert.equal($('list').textContent, '2 accounts on the list');
+  $('extra').value = 'typed_not_saved';
+  // The 6-hour refresh lands while the popup is open.
+  await p.chrome.storage.local.set({ 'xsh:list': record(['aionly', 'both', 'newone'], AI_URL) });
+  await settle();
+  assert.equal($('list').textContent, '3 accounts on the list');
+  assert.equal($('listAge').textContent, 'From clankwall.vogel.dev, updated just now');
+  // All flags is turned on in the settings page; then its first fetch lands.
+  await p.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await settle();
+  assert.equal($('list').textContent, '3 accounts on 2 lists');
+  assert.equal($('listAge').textContent, 'From 2 lists, not all fetched yet');
+  await p.chrome.storage.local.set({ [ALL_KEY]: record(['both', 'spamonly'], ALL_URL) });
+  await settle();
+  assert.equal($('list').textContent, '4 accounts on 2 lists');
+  assert.equal($('extra').value, 'typed_not_saved', 'a redraw never writes the boxes');
 });
 
 test('popup: the bot rows follow every list that is on, and muting counts the AI list alone', async () => {

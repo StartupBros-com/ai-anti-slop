@@ -832,10 +832,23 @@
     return DEFAULTS.muteCaps.includes(v) ? v : DEFAULTS.muteDailyCap;
   }
 
-  // A cap above the default mutes only while the user has an x.com tab of
-  // their own open.
+  // A cap above the default mutes past the default only while the user has
+  // an x.com tab of their own open (visitNeedsXOpen says when).
   function capNeedsXOpen(cap) {
     return cap > DEFAULTS.muteDailyCap;
+  }
+
+  // Whether the next visit outside a run needs an x.com tab of the user's
+  // own: only at a cap above the default, and only once today is past what
+  // the default allows (its mutes, unmutes included, or its visits). Below
+  // that a higher cap visits as the default does, so 50 or 100 never visits
+  // less than 25 would, and a tab that cannot answer (one left open across an
+  // update, cut off from the new worker until it is refreshed) holds back
+  // only the mutes past the default.
+  function visitNeedsXOpen(rec, today, cap) {
+    if (!capNeedsXOpen(cap)) return false;
+    const base = muteBudget(rec, today, DEFAULTS.muteDailyCap);
+    return !(base.mutesLeft > 0 && base.visitsLeft > 0);
   }
 
   // What today's caps leave at the given daily cap (the default when cap is
@@ -1407,6 +1420,7 @@
     stampAccount,
     muteCap,
     capNeedsXOpen,
+    visitNeedsXOpen,
     muteBudget,
     recordOutcome,
     recordUnmute,
@@ -2549,8 +2563,9 @@
         send({ type: 'xsh:job-go', id: job.id }).then((ok) => ok === true, () => false),
       reportJob: (result) => send({ type: 'xsh:job-result', result }).catch(() => {}),
       noteSighting: (handle) => send({ type: 'xsh:sighting', handle }).catch(() => {}),
-      // Asked by the worker before a mute visit at 50 or 100 a day: is an
-      // x.com tab of the user's own open? fn answers no in a job's tab.
+      // Asked by the worker before a mute visit past the day's first 25 at 50
+      // or 100 a day: is an x.com tab of the user's own open? fn answers no in
+      // a job's tab.
       answerPresent(fn) {
         chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!msg || msg.type !== 'xsh:present') return false;

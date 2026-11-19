@@ -252,6 +252,21 @@ test('muteCap reads only 25, 50 or 100, so no stored value goes past 100', () =>
   assert.equal(lib.capNeedsXOpen(100), true);
 });
 
+test('visitNeedsXOpen: at 50 or 100 a visit needs an x.com tab only past what 25 a day allows today; at 25 never', () => {
+  const day = '2026-11-19';
+  const rec = (d) => ({ ...lib.emptyMutes(), days: { [day]: d } });
+  for (const cap of [50, 100]) {
+    assert.equal(lib.visitNeedsXOpen(undefined, day, cap), false, `${cap}: nothing done today`);
+    assert.equal(lib.visitNeedsXOpen(rec({ mutes: 24, visits: 49 }), day, cap), false, `${cap}: below both`);
+    assert.equal(lib.visitNeedsXOpen(rec({ mutes: 25, visits: 25 }), day, cap), true, `${cap}: 25 mutes`);
+    assert.equal(lib.visitNeedsXOpen(rec({ mutes: 20, unmutes: 5, visits: 25 }), day, cap), true, `${cap}: unmutes count with mutes`);
+    assert.equal(lib.visitNeedsXOpen(rec({ mutes: 10, visits: 50 }), day, cap), true, `${cap}: 50 visits`);
+    const yesterday = { ...lib.emptyMutes(), days: { '2026-11-18': { mutes: 100, visits: 200 } } };
+    assert.equal(lib.visitNeedsXOpen(yesterday, day, cap), false, `${cap}: yesterday's numbers do not count`);
+  }
+  assert.equal(lib.visitNeedsXOpen(rec({ mutes: 25, visits: 50 }), day, 25), false, 'at 25 the cap itself stops the day');
+});
+
 const LABEL_CTX = {
   handles: ['slop_a', 'grok'],
   source: 'https://clankwall.vogel.dev/api/usernames.txt',
