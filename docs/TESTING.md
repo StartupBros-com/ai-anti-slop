@@ -284,6 +284,30 @@ in 90 s)", 461 s after the click. Each of the 5 accounts it visited had one
 failed try and none was given up on; the sixth was not visited, and nothing
 opened in the next 10 s. The open popup showed the stop and hid **Run now**.
 
+## Run now on x.com
+
+On 2026-11-19 Run now ran once on real x.com, in Brave, with the v0.9.0
+release loaded unpacked (its 17 files byte-identical to the release zip),
+muting on for one X account and the daily number at 25. It was meant to be
+stopped by hand after about 10 mutes. The figures come from the extension's
+own mute record, read from a copy of its storage after the run.
+
+- Before the run the UTC day had 9 mutes from the daily pace, whose visits
+  ended 2 to 5 minutes apart.
+- The run made 18 visits, ending between 00:58:38 and 01:02:58 UTC: 13 mutes,
+  4 accounts with no post on their profile, and 1 already muted. None was
+  refused, none ended in an error, and the day did not stop.
+- Visits ended 10 to 26 s apart, 12 s at the median: most mutes 10 to 13 s
+  after the visit before (two took 20 and 22 s), and 25 or 26 s for each of
+  the 3 accounts with no post that came after another visit. The 2 to 5 s between tabs is only the wait; the rest is each tab
+  loading and clicking. At this run's average of 15 s a visit, 500 accounts
+  would take about 2 hours; no run that long has been made.
+- No visit followed the 18th. The next was set 4 min 17 s later, at the daily
+  pace, with the day at 22 mutes and 29 visits, so the run had ended while
+  most listed accounts were still not muted.
+- At 01:04:47 UTC the check of `x.com/settings/muted/all` marked all 13 of the
+  run's mutes as confirmed.
+
 ## Label Undo in Chromium, without X
 
 On 2026-11-18 the unpacked extension with the 6-second Undo window (its
@@ -527,10 +551,10 @@ these accounts** on real x.com, more than two days in a row, how X responds to
 this pace over weeks, and X in other languages. For unmuting (0.8.0): an
 unmute started by the extension's own worker in its visit tab (the run above
 used a stand-in for the worker), and whether X ever asks to confirm an unmute
-(it did not, once). For Run now (0.9.0): any run on real x.com (it has run
-only against the fakes in `test/wiring.test.mjs` and the Chromium run above,
-where X could not be reached), so how X responds to visits a few seconds apart,
-and how long a run of hundreds of accounts takes, are not known.
+(it did not, once). For Run now (0.9.0): a run longer than the 18 visits under
+[Run now on x.com](#run-now-on-xcom), so how X responds to hundreds of visits
+in a row, and how long they take, are not known; and a run on real x.com in
+any browser but Brave.
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
 X's Dim theme (the build read before the release offered none), a theme
