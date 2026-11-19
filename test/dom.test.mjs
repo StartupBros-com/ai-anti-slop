@@ -338,3 +338,52 @@ test("a bot's row decides whether its own posts hide", async () => {
   t.push(stateWith(LIST, { showGrok: true, bots: { grok: 'hide' } }));
   assert.deepEqual([t.hidden('1'), t.hidden('2')], [true, false]);
 });
+
+// Profile pages shaped as x.com rendered them on 2026-11-19: the testids, the
+// tab title and where the boxes sit. Names and handles are made up.
+function profileDoc({ title, header = false, actions = false, empty = null, button = false, body = '' }) {
+  const box = empty
+    ? `<div data-testid="emptyState"><div data-testid="empty_state_header_text">${empty[0]}</div>` +
+      `<div data-testid="empty_state_body_text">${empty[1]}</div>` +
+      `${button ? '<div role="button"><span data-testid="empty_state_button_text">Yes, view profile</span></div>' : ''}</div>`
+    : '';
+  const col =
+    `${actions ? '<button data-testid="userActions" aria-label="More">⋯</button>' : ''}` +
+    `${header ? '<div data-testid="UserName">Some One @some_one</div>' : ''}${box}${body}`;
+  return parseHTML(
+    `<!doctype html><html><head><title>${title}</title></head><body><main>` +
+      `<div data-testid="primaryColumn">${col}</div>` +
+      '<aside><div data-testid="UserCell"><a href="/someone_else">Someone</a></div></aside>' +
+      '</main></body></html>',
+  ).document;
+}
+
+test("profileGone: a deleted or suspended profile is gone, and says X's heading", () => {
+  const deleted = profileDoc({ title: 'Profile / X', empty: ['This account doesn’t exist', 'Try searching for another.'] });
+  const suspended = profileDoc({ title: 'Profile / X', empty: ['Account suspended', 'X suspends accounts which violate the X Rules'] });
+  assert.equal(lib.profileGone(deleted), 'This account doesn’t exist');
+  assert.equal(lib.profileGone(suspended), 'Account suspended');
+});
+
+// Planted negatives: every other page a visit can land on, including the two
+// that share some of a gone profile's signs.
+test('profileGone: a live, restricted, refused or post-less profile is not gone', () => {
+  // X's caution page in front of a live account: an emptyState and no
+  // UserName, but the profile's ⋯ button and its handle in the title.
+  const caution = ['Caution: This account is temporarily restricted', 'You’re seeing this warning because…'];
+  assert.equal(lib.profileGone(profileDoc({ title: 'Some One (@some_one) / X', actions: true, empty: caution, button: true })), null);
+  // The profile lookup refused: no header and "Profile / X", but no emptyState box.
+  const refused = '<div>Something went wrong. Try reloading.</div><div role="button">Retry</div>';
+  assert.equal(lib.profileGone(profileDoc({ title: 'Profile / X', body: refused })), null);
+  // A live profile with posts, and one with none.
+  const live = { title: 'Some One (@some_one) / X', header: true, actions: true };
+  assert.equal(lib.profileGone(profileDoc({ ...live, body: '<article data-testid="tweet"></article>' })), null);
+  assert.equal(lib.profileGone(profileDoc({ ...live, empty: ['@some_one hasn’t posted', 'When they do, their posts will show up here.'] })), null);
+  // Any one sign of a live account is enough to rule it out.
+  assert.equal(lib.profileGone(profileDoc({ title: 'Profile / X', header: true, empty: ['a', 'b'] })), null);
+  assert.equal(lib.profileGone(profileDoc({ title: 'Profile / X', actions: true, empty: ['a', 'b'] })), null);
+  assert.equal(lib.profileGone(profileDoc({ title: 'Some One (@some_one) / X', empty: ['a', 'b'] })), null);
+  // Still loading, or no document at all.
+  assert.equal(lib.profileGone(profileDoc({ title: 'X' })), null);
+  assert.equal(lib.profileGone(null), null);
+});

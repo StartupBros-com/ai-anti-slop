@@ -308,6 +308,39 @@ own mute record, read from a copy of its storage after the run.
 - At 01:04:47 UTC the check of `x.com/settings/muted/all` marked all 13 of the
   run's mutes as confirmed.
 
+## Deleted and suspended profiles, and an unreadable muted list
+
+On 2026-11-19, after the run above, the extension's mute record held 8 listed
+accounts as having no post. Each profile was opened in a foreground tab of a
+Chrome logged in to X and driven over the DevTools protocol, not in the
+extension's own visit tab, and nothing on it was clicked.
+
+- 4 profiles showed "This account doesn't exist", 2 "Account suspended", and 2
+  X's "temporarily restricted" caution page in front of a live profile.
+- `profileGone` from `src/lib.js`, evaluated in each page, returned X's heading
+  for the 6 deleted or suspended accounts and null for the 2 restricted ones.
+  It also returned null for a live profile, for a live profile read 1.5 s
+  after it began loading, and for a live profile whose lookup
+  (`UserByScreenName`) was answered with a local 429, where the page said
+  "Something went wrong. Try reloading.". A deleted profile already read as
+  gone 1.5 s in.
+
+The same record had a UTC day that stopped with `settings/muted/all check:
+error (settings/muted/all showed no rows)` after about 45 page loads in 8
+minutes at Run now's pace; the 6 checks before it, the last 70 s earlier, had
+worked.
+
+- X's response headers on 2026-11-19 allowed `account/settings.json` 100 calls
+  per 15 minutes, and 5 page loads took its count from 98 to 90, so 1 to 3
+  each. `MutedAccounts` allowed 500.
+- With `account/settings.json` or `MutedAccounts` answered with a local 429,
+  `x.com/settings/muted/all` showed no rows, and with the first it said
+  "Something went wrong. Try reloading.". Profile pages still loaded with
+  `account/settings.json` refused, and showed their posts and ⋯ buttons.
+
+That fits X's limit as the cause of the stop, but does not show it: nothing
+saved X's headers on the day it stopped.
+
 ## Label Undo in Chromium, without X
 
 On 2026-11-18 the unpacked extension with the 6-second Undo window (its
@@ -554,7 +587,11 @@ used a stand-in for the worker), and whether X ever asks to confirm an unmute
 (it did not, once). For Run now (0.9.0): a run longer than the 18 visits under
 [Run now on x.com](#run-now-on-xcom), so how X responds to hundreds of visits
 in a row, and how long they take, are not known; and a run on real x.com in
-any browser but Brave.
+any browser but Brave. For deleted and suspended accounts and the muted-list
+retry (after 0.9.0): either one in the extension's own visit tabs on real
+x.com (the unit and wiring tests cover the code, the run above only the
+page check), and X in other languages, where the reason kept is X's heading
+in that language.
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
 X's Dim theme (the build read before the release offered none), a theme

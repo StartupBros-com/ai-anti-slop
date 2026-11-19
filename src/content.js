@@ -808,20 +808,26 @@
     if (bad) return { result: bad };
     // A post appears a few seconds before its ⋯ button does (seen on 3 of 4
     // profiles on 2026-11-06), so wait for one that has the button.
+    // A deleted or suspended account's profile shows X's notice instead, so
+    // the wait ends once that has shown on two polls in a row.
     const own = () => [...document.querySelectorAll(ARTICLE)].filter((a) => L.authorHandleOf(a) === h);
-    const caret = await waitFor(() => {
+    let goneSeen = 0;
+    const found = await waitFor(() => {
       for (const a of own()) {
         const c = a.querySelector('[data-testid="caret"]');
-        if (c) return c;
+        if (c) return { caret: c };
       }
-      return null;
+      const gone = L.profileGone(document);
+      goneSeen = gone ? goneSeen + 1 : 0;
+      return goneSeen >= 2 ? { gone } : null;
     }, waitMs(job));
-    if (!caret) {
+    if (found && found.gone) return { result: { status: 'gone', reason: found.gone } };
+    if (!found) {
       return {
         result: { status: 'no-post', reason: own().length ? 'its posts have no ⋯ button' : 'no post by the account on its profile' },
       };
     }
-    caret.click();
+    found.caret.click();
     const menu = await waitFor(() => document.querySelector('[role="menu"]'), 5000, 300);
     if (!menu) return { result: { status: 'error', reason: 'the ⋯ menu did not open' } };
     await sleep(300); // the items arrive just after the menu node

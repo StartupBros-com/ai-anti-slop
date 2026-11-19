@@ -338,6 +338,8 @@ nothing is clicked.
 - A visit that fails (no post on the profile, or the ⋯ menu did not open) is
   tried once more. After a second failure the account is left muted; unmute
   it by hand at `x.com/settings/muted/all`.
+- A profile X shows as deleted or suspended has nothing to click, so that
+  account is left muted after the one visit.
 - Turning muting off stops unmuting too. The mutes it made stay.
 - Mutes recorded before 0.8.0 count as made by the account muting is on for
   the first time muting runs on 0.8.0.
@@ -387,11 +389,13 @@ after another:
   such as "Today (UTC): 40 mutes (over 25 a day), 44 visits".
 - After every 5 mutes it still checks `x.com/settings/muted/all`, and
   everything under [When it stops for the day](#when-it-stops-for-the-day)
-  still stops the day, which ends the run.
+  still stops the day, which ends the run. If that page does not load, the run
+  waits with the check: nothing is visited for 15 minutes, then the page is
+  read again, and the run goes on if it loads.
 - An account that fails twice is left alone, as under [Retries](#retries), so
   a run never keeps visiting one account.
 - Five visits in a row that end in an error or find no post stop muting for
-  the day. A run tries every account once before it tries any again, so if
+  the day. A profile X shows as deleted or suspended is not one of the five. A run tries every account once before it tries any again, so if
   x.com does not load, or X will not show profiles, it stops after five
   accounts that each keep their second try, instead of giving up on the whole
   queue in one sitting.
@@ -416,7 +420,10 @@ with the reason, when:
   Unmute item), or X asks for a confirmation (AI Anti-Slop leaves it
   unanswered);
 - a check does not find a new mute on `x.com/settings/muted/all`, or cannot
-  read that page;
+  read that page twice in a row. After the first time, the mutes not yet
+  checked stay waiting, nothing is visited for 15 minutes (one of X's
+  rate-limit windows), and then the page is read again. Meanwhile the popup's
+  line for today ends "your muted list did not load, next try in 15 min";
 - during [Run now](#run-now), five visits in a row end in an error or find no
   post.
 
@@ -430,6 +437,12 @@ lists each reason.
   not yet tried. After 2 failures the account is left alone.
 - A profile with no post by the account, or none with a ⋯ button, is tried once
   more, then left alone.
+- A profile X shows as deleted or suspended ("This account doesn't exist",
+  "Account suspended") is left alone from that visit on. The visit ends as soon
+  as the page shows it, without waiting for a post. Hiding goes by the list,
+  so if X brings the account back its replies are still hidden; it is just not
+  muted. A profile behind X's "temporarily restricted" caution page counts as
+  one with no post, and nothing on that page is clicked.
 - An account whose menu stopped the day is tried again on a later day, after
   the untried ones. If X shows the same menu, it stops that day too; add the
   account to Always show to end that.
@@ -449,7 +462,9 @@ So far: 3 muted (3 seen on your muted list, 0 not found there), 1 already muted,
 Past the day's number, after **Run now**, the line gives the counts without
 "of", and during a run it leaves out the next visit.
 
-Skipped means no post, or 2 failed visits.
+Skipped means no post, or 2 failed visits. Once some accounts have turned out
+to be deleted or suspended, the line ends with how many, such as ", 2 deleted
+or suspended".
 
 The record is `xsh:mutes` in the extension's local storage: one entry per
 account visited, with its status, the time, X's notice text, whether a check
@@ -673,7 +688,7 @@ again on the next UTC day.
 | `@handle: refused (X asked for a confirmation; left it unanswered)` | Clicking Mute brought up a confirmation. | Mute that account by hand if you want to, or add it to Always show. |
 | `@handle: unmute refused (N exact Unmute items … in the menu [...])` | To unmute an account it had muted, the ⋯ menu needed exactly one item labelled "Unmute @handle" and no Mute item. The brackets list the labels it saw. | If they are not in English, set X's language to English. Otherwise unmute the account by hand at `x.com/settings/muted/all`. |
 | `not on settings/muted/all after muting: @handle` | A new mute was not in the top rows of your muted accounts. | Look for it at `x.com/settings/muted/all`, and see [Limits](#limits). |
-| `settings/muted/all check: error (…)` | Your muted accounts page could not be read. | Open `x.com/settings/muted/all` and check that it loads. |
+| `settings/muted/all check: error (…)` | Your muted accounts page could not be read twice in a row, 15 minutes apart. | Open `x.com/settings/muted/all` and check that it loads. X limits how often an account loads some of its data in each 15 minutes, and after many visits in a row, as in a long Run now, the page can show "Something went wrong. Try reloading." until that resets. |
 | `Run now: 5 visits in a row did nothing, the last @handle: error (…)` (or `no-post (…)`) | During Run now, five visits in a row ended in an error or found no post: x.com may not have loaded, or X may not be showing profiles. Each of those accounts keeps its second try. | Open `x.com/handle` and check that its posts load. |
 
 An account refused at its menu is tried again on a later day, and if X still

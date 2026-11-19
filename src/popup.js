@@ -94,7 +94,12 @@
     const b = L.muteBudget(m, L.utcDay(now), L.muteCap(s));
     const t = L.muteSummary(m);
     const inRun = !!(run && run.account === s.muteAccount);
-    const next = !inRun && m.nextAt && m.nextAt > now ? ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min` : '';
+    // A check of the muted list that failed waits before its second try, run
+    // or not, and nothing is visited until then (background.js tickWith).
+    const wait = !b.stopped && (m.sinceCheck || []).length ? L.checkWaitMs(m, s.muteAccount, now) : 0;
+    let next = '';
+    if (wait) next = ` · your muted list did not load, next try in ${Math.ceil(wait / 60000)} min`;
+    else if (!inRun && m.nextAt && m.nextAt > now) next = ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min`;
     setText($('muteWho'), `Muting as @${s.muteAccount}`);
     // Mutes and unmutes share the daily cap; unmutes are named only once there are some.
     const used = b.mutes + b.unmutes;
@@ -109,7 +114,8 @@
     setText(
       $('muteTotals'),
       `So far: ${t.muted} muted (${t.confirmed} seen on your muted list, ${t.notFound} not found there), ` +
-        `${t.unmuted ? `${t.unmuted} unmuted, ` : ''}${t.already} already muted, ${t.followed} you follow, ${t.skipped} skipped.`,
+        `${t.unmuted ? `${t.unmuted} unmuted, ` : ''}${t.already} already muted, ${t.followed} you follow, ${t.skipped} skipped` +
+        `${t.gone ? `, ${t.gone} deleted or suspended` : ''}.`,
     );
     setHidden($('muteStop'), !b.stopped);
     setHidden($('muteNext'), !b.stopped);
