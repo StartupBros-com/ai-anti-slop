@@ -13,8 +13,8 @@ updated 2026-11-19.
   developers receive none of the data described here.
 - The extension's own code makes one kind of network request: it downloads the
   lists you have switched on, without cookies. These are clankwall's lists from
-  `clankwall.vogel.dev`, and any list you add yourself from the address you
-  give.
+  `clankwall.vogel.dev`, levelsio's list from `blockedforaireply.levels.io`,
+  and any list you add yourself from the address you give.
 - Everything it keeps is in your browser profile's extension storage, on your
   computer.
 - If you turn muting on (it is off by default), the extension opens x.com pages
@@ -48,7 +48,7 @@ Sync does not copy it to other devices.
 | Storage key | What it holds | When |
 |---|---|---|
 | `xsh:list` | clankwall's AI flags list: its handles, when it was fetched and last tried, the address it was fetched from, and the last error, if any. | Once that list has been fetched. It is on unless you switch it off. |
-| `xsh:list:<id>` | The same for each other list: clankwall's All flags list (`xsh:list:clankwall-all`) and each list you add. | Once that list has been switched on and fetched. A list you remove has its key removed. |
+| `xsh:list:<id>` | The same for each other list: clankwall's All flags list (`xsh:list:clankwall-all`), levelsio's list (`xsh:list:levelsio`) and each list you add. | Once that list has been switched on and fetched. A list you remove has its key removed. |
 | `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, which of clankwall's lists are switched on, the address of each list you add and whether it is on, and an optional address for the AI flags list (no page has a setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
 | `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
@@ -81,6 +81,9 @@ off is not downloaded.
   is on unless you switch it off, and stays on while muting is on.
 - clankwall's All flags list, `https://clankwall.vogel.dev/api/accounts.ndjson`,
   is off unless you switch it on.
+- levelsio's Blocked for AI reply list,
+  `https://blockedforaireply.levels.io/api/usernames.txt`, is off unless you
+  switch it on (0.9.0 and earlier do not have it).
 - A list you add on the settings page is downloaded from the address you typed.
 
 Each request carries no cookies, no identifiers and no body. Like any web

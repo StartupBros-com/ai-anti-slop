@@ -2743,6 +2743,8 @@ const ALL_KEY = 'xsh:list:clankwall-all';
 const ndjson = (...names) => names.map((n) => JSON.stringify({ username: n, verdict: 'x' })).join('\n');
 const record = (handles, source, extra = {}) => ({ handles, fetchedAt: Date.now(), source, lastAttemptAt: Date.now(), lastError: null, ...extra });
 const ALL_ON = { 'clankwall-all': true };
+const LEVELS_URL = 'https://blockedforaireply.levels.io/api/usernames.txt';
+const LEVELS_KEY = 'xsh:list:levelsio';
 
 // storage.onChanged in a real browser carries oldValue; this fake's set does
 // not, so the lists tests give it one.
@@ -2849,6 +2851,25 @@ test('lists, fetching: switching All flags on fetches the NDJSON once and stores
   await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
   await settle();
   assert.equal(bg.requests.length, 1);
+});
+
+test('lists, fetching: switching levelsio\'s list on fetches its text file once and stores it under its own key', async () => {
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': {} }, otherBody: 'levelsonly\nboth\n' });
+  await startup(bg);
+  assert.deepEqual(bg.requests, [], 'off by default, so nothing fetched');
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { levelsio: true } } });
+  await settle();
+  assert.deepEqual(bg.requests.map((r) => r.url), [LEVELS_URL]);
+  const rec = bg.chrome.store[LEVELS_KEY];
+  assert.deepEqual(rec.handles, ['both', 'levelsonly']);
+  assert.equal(rec.source, LEVELS_URL);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly', 'both'], 'the AI record is untouched');
+});
+
+test('lists, muting: a sighting of an account only on levelsio\'s list is not noted', async () => {
+  const bg = await twoListBackground({ lists: { levelsio: true }, extra: { [LEVELS_KEY]: record(['levelsonly'], LEVELS_URL) } });
+  await send(bg, { type: 'xsh:sighting', handle: 'levelsonly' }, 7);
+  assert.equal(bg.chrome.store['xsh:mutes'], undefined, 'nothing written to the mute record');
 });
 
 test('lists, fetching: a record that came from another address, or is due, is fetched when its list is switched on', async () => {
@@ -3023,6 +3044,19 @@ test('userscript: the menu switches All flags on, fetches the NDJSON and hides a
   assert.deepEqual(['1', '2', '3'].map(hidden), [false, true, false]);
 });
 
+test('userscript: levelsio\'s list is not read or fetched, even when settings switch it on', async () => {
+  const us = loadUserscript({
+    values: { 'xsh:settings': { lists: { levelsio: true } }, [LEVELS_KEY]: record(['human1'], LEVELS_URL) },
+    respond: gmOk('aionly\n'),
+    cells: [post({ author: 'human1', status: '1' })],
+  });
+  await settle();
+  us.menu['Refresh list now']();
+  await settle();
+  assert.deepEqual(us.requests.map((r) => r.url), [AI_URL, AI_URL]);
+  assert.equal(us.document.querySelector('[data-fixture="1"]').hasAttribute('data-xsh-hidden'), false);
+});
+
 test('userscript: added lists are not read or fetched', async () => {
   const us = loadUserscript({
     values: { 'xsh:settings': { customLists: [{ id: 'uabc', url: 'https://other.example/l.txt', on: true }] }, 'xsh:list:uabc': record(['human1'], 'https://other.example/l.txt') },
@@ -3153,16 +3187,23 @@ function flip(s, id, checked) {
   box.dispatchEvent(new s.document.defaultView.Event('change'));
 }
 
-test('settings page: the Lists card is first, retitled, and shows both built-in lists', async () => {
+test('settings page: the Lists card is first, retitled, and shows the three built-in lists', async () => {
   const s = loadSettings({ 'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 5 * 60e3 }), 'xsh:settings': {} });
   await settle();
   assert.equal(s.document.title, 'AI Anti-Slop: lists, export and import');
   assert.equal(s.document.querySelector('h1').textContent, 'AI Anti-Slop: lists, export and import');
   assert.equal(s.document.querySelector('section.card h2').textContent, 'Lists');
   assert.match(s.document.querySelector('#listsCard > p').textContent, /^Replies are hidden from every account on the lists you switch on\. Always show beats every list\.$/);
-  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all']);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio']);
   const ai = rowOf(s, 'clankwall-ai');
   const all = rowOf(s, 'clankwall-all');
+  const lev = rowOf(s, 'levelsio');
+  assert.equal(lev.querySelector('label').textContent, 'levelsio: Blocked for AI reply');
+  assert.equal(lev.querySelector('input').checked, false);
+  assert.match(lev.textContent, /off/);
+  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Hides replies only\./);
+  assert.equal(lev.querySelector('a').getAttribute('href'), 'https://blockedforaireply.levels.io/');
+  assert.equal(lev.querySelector('button'), null, 'a built-in list has no Remove');
   assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
   assert.equal(ai.querySelector('input').getAttribute('role'), 'switch');
   assert.equal(ai.querySelector('input').checked, true);
@@ -3256,7 +3297,7 @@ test('settings page: an added list shows its error, the network hint, and Remove
   a.querySelector('button').dispatchEvent(new s.document.defaultView.Event('click'));
   await settle();
   assert.deepEqual(s.chrome.store['xsh:settings'].customLists.map((c) => c.id), ['udef']);
-  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'udef']);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio', 'udef']);
 });
 
 test('settings page: the card draws again when a list record changes, and builds names as text', async () => {

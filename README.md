@@ -30,7 +30,8 @@ The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
 extension you can also switch on clankwall's wider "All flags" list (2,811
-accounts on 2026-11-19, AI and spam), or add a list of handles by its address;
+accounts on 2026-11-19, AI and spam), levelsio's "Blocked for AI reply" list
+(3,734 accounts on 2026-11-19), or add a list of handles by its address;
 see [Lists](#lists). Muting uses the AI flags list alone. AI Anti-Slop does not
 maintain any of these lists; see [Whose list is it?](#whose-list-is-it).
 
@@ -258,6 +259,7 @@ and its last error, if any.
 |---|---|---|
 | clankwall: AI flags | `https://clankwall.vogel.dev/api/usernames.txt` | On |
 | clankwall: All flags | `https://clankwall.vogel.dev/api/accounts.ndjson` | Off |
+| levelsio: Blocked for AI reply | `https://blockedforaireply.levels.io/api/usernames.txt` | Off |
 | A list you add | The address you type | On, once added |
 
 - **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
@@ -269,6 +271,14 @@ and its last error, if any.
   AI flags read as crypto spam, but 977 of them rest on a single spam flag and
   819 were sampled once, so expect some mistakes. It hides only: muting never
   visits an account for being on it.
+- **levelsio: Blocked for AI reply** is the list @levelsio publishes at
+  [blockedforaireply.levels.io](https://blockedforaireply.levels.io/): 3,734
+  accounts on 2026-11-19, among them 754 of the 786 on AI flags at the same
+  hour. The page sorts them: 505 blocked with a public "Blocked for AI reply"
+  or "nuked" reply, 1,026 accounts made in 2023 or later blocked with no
+  interaction, 2,059 older silent blocks not yet reviewed, and 144 from
+  clankwall alone. It says "Flags are judgment calls, not proof." It hides
+  only, and only in the extension: the userscript cannot fetch it.
 - **A list you add** is a text file with one handle per line, like an
   **Export Also hide as a list** file. Lines starting with `#` or `!` are
   skipped. You can add up to 5. The address must start with `https://` and
@@ -287,9 +297,9 @@ and its last error, if any.
   safe](#how-list-updates-stay-safe)). One that fails keeps its previous copy
   and leaves the others as they are.
 - Export and import never carry the lists or their switches.
-- The userscript has clankwall's two lists and no lists of your own. **Hide
-  every account clankwall flagged / AI flags only** in its menu switches All
-  flags on or off.
+- The userscript has clankwall's two lists, not levelsio's, and no lists of
+  your own. **Hide every account clankwall flagged / AI flags only** in its
+  menu switches All flags on or off.
 
 ## Muting
 
@@ -357,7 +367,7 @@ and its tab closed. So one more mute can land just after you untick.
 
 It mutes only accounts on clankwall's AI flags list, accounts under **Also
 hide these accounts**, and bots whose row says **Mute on X**. An account that
-is only on All flags or on a list you added is hidden, never muted. It never mutes a bot left at
+is only on All flags, on levelsio's list or on a list you added is hidden, never muted. It never mutes a bot left at
 **Show** or **Hide here**, including @grok, which is on the list (muting it
 account-wide is a much bigger step than hiding its replies); an account in
 Always show; an account you follow; or someone whose post was hidden only for
@@ -369,8 +379,8 @@ AI Anti-Slop never blocks.
 ### Unmuting
 
 While muting is on, AI Anti-Slop unmutes an account it muted once it would no
-longer mute it: clankwall took it off its AI flags list (even if All flags
-or a list you added still has it), you added it to **Always show**, you took it out of **Also hide** and it is not listed, or you moved a
+longer mute it: clankwall took it off its AI flags list (even if All flags,
+levelsio's list or a list you added still has it), you added it to **Always show**, you took it out of **Also hide** and it is not listed, or you moved a
 bot's row off **Mute on X**. It visits the account's profile, opens the ⋯ menu
 of one of its posts and clicks X's own "Unmute @handle" item, the way it
 mutes. If the menu offers Mute instead, the account was already unmuted, and
@@ -592,7 +602,7 @@ A record holds:
 | `text` | The first 1,000 characters of the post's own text (not a post it quotes), with its emoji |
 | `page` | The post page it was labelled on, or `null` on any other page, such as the home timeline |
 | `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null` |
-| `lists` | Only when a list other than AI flags was on: the lists that were on and had the account, `clankwall-ai` (AI flags), `clankwall-all` (All flags), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
+| `lists` | Only when a list other than AI flags was on: the lists that were on and had the account, `clankwall-ai` (AI flags), `clankwall-all` (All flags), `levelsio` (levelsio's list), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
 | `extra`, `allow` | Whether the account was in Also hide or Always show before this click |
 | `hidden` | Whether AI Anti-Slop hid the account's posts on that page then, leaving out Pause and tag hiding |
 
@@ -644,9 +654,9 @@ keeps shown.
 
 ## Whose list is it?
 
-The AI flags and All flags lists are clankwall's, not this project's, and a
-list you add is whoever publishes it. Neither AI Anti-Slop nor its developers
-check a list you add.
+The AI flags and All flags lists are clankwall's, not this project's;
+levelsio's list is @levelsio's; and a list you add is whoever publishes it.
+Neither AI Anti-Slop nor its developers check a list you add.
 
 The AI flags list is clankwall's, not this project's. clankwall's homepage says "Flags
 aren’t proof of AI use." and states no licence or uptime terms. AI Anti-Slop
@@ -658,7 +668,12 @@ automatically.") and links dispute-spam@ryan.ceo (read on 2026-11-08).
 AI Anti-Slop cannot remove anyone from the list. To see an account anyway, add
 it to Always show; that also keeps it from being muted.
 
-AI Anti-Slop is not affiliated with X Corp or with clankwall.
+levelsio's page has an Appeal a listing form, which asks for a post from the
+listed account and says "Appeals are reviewed by hand.", and a Request
+removal form (read on 2026-11-19). Always show works the same for an account
+on that list.
+
+AI Anti-Slop is not affiliated with X Corp, with clankwall or with levelsio.
 
 ## How list updates stay safe
 
