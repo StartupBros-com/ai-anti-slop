@@ -7,7 +7,13 @@
   const K = L.STORAGE_KEYS;
   const subscribers = [];
 
-  const read = () => ({ list: GM_getValue(K.list, null), settings: GM_getValue(K.settings, {}) });
+  // The handles of the built-in lists that are on, as one list. The userscript
+  // reads no added list: its @connect names clankwall only.
+  const read = () => {
+    const settings = GM_getValue(K.settings, {});
+    const recs = L.enabledLists(settings, { builtinOnly: true }).map((l) => GM_getValue(L.listKey(l.id), null));
+    return { list: { handles: L.unionHandles(recs) }, settings };
+  };
   const notify = () => {
     const s = read();
     for (const cb of subscribers) cb(s);
@@ -36,24 +42,27 @@
     });
   }
 
-  // One refresh at a time per tab. Tabs share GM storage, so the commit
-  // re-reads the stored list and drops a result a newer refresh superseded.
-  let inflight = null;
-  function refresh(force) {
-    if (inflight) return inflight;
-    const s = read();
-    const prev = s.list;
+  // One refresh at a time per list per tab. Tabs share GM storage, so the
+  // commit re-reads the stored list and drops a result a newer refresh superseded.
+  const inflight = new Map();
+  function refreshList(sub, force) {
+    if (inflight.has(sub.id)) return inflight.get(sub.id);
+    const key = L.listKey(sub.id);
+    const prev = GM_getValue(key, null);
     if (!force && !L.isRefreshDue(prev, Date.now())) return Promise.resolve();
-    const url = (s.settings && s.settings.feedUrl) || L.DEFAULTS.feedUrl;
     const startSeq = (prev && prev.seq) || 0;
-    inflight = L.fetchList({ url, fetchImpl: gmFetch, prevHandles: prev && prev.handles })
+    const p = L.fetchList({ url: sub.url, format: sub.format, fetchImpl: gmFetch, prevHandles: prev && prev.handles })
       .then((result) => {
-        const record = L.commitRecord(GM_getValue(K.list, null), result, url, startSeq, Date.now());
-        if (record) GM_setValue(K.list, record);
+        const record = L.commitRecord(GM_getValue(key, null), result, sub.url, startSeq, Date.now());
+        if (record) GM_setValue(key, record);
         notify();
       })
-      .finally(() => (inflight = null));
-    return inflight;
+      .finally(() => inflight.delete(sub.id));
+    inflight.set(sub.id, p);
+    return p;
+  }
+  function refresh(force) {
+    return Promise.all(L.enabledLists(read().settings, { builtinOnly: true }).map((sub) => refreshList(sub, force)));
   }
 
   function patchSettings(patch) {
@@ -70,6 +79,7 @@
 
   if (typeof GM_addValueChangeListener === 'function') {
     GM_addValueChangeListener(K.list, (_n, _o, _v, remote) => remote && notify());
+    GM_addValueChangeListener(L.listKey('clankwall-all'), (_n, _o, _v, remote) => remote && notify());
     GM_addValueChangeListener(K.settings, (_n, _o, _v, remote) => remote && notify());
   }
   // Set one bot's row. The userscript cannot mute, so it offers Show and Hide.
@@ -91,6 +101,12 @@
     GM_registerMenuCommand('Pause / resume hiding', () => patchSettings({ paused: !read().settings.paused }));
     GM_registerMenuCommand('Show / hide @grok', () => setBot(L.GROK, botModes()[L.GROK] === 'show' ? 'hide' : 'show'));
     GM_registerMenuCommand('Refresh list now', () => refresh(true));
+    GM_registerMenuCommand('Hide every account clankwall flagged / AI flags only', () => {
+      const cur = read().settings.lists;
+      const lists = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : {};
+      patchSettings({ lists: Object.assign({}, lists, { 'clankwall-all': lists['clankwall-all'] !== true }) });
+      refresh(false);
+    });
     GM_registerMenuCommand('Edit always-show list', () =>
       editHandles('allowlist', 'Accounts to always show (space or comma separated):'),
     );

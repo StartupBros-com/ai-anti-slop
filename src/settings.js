@@ -1,4 +1,7 @@
-// The export and import page (the extension's options page). Export saves a
+// The lists, export and import page (the extension's options page). The Lists
+// card switches lists on and off and adds or removes lists by address; every
+// change goes through lib's addListPatch, removeListPatch and listOnPatch.
+// Export saves a
 // settings file or Also hide as a list; import reads one file the user
 // picks, shows what it would change, and writes only after Confirm. Every
 // write goes through lib.importPlan, which touches only the account boxes,
@@ -10,6 +13,15 @@
   const $ = (id) => document.getElementById(id);
 
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  function ago(ms) {
+    if (!ms) return 'never';
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m} min ago`;
+    const h = Math.round(m / 60);
+    return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+  }
   const LABELS = { show: 'Show', hide: 'Hide here', mute: 'Mute on X' };
   const botName = (h) => (L.BOTS.find((b) => b.handle === h) || { name: h }).name;
   // Handles in a preview line: the first few by name, then a count. A line
@@ -55,6 +67,116 @@
       `${plural(bots, 'bot choice', 'bot choices')} saved`;
     $('exportList').disabled = hide === 0;
   }
+
+  // ------------------------------------------------------------------ lists
+
+  const text = (tag, className, str) => {
+    const el = document.createElement(tag);
+    if (className) el.className = className;
+    el.textContent = str;
+    return el;
+  };
+
+  // The newest draw wins, so a slow one cannot put old rows back.
+  let listDraw = 0;
+  async function renderLists() {
+    const mine = ++listDraw;
+    const o = await chrome.storage.local.get(K.settings);
+    const subs = L.subscriptions(o[K.settings] || {});
+    const recs = await chrome.storage.local.get(subs.map((l) => L.listKey(l.id)));
+    if (mine !== listDraw) return;
+    $('listRows').replaceChildren(...subs.map((sub) => listRow(sub, recs[L.listKey(sub.id)])));
+  }
+
+  function listRow(sub, rec) {
+    const row = document.createElement('div');
+    row.className = 'listrow';
+    row.setAttribute('data-list', sub.id);
+    const label = document.createElement('label');
+    label.className = 'sw';
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.setAttribute('role', 'switch');
+    box.id = `list-${sub.id}`;
+    box.checked = sub.on;
+    box.disabled = sub.locked;
+    box.addEventListener('change', async () => {
+      const cur = (await chrome.storage.local.get(K.settings))[K.settings] || {};
+      const r = L.listOnPatch(cur, sub.id, box.checked);
+      if (!r.ok) {
+        note($('listMsg'), r.reason, true);
+        return renderLists();
+      }
+      note($('listMsg'), '');
+      await chrome.storage.local.set({ [K.settings]: Object.assign({}, cur, r.patch) });
+    });
+    label.append(box, text('span', '', sub.name));
+    row.append(label);
+    const count = rec && Array.isArray(rec.handles) ? rec.handles.length : 0;
+    row.append(
+      text(
+        'p',
+        'muted',
+        !sub.on ? 'off' : rec && rec.fetchedAt ? `${plural(count, 'account', 'accounts')} · updated ${ago(rec.fetchedAt)}` : 'not fetched yet',
+      ),
+    );
+    if (rec && rec.lastError) {
+      row.append(text('p', 'bad', `Last refresh failed: ${rec.lastError}.`));
+      if (!sub.builtin && /^network error/.test(String(rec.lastError))) {
+        row.append(
+          text('p', 'muted', 'If the address opens in a browser tab, its host may not let other sites read it. A raw GitHub or Gist link works.'),
+        );
+      }
+    }
+    if (sub.note || sub.locked) {
+      row.append(text('p', 'muted', [sub.note, sub.locked ? 'It stays on while muting is on.' : ''].filter(Boolean).join(' ')));
+    }
+    if (sub.builtin) {
+      const p = document.createElement('p');
+      const a = document.createElement('a');
+      a.href = sub.about;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.textContent = 'About this list and asking for removal';
+      p.append(a);
+      row.append(p);
+    } else {
+      const bar = document.createElement('div');
+      bar.className = 'btnrow';
+      const rm = text('button', '', 'Remove');
+      rm.type = 'button';
+      rm.setAttribute('aria-label', `Remove ${sub.name}`);
+      rm.addEventListener('click', async () => {
+        const cur = (await chrome.storage.local.get(K.settings))[K.settings] || {};
+        const patch = L.removeListPatch(cur, sub.id);
+        if (patch) await chrome.storage.local.set({ [K.settings]: Object.assign({}, cur, patch) });
+        note($('listMsg'), '');
+      });
+      bar.append(rm);
+      row.append(bar);
+    }
+    return row;
+  }
+
+  let adding = false;
+  async function addList() {
+    if (adding) return;
+    adding = true;
+    try {
+      const cur = (await chrome.storage.local.get(K.settings))[K.settings] || {};
+      const r = L.addListPatch(cur, $('listUrl').value, Date.now());
+      if (!r.ok) return note($('listMsg'), r.reason, true);
+      await chrome.storage.local.set({ [K.settings]: Object.assign({}, cur, r.patch) });
+      $('listUrl').value = '';
+      note($('listMsg'), 'Added. Fetching it now.');
+    } finally {
+      adding = false;
+    }
+  }
+  $('addList').addEventListener('click', addList);
+  $('listUrl').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addList();
+  });
 
   // ------------------------------------------------------------------ export
 
@@ -213,7 +335,10 @@
   });
 
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[K.settings]) render();
+    if (area !== 'local') return;
+    if (changes[K.settings]) render();
+    if (changes[K.settings] || Object.keys(changes).some((k) => L.isListKey(k))) renderLists();
   });
   render();
+  renderLists();
 })();

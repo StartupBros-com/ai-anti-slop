@@ -92,6 +92,12 @@
     // this many saved, each keeping at most this many characters of reply text.
     labelMax: 2000,
     labelTextMax: 1000,
+    // Lists. clankwall's NDJSON export carries a line of JSON for every
+    // account it flagged, so its size cap is larger than a plain list's.
+    ndjsonMaxBytes: 8000000,
+    // Lists the user may add by address, and the longest address taken.
+    customListMax: 5,
+    listUrlMax: 500,
   });
 
   // The xsh: prefix is from before the rename. Changing it would strand every
@@ -139,6 +145,33 @@
     return { handles: [...seen].sort(), rejected, error: null };
   }
 
+  // clankwall's accounts.ndjson: one JSON object per line, whose `username` is
+  // the handle. Blank lines are skipped; a line that is not JSON, or has no
+  // username that is a handle, counts as rejected. Same limit and return shape
+  // as parseList.
+  function parseNdjsonUsernames(text, opts) {
+    const maxHandles = (opts && opts.maxHandles) || DEFAULTS.maxHandles;
+    const seen = new Set();
+    let rejected = 0;
+    for (const line of String(text).split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t) continue;
+      let h = null;
+      try {
+        const o = JSON.parse(t);
+        if (o && typeof o === 'object' && typeof o.username === 'string') h = normalizeHandle(o.username);
+      } catch (e) {
+        // not JSON: rejected below
+      }
+      if (h) seen.add(h);
+      else rejected++;
+      if (seen.size > maxHandles) {
+        return { handles: [], rejected, error: 'too many handles' };
+      }
+    }
+    return { handles: [...seen].sort(), rejected, error: null };
+  }
+
   function acceptUpdate(prevHandles, nextHandles, opts) {
     const ratio = (opts && opts.minShrinkRatio) || DEFAULTS.minShrinkRatio;
     const floor = (opts && opts.shrinkGuardFloor) || DEFAULTS.shrinkGuardFloor;
@@ -158,10 +191,13 @@
 
   // Fetch and validate a feed. fetchImpl is the platform fetch (or a GM
   // wrapper). Never throws: returns { ok, handles, rejected } or { ok:false, reason }.
+  // args.format is 'text' (one handle per line, the default) or
+  // 'clankwall-ndjson'; the size cap defaults to match.
   async function fetchList(args) {
     const url = args.url || DEFAULTS.feedUrl;
     const fetchImpl = args.fetchImpl;
-    const maxBytes = args.maxBytes || DEFAULTS.maxBytes;
+    const ndjson = args.format === 'clankwall-ndjson';
+    const maxBytes = args.maxBytes || (ndjson ? DEFAULTS.ndjsonMaxBytes : DEFAULTS.maxBytes);
     let res;
     try {
       const init = { cache: 'no-store', credentials: 'omit' };
@@ -182,7 +218,7 @@
       return { ok: false, reason: `read error: ${(e && e.message) || e}` };
     }
     if (text.length > maxBytes) return { ok: false, reason: `feed larger than ${maxBytes} bytes` };
-    const parsed = parseList(text, { maxHandles: args.maxHandles });
+    const parsed = (ndjson ? parseNdjsonUsernames : parseList)(text, { maxHandles: args.maxHandles });
     if (parsed.error) return { ok: false, reason: parsed.error };
     if (parsed.rejected > parsed.handles.length) {
       return { ok: false, reason: `feed is mostly not handles (${parsed.rejected} invalid lines)` };
@@ -230,6 +266,198 @@
       if (h) out.add(h);
     }
     return out;
+  }
+
+  // ----------------------------------------------------------------- lists
+  //
+  // The lists AI Anti-Slop hides from. Two come with it; the user may switch
+  // them on or off and add up to customListMax more by address. Muting reads
+  // only MUTE_LIST: every other list hides replies and nothing more.
+  const BUILTIN_LISTS = Object.freeze([
+    Object.freeze({
+      id: 'clankwall-ai', name: 'clankwall: AI flags', format: 'text', on: true, mute: true,
+      about: 'https://clankwall.vogel.dev/?filter=ai',
+      note: 'Accounts whose replies clankwall scored as AI. Muting uses this list.',
+    }),
+    Object.freeze({
+      id: 'clankwall-all', name: 'clankwall: All flags', format: 'clankwall-ndjson', on: false, mute: false,
+      url: 'https://clankwall.vogel.dev/api/accounts.ndjson',
+      about: 'https://clankwall.vogel.dev/',
+      note: 'Every account clankwall flagged, AI or spam, mostly crypto spam. About half of those not on the AI list rest on a single flag, so expect some mistakes. Hides replies only.',
+    }),
+  ]);
+  const MUTE_LIST = 'clankwall-ai';
+
+  // Where a list's record is stored. The AI list keeps the key it has always
+  // had, so nothing is migrated; every other list is xsh:list:<id>.
+  function listKey(id) {
+    return id === MUTE_LIST ? STORAGE_KEYS.list : `${STORAGE_KEYS.list}:${id}`;
+  }
+
+  // Whether a storage key holds a list record (xsh:label:* and
+  // xsh:labelCount do not start with xsh:list).
+  function isListKey(k) {
+    return typeof k === 'string' && (k === STORAGE_KEYS.list || k.startsWith(`${STORAGE_KEYS.list}:`));
+  }
+
+  // Check an address the user typed for a list: https only, no password in
+  // it, no #fragment, and not absurdly long. Returns { ok: true, url } with
+  // the cleaned address, or { ok: false, reason } in plain words.
+  function checkListUrl(raw) {
+    const t = typeof raw === 'string' ? raw.trim() : '';
+    if (!t) return { ok: false, reason: 'Type the address of a list.' };
+    let u;
+    try {
+      u = new URL(t);
+    } catch (e) {
+      return { ok: false, reason: 'That is not a web address.' };
+    }
+    if (u.protocol !== 'https:') return { ok: false, reason: 'Use an address that starts with https://' };
+    if (u.username || u.password) return { ok: false, reason: 'Leave the user name and password out of the address.' };
+    u.hash = '';
+    const url = u.href;
+    if (url.length > DEFAULTS.listUrlMax) {
+      return { ok: false, reason: `The address is longer than ${DEFAULTS.listUrlMax} characters.` };
+    }
+    return { ok: true, url };
+  }
+
+  const CUSTOM_ID_RE = /^u[a-z0-9]{1,16}$/;
+
+  // The lists the user added, as stored settings hold them, with every
+  // malformed entry dropped: not an object, a bad id or address, a repeated
+  // id. At most customListMax are kept, in stored order. Each comes back as
+  // { id, url, on } with the cleaned address.
+  function customListsOf(settings) {
+    const raw = settings && settings.customLists;
+    const out = [];
+    if (!Array.isArray(raw)) return out;
+    const ids = new Set();
+    for (const c of raw) {
+      if (out.length >= DEFAULTS.customListMax) break;
+      if (!c || typeof c !== 'object' || typeof c.id !== 'string' || !CUSTOM_ID_RE.test(c.id) || ids.has(c.id)) continue;
+      const chk = checkListUrl(c.url);
+      if (!chk.ok) continue;
+      ids.add(c.id);
+      out.push({ id: c.id, url: chk.url, on: c.on !== false });
+    }
+    return out;
+  }
+
+  // Every list, built-ins first and then the user's own in stored order, as
+  // { id, name, url, format, on, builtin, mute, locked, about, note }. The AI
+  // list is on, and locked on, while muting is on, because muting reads it.
+  function subscriptions(settings) {
+    const s = settings || {};
+    const chosen = s.lists && typeof s.lists === 'object' && !Array.isArray(s.lists) ? s.lists : {};
+    const out = [];
+    for (const b of BUILTIN_LISTS) {
+      let on;
+      let locked = false;
+      if (b.id === MUTE_LIST) {
+        locked = !!s.muteEnabled;
+        on = locked || chosen[b.id] !== false;
+      } else {
+        on = chosen[b.id] === true;
+      }
+      const url = b.id === MUTE_LIST ? s.feedUrl || DEFAULTS.feedUrl : b.url;
+      out.push({ id: b.id, name: b.name, url, format: b.format, on, builtin: true, mute: b.mute, locked, about: b.about, note: b.note });
+    }
+    for (const c of customListsOf(s)) {
+      const u = new URL(c.url);
+      out.push({
+        id: c.id,
+        // The query too, so two addresses that differ only there get two names.
+        name: u.host + u.pathname + u.search,
+        url: c.url,
+        format: 'text',
+        on: c.on,
+        builtin: false,
+        mute: false,
+        locked: false,
+        about: c.url,
+        note: null,
+      });
+    }
+    return out;
+  }
+
+  // The lists that are on. With opts.builtinOnly, only the built-in ones: the
+  // userscript cannot reach any other address.
+  function enabledLists(settings, opts) {
+    return subscriptions(settings).filter((l) => l.on && !(opts && opts.builtinOnly && !l.builtin));
+  }
+
+  // The settings change that adds a list by address, or why it is refused:
+  // past customListMax lists, an address some list already uses (the built-in
+  // ones included) or an address checkListUrl refuses. The new id is "u" and
+  // the time in base 36, made unique if taken.
+  function addListPatch(settings, raw, now) {
+    const chk = checkListUrl(raw);
+    if (!chk.ok) return { ok: false, reason: chk.reason };
+    const custom = customListsOf(settings);
+    if (custom.length >= DEFAULTS.customListMax) {
+      return { ok: false, reason: `You can add at most ${DEFAULTS.customListMax} lists. Remove one first.` };
+    }
+    const subs = subscriptions(settings);
+    if (subs.some((l) => l.url === chk.url)) return { ok: false, reason: 'That list is already here.' };
+    const taken = new Set(subs.map((l) => l.id));
+    let id = `u${Number(now).toString(36)}`;
+    while (taken.has(id)) id += 'x';
+    id = id.slice(0, 17);
+    while (taken.has(id)) id = `${id.slice(0, 16)}${Math.floor(Math.random() * 36).toString(36)}`;
+    return { ok: true, patch: { customLists: [...custom, { id, url: chk.url, on: true }] }, id };
+  }
+
+  // The settings change that removes one added list, or null when there is none by that id.
+  function removeListPatch(settings, id) {
+    const custom = customListsOf(settings);
+    if (!custom.some((c) => c.id === id)) return null;
+    return { customLists: custom.filter((c) => c.id !== id) };
+  }
+
+  // The settings change that switches one list on or off: a built-in's goes
+  // in settings.lists, an added list's in its own entry. The AI list cannot
+  // be switched off while muting is on.
+  function listOnPatch(settings, id, on) {
+    const s = settings || {};
+    const sub = subscriptions(s).find((l) => l.id === id);
+    if (!sub) return { ok: false, reason: 'There is no such list.' };
+    if (id === MUTE_LIST && !on && s.muteEnabled) {
+      return { ok: false, reason: 'Muting uses this list, so it stays on while muting is on.' };
+    }
+    if (sub.builtin) {
+      const lists = s.lists && typeof s.lists === 'object' && !Array.isArray(s.lists) ? s.lists : {};
+      return { ok: true, patch: { lists: Object.assign({}, lists, { [id]: !!on }) } };
+    }
+    return { ok: true, patch: { customLists: customListsOf(s).map((c) => (c.id === id ? Object.assign({}, c, { on: !!on }) : c)) } };
+  }
+
+  // What a settings change did to the lists: `on` holds the ids that are on
+  // now and were not before, or whose address changed (they need a fetch);
+  // `gone` the added lists that were removed (their records can go).
+  function listChanges(oldSettings, newSettings) {
+    const before = new Map(subscriptions(oldSettings).map((l) => [l.id, l]));
+    const after = subscriptions(newSettings);
+    const now = new Set(after.map((l) => l.id));
+    const on = after
+      .filter((l) => {
+        const was = before.get(l.id);
+        return l.on && !(was && was.on && was.url === l.url);
+      })
+      .map((l) => l.id);
+    const gone = [...before.values()].filter((l) => !l.builtin && !now.has(l.id)).map((l) => l.id);
+    return { on, gone };
+  }
+
+  // The sorted, de-duplicated handles of every record given. A record may be
+  // missing or have no handles.
+  function unionHandles(records) {
+    const out = new Set();
+    for (const r of records || []) {
+      if (r && Array.isArray(r.handles)) for (const h of r.handles) out.add(h);
+    }
+    return [...out].sort();
   }
 
   // ------------------------------------------------------------------ bots
@@ -883,12 +1111,18 @@
     const c = ctx || {};
     const s = c.settings || {};
     const page = statusPageOf(m.page);
-    let host = 'list';
-    try {
-      host = new URL(c.source || DEFAULTS.feedUrl).host || host;
-    } catch (e) {
-      // keep 'list'
-    }
+    const hostOf = (u) => {
+      try {
+        return new URL(u).host || 'list';
+      } catch (e) {
+        return 'list';
+      }
+    };
+    // With ctx.lists (the lists that are on, each { id, url, handles }) the
+    // account is held when any of them has it; without it, the one list.
+    const held = Array.isArray(c.lists) ? c.lists.filter((l) => l && new Set(l.handles || []).has(handle)) : null;
+    const handles = Array.isArray(c.lists) ? unionHandles(c.lists) : c.handles;
+    const host = held ? (held[0] ? hostOf(held[0].url) : null) : hostOf(c.source || DEFAULTS.feedUrl);
     const text = typeof m.text === 'string' ? Array.from(m.text).slice(0, DEFAULTS.labelTextMax).join('') : '';
     const record = {
       at: now,
@@ -897,18 +1131,19 @@
       url: statusUrl(post),
       text,
       page: page ? statusUrl(page) : null,
-      list: new Set(c.handles || []).has(handle) ? host : null,
+      list: held ? host : new Set(handles || []).has(handle) ? host : null,
       extra: parseAllowlist(s.extraList).has(handle),
       allow: parseAllowlist(s.allowlist).has(handle),
       // Whether AI Anti-Slop hides this account's replies on that page, with
       // hiding not paused. Posts hidden for tagging a bot are not counted.
       hidden: shouldHide(handle, {
-        list: effectiveList(c.handles, s),
+        list: effectiveList(handles, s),
         allow: effectiveAllow(s),
         owner: page ? page.handle : null,
         paused: false,
       }),
     };
+    if (held) record.lists = held.map((l) => l.id);
     return { ok: true, id: post.id, handle, label, record };
   }
 
@@ -1121,6 +1356,19 @@
     HANDLE_RE,
     DEFAULTS,
     STORAGE_KEYS,
+    BUILTIN_LISTS,
+    MUTE_LIST,
+    listKey,
+    isListKey,
+    checkListUrl,
+    subscriptions,
+    enabledLists,
+    addListPatch,
+    removeListPatch,
+    listOnPatch,
+    listChanges,
+    unionHandles,
+    parseNdjsonUsernames,
     normalizeHandle,
     parseList,
     acceptUpdate,
@@ -1200,7 +1448,13 @@
   const K = L.STORAGE_KEYS;
   const subscribers = [];
 
-  const read = () => ({ list: GM_getValue(K.list, null), settings: GM_getValue(K.settings, {}) });
+  // The handles of the built-in lists that are on, as one list. The userscript
+  // reads no added list: its @connect names clankwall only.
+  const read = () => {
+    const settings = GM_getValue(K.settings, {});
+    const recs = L.enabledLists(settings, { builtinOnly: true }).map((l) => GM_getValue(L.listKey(l.id), null));
+    return { list: { handles: L.unionHandles(recs) }, settings };
+  };
   const notify = () => {
     const s = read();
     for (const cb of subscribers) cb(s);
@@ -1229,24 +1483,27 @@
     });
   }
 
-  // One refresh at a time per tab. Tabs share GM storage, so the commit
-  // re-reads the stored list and drops a result a newer refresh superseded.
-  let inflight = null;
-  function refresh(force) {
-    if (inflight) return inflight;
-    const s = read();
-    const prev = s.list;
+  // One refresh at a time per list per tab. Tabs share GM storage, so the
+  // commit re-reads the stored list and drops a result a newer refresh superseded.
+  const inflight = new Map();
+  function refreshList(sub, force) {
+    if (inflight.has(sub.id)) return inflight.get(sub.id);
+    const key = L.listKey(sub.id);
+    const prev = GM_getValue(key, null);
     if (!force && !L.isRefreshDue(prev, Date.now())) return Promise.resolve();
-    const url = (s.settings && s.settings.feedUrl) || L.DEFAULTS.feedUrl;
     const startSeq = (prev && prev.seq) || 0;
-    inflight = L.fetchList({ url, fetchImpl: gmFetch, prevHandles: prev && prev.handles })
+    const p = L.fetchList({ url: sub.url, format: sub.format, fetchImpl: gmFetch, prevHandles: prev && prev.handles })
       .then((result) => {
-        const record = L.commitRecord(GM_getValue(K.list, null), result, url, startSeq, Date.now());
-        if (record) GM_setValue(K.list, record);
+        const record = L.commitRecord(GM_getValue(key, null), result, sub.url, startSeq, Date.now());
+        if (record) GM_setValue(key, record);
         notify();
       })
-      .finally(() => (inflight = null));
-    return inflight;
+      .finally(() => inflight.delete(sub.id));
+    inflight.set(sub.id, p);
+    return p;
+  }
+  function refresh(force) {
+    return Promise.all(L.enabledLists(read().settings, { builtinOnly: true }).map((sub) => refreshList(sub, force)));
   }
 
   function patchSettings(patch) {
@@ -1263,6 +1520,7 @@
 
   if (typeof GM_addValueChangeListener === 'function') {
     GM_addValueChangeListener(K.list, (_n, _o, _v, remote) => remote && notify());
+    GM_addValueChangeListener(L.listKey('clankwall-all'), (_n, _o, _v, remote) => remote && notify());
     GM_addValueChangeListener(K.settings, (_n, _o, _v, remote) => remote && notify());
   }
   // Set one bot's row. The userscript cannot mute, so it offers Show and Hide.
@@ -1284,6 +1542,12 @@
     GM_registerMenuCommand('Pause / resume hiding', () => patchSettings({ paused: !read().settings.paused }));
     GM_registerMenuCommand('Show / hide @grok', () => setBot(L.GROK, botModes()[L.GROK] === 'show' ? 'hide' : 'show'));
     GM_registerMenuCommand('Refresh list now', () => refresh(true));
+    GM_registerMenuCommand('Hide every account clankwall flagged / AI flags only', () => {
+      const cur = read().settings.lists;
+      const lists = cur && typeof cur === 'object' && !Array.isArray(cur) ? cur : {};
+      patchSettings({ lists: Object.assign({}, lists, { 'clankwall-all': lists['clankwall-all'] !== true }) });
+      refresh(false);
+    });
     GM_registerMenuCommand('Edit always-show list', () =>
       editHandles('allowlist', 'Accounts to always show (space or comma separated):'),
     );
@@ -2253,13 +2517,25 @@
       }
     };
     const send = (msg) => safe(() => chrome.runtime.sendMessage(msg));
+    // The handles of every list that is on, as one list: hiding does not care
+    // which list an account came from. The AI list's record comes with the
+    // settings; any other list's is a second read.
     const read = () =>
-      chrome.storage.local.get([K.list, K.settings]).then((o) => ({ list: o[K.list], settings: o[K.settings] }));
+      chrome.storage.local.get([K.list, K.settings]).then((o) => {
+        const settings = o[K.settings];
+        const keys = L.enabledLists(settings).map((l) => L.listKey(l.id));
+        const rest = keys.filter((k) => k !== K.list);
+        const more = rest.length ? chrome.storage.local.get(rest) : Promise.resolve({});
+        return more.then((recs) => ({
+          list: { handles: L.unionHandles(keys.map((k) => (k === K.list ? o[K.list] : recs[k]))) },
+          settings,
+        }));
+      });
     return {
       load: read,
       subscribe(cb) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes[K.list] || changes[K.settings])) read().then(cb);
+          if (area === 'local' && Object.keys(changes).some((k) => k === K.settings || L.isListKey(k))) read().then(cb);
         });
       },
       serveStats(fn) {

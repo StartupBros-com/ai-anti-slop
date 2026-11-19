@@ -28,9 +28,11 @@ it on.
 
 The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
-2026-11-03, 767 on 2026-11-06 and 773 on 2026-11-08. clankwall's separate
-"Spam flags" table (2,738 accounts on 2026-11-06) is not used. AI Anti-Slop
-does not maintain the list; see [Whose list is it?](#whose-list-is-it).
+2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
+extension you can also switch on clankwall's wider "All flags" list (2,811
+accounts on 2026-11-19, AI and spam), or add a list of handles by its address;
+see [Lists](#lists). Muting uses the AI flags list alone. AI Anti-Slop does not
+maintain any of these lists; see [Whose list is it?](#whose-list-is-it).
 
 To install, open the
 [userscript](https://raw.githubusercontent.com/StartupBros-com/ai-anti-slop/main/dist/x-slop-hide.user.js)
@@ -153,7 +155,8 @@ whenever the tab comes back into view. The userscript does not mute.
 | Hide an account that is not on the list | Under **Your accounts**, add its handle to **Also hide these accounts, and mute them when muting is on**, then click **Save** | **Edit extra accounts to hide** |
 | Show, hide or mute an answer bot | Pick **Show**, **Hide here** or **Mute on X** in its row under **Bots like @grok** (see [Bots](#bots)) | **Show / hide @grok**, or **Show or hide a bot** for any of the six; there is no Mute |
 | Hide posts that tag a bot | Under **Bots like @grok**, tick **Also hide posts that tag a bot set to Hide or Mute** | **Hide / show posts that tag a hidden bot** |
-| Fetch the list now | The circular arrow beside the list's count (**Refresh list now**) | **Refresh list now** |
+| Fetch the list now | The circular arrow beside the list's count (**Refresh list now**), which fetches every list that is on | **Refresh list now** |
+| Choose lists, or add one | **Choose lists**, under the list's count, opens the settings page (see [Lists](#lists)) | **Hide every account clankwall flagged / AI flags only**; no lists of your own |
 | Mute listed accounts on your X account | Tick **Mute listed accounts on X** (see [Muting](#muting)) | Not available |
 | Mute more accounts a day | Pick 50 or 100 under **Mutes a day** (see [How many a day](#how-many-a-day)) | Not available |
 | Mute every account waiting now | **Run now**, under the muting switch (see [Run now](#run-now)) | Not available |
@@ -181,8 +184,8 @@ userscript has no counter.
 
 ## What gets hidden
 
-- A post is hidden when its own author is on the list or in **Also hide these
-  accounts**. The author is read from the post's name block,
+- A post is hidden when its own author is on a list you have switched on (see
+  [Lists](#lists)) or in **Also hide these accounts**. The author is read from the post's name block,
   case-insensitively.
 - A post that quotes a listed account, or @-mentions one, stays visible. Only
   the author counts, except for the bot tags described under [Bots](#bots).
@@ -241,6 +244,52 @@ All of this applies in this browser only. To keep a bot's replies out of the
 X apps as well, add its handle (such as @grok) as a
 [muted word](https://x.com/settings/muted_keywords) on X; AI Anti-Slop does not
 add muted words.
+
+## Lists
+
+The extension hides posts by accounts on every list you switch on, added
+together. **Always show** beats every list, and an account's own pages still
+show its posts. The lists are on the extension's settings page: click **Choose
+lists** under the list count in the popup, or **Export or import** under **Your
+accounts**. Each list there has a switch, its count, when it was last updated
+and its last error, if any.
+
+| List | Address | Starts |
+|---|---|---|
+| clankwall: AI flags | `https://clankwall.vogel.dev/api/usernames.txt` | On |
+| clankwall: All flags | `https://clankwall.vogel.dev/api/accounts.ndjson` | Off |
+| A list you add | The address you type | On, once added |
+
+- **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
+  2026-11-19. Muting uses it alone, so it stays switched on while muting is
+  on. To switch it off, turn muting off first.
+- **All flags** is every account clankwall flagged, for AI replies or spam:
+  2,811 accounts on 2026-11-19, 787 of them also on AI flags. clankwall's
+  homepage shows the same two views under those names. Most of the 2,024 not on
+  AI flags read as crypto spam, but 977 of them rest on a single spam flag and
+  819 were sampled once, so expect some mistakes. It hides only: muting never
+  visits an account for being on it.
+- **A list you add** is a text file with one handle per line, like an
+  **Export Also hide as a list** file. Lines starting with `#` or `!` are
+  skipped. You can add up to 5. The address must start with `https://` and
+  hold no user name or password. A list you add hides only.
+- The extension fetches a list you add without asking for a permission, so
+  the host has to let other sites read the file. Raw GitHub
+  (`raw.githubusercontent.com`) and Gist raw links do. An address that opens
+  in a tab but shows `network error: Failed to fetch` on the settings page
+  usually does not. Removing a list deletes its stored copy.
+- A list that is off is not fetched. Adding a list fetches it at once, and so
+  does switching one on, unless its stored copy is less than 6 hours old or
+  its last try failed less than 30 minutes ago. After that every list that is
+  on refreshes every 6 hours, and the circular
+  arrow in the popup refreshes them all.
+- Each list is checked on its own (see [How list updates stay
+  safe](#how-list-updates-stay-safe)). One that fails keeps its previous copy
+  and leaves the others as they are.
+- Export and import never carry the lists or their switches.
+- The userscript has clankwall's two lists and no lists of your own. **Hide
+  every account clankwall flagged / AI flags only** in its menu switches All
+  flags on or off.
 
 ## Muting
 
@@ -306,8 +355,9 @@ and its tab closed. So one more mute can land just after you untick.
   accounts in alphabetical order, then bots set to **Mute on X**, then
   accounts being tried again.
 
-It mutes only accounts on the list, accounts under **Also hide these
-accounts**, and bots whose row says **Mute on X**. It never mutes a bot left at
+It mutes only accounts on clankwall's AI flags list, accounts under **Also
+hide these accounts**, and bots whose row says **Mute on X**. An account that
+is only on All flags or on a list you added is hidden, never muted. It never mutes a bot left at
 **Show** or **Hide here**, including @grok, which is on the list (muting it
 account-wide is a much bigger step than hiding its replies); an account in
 Always show; an account you follow; or someone whose post was hidden only for
@@ -319,8 +369,8 @@ AI Anti-Slop never blocks.
 ### Unmuting
 
 While muting is on, AI Anti-Slop unmutes an account it muted once it would no
-longer mute it: clankwall took it off the list, you added it to **Always
-show**, you took it out of **Also hide** and it is not listed, or you moved a
+longer mute it: clankwall took it off its AI flags list (even if All flags
+or a list you added still has it), you added it to **Always show**, you took it out of **Also hide** and it is not listed, or you moved a
 bot's row off **Mute on X**. It visits the account's profile, opens the ⋯ menu
 of one of its posts and clicks X's own "Unmute @handle" item, the way it
 mutes. If the menu offers Mute instead, the account was already unmuted, and
@@ -534,7 +584,8 @@ A record holds:
 | `url` | The post's link, `https://x.com/handle/status/id` |
 | `text` | The first 1,000 characters of the post's own text (not a post it quotes), with its emoji |
 | `page` | The post page it was labelled on, or `null` on any other page, such as the home timeline |
-| `list` | The list's host, such as `clankwall.vogel.dev`, when the list had the account; otherwise `null` |
+| `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null` |
+| `lists` | Only when a list other than AI flags was on: the lists that were on and had the account, `clankwall-ai` (AI flags), `clankwall-all` (All flags), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
 | `extra`, `allow` | Whether the account was in Also hide or Always show before this click |
 | `hidden` | Whether AI Anti-Slop hid the account's posts on that page then, leaving out Pause and tag hiding |
 
@@ -553,8 +604,8 @@ close the popup). The userscript has no export or import.
 - **Export settings** saves `ai-anti-slop-settings-YYYY-MM-DD.json`: your
   Always show and Also hide accounts, each bot's saved choice, and whether
   posts that tag a hidden bot are hidden. It never holds muting on or off,
-  **Mutes a day**, the account muting runs as, the list address, **Pause
-  hiding** or your labels.
+  **Mutes a day**, the account muting runs as, which lists are on, the
+  addresses of lists you added, **Pause hiding** or your labels.
 - **Export Also hide as a list** saves `ai-anti-slop-also-hide-YYYY-MM-DD.txt`,
   one handle per line. Anyone can import it into their own Also hide.
 - **Import** reads one file you pick: a settings file, or a text file of
@@ -586,7 +637,11 @@ keeps shown.
 
 ## Whose list is it?
 
-The list is clankwall's, not this project's. clankwall's homepage says "Flags
+The AI flags and All flags lists are clankwall's, not this project's, and a
+list you add is whoever publishes it. Neither AI Anti-Slop nor its developers
+check a list you add.
+
+The AI flags list is clankwall's, not this project's. clankwall's homepage says "Flags
 aren’t proof of AI use." and states no licence or uptime terms. AI Anti-Slop
 fetches it at run time and does not copy it into this repository.
 
@@ -600,8 +655,10 @@ AI Anti-Slop is not affiliated with X Corp or with clankwall.
 
 ## How list updates stay safe
 
-An update replaces the stored list only if it looks like a list. If the fetch
-fails, times out, returns HTML, is over 1 MB or 50,000 handles, is mostly lines
+Each list is fetched and checked on its own, and an update replaces that
+list's stored copy only if it looks like a list. If the fetch
+fails, times out, returns HTML, is over 1 MB (8 MB for All flags, whose lines
+are JSON) or 50,000 handles, is mostly lines
 that are not handles, is empty, or has fewer than half as many handles as the
 stored list (once that list has 20 or more), the previous list stays in place
 and the popup shows why. A broken or truncated feed cannot empty your filter.
@@ -611,11 +668,11 @@ and the popup shows why. A broken or truncated feed cannot empty your filter.
 The privacy policy, with what each storage key holds, is
 [PRIVACY.md](PRIVACY.md).
 
-- `storage` holds the list, your settings, the mute record and your labels, in
+- `storage` holds the lists, your settings, the mute record and your labels, in
   `chrome.storage.local`. During a mute visit it also holds the visit's
   account and tab ids in `chrome.storage.session`, which the browser clears
   when it closes, and during **Run now** the time the run started, the
-  account it runs as and how many visits in a row did nothing. `alarms` schedules the list refresh, muting's once-a-minute check, and the
+  account it runs as and how many visits in a row did nothing. `alarms` schedules the list refreshes, muting's once-a-minute check, and the
   90 s limit on a visit. Opening and closing its own tabs needs no further permission.
 - The content script runs on x.com, twitter.com and their `mobile.` hosts. In
   your own tabs it makes no network requests and clicks nothing: it reads the
@@ -633,12 +690,16 @@ The privacy policy, with what each storage key holds, is
   title, and only the extension's script on an x.com page answers.
 - It clicks only in a tab the background worker opened for a visit. The worker
   hands that tab its job once, so a reload of the tab does not click again.
-- The one network request the extension's own code sends is the feed fetch,
-  from the background worker, to `clankwall.vogel.dev` (the only host
-  permission). It sends no cookies (`credentials: 'omit'`) and bypasses the
-  cache. The userscript fetches the same file through its manager
-  (`@connect clankwall.vogel.dev`, `anonymous: true`, so no cookies); the
-  cache setting applies to the extension only.
+- The one kind of network request the extension's own code sends is a list
+  fetch, from the background worker, for each list that is on: clankwall's
+  at `clankwall.vogel.dev` (the only host permission), and each list you add
+  at its own address. A list you add is fetched with no host permission, so
+  the browser lets the extension read it only when its host allows other sites
+  to (an `Access-Control-Allow-Origin` header). Every fetch sends no cookies
+  (`credentials: 'omit'`) and bypasses the cache. The userscript fetches
+  clankwall's lists through its manager (`@connect clankwall.vogel.dev`,
+  `anonymous: true`, so no cookies); the cache setting applies to the
+  extension only.
 - Muting sends no request of its own. A mute visit opens an x.com page in a
   tab, which the browser loads with your x.com login like any page you open,
   and the mute is the request x.com's page sends when its Mute item is
@@ -648,10 +709,11 @@ The privacy policy, with what each storage key holds, is
   and a count, `xsh:labelCount`). They leave it only when you click **Export
   labels** and save the file, and removing the extension deletes them.
 - Nothing else is collected or sent. There is no analytics.
-- The feed URL is a setting (`feedUrl` in `xsh:settings`) with no UI yet. A
-  feed on another host also needs that host added to `host_permissions` in
-  `manifest.json` (unless it serves CORS headers), or, for the userscript, an
-  `@connect` line for it.
+- The AI flags list's address is a setting (`feedUrl` in `xsh:settings`)
+  with no UI. To use another list, add it on the settings page instead. A
+  `feedUrl` on another host also needs that host added to `host_permissions`
+  in `manifest.json` (unless it serves CORS headers), or, for the userscript,
+  an `@connect` line for it.
 
 ## Troubleshooting
 
@@ -697,13 +759,15 @@ that.
 
 ### The popup says "Last refresh failed (…): …. Still using the previous list."
 
-The list you already had is still in use. If no list was ever fetched, the line
+The list you already had is still in use. With more than one list on, the line
+starts with the list's name, and only that list kept its previous copy. The
+settings page shows each list's own error. If no list was ever fetched, the line
 ends after the reason and the popup shows 0 accounts on the list. The text
 after the colon says why the update was refused:
 
 | Reason | Meaning |
 |---|---|
-| `network error: …`, `HTTP <status>`, `read error: …` | The feed did not answer properly. |
+| `network error: …`, `HTTP <status>`, `read error: …` | The feed did not answer properly. For a list you added, `network error: Failed to fetch` usually means its host does not let other sites read the file; use its raw link (see [Lists](#lists)). |
 | `unexpected content-type …` | The feed URL returned a web page, not a list. |
 | `feed larger than 1000000 bytes`, `too many handles`, `feed is mostly not handles (N invalid lines)` | The response does not look like a handle list. |
 | `empty list`, `list shrank from X to Y` | The new list was empty, or under half the size of the stored one. |

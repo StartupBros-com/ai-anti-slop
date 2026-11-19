@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Anti-Slop: export and import</title>
+<title>AI Anti-Slop: lists, export and import</title>
 <style>
   :root {
     color-scheme: light dark;
@@ -37,6 +37,34 @@
   .card h2 { font-size: 15px; margin: 0 0 6px; }
   .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
   .warn { margin-top: 10px; padding: 8px 10px; font-size: 13px; line-height: 1.4; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
+  .listrow { padding: 10px 0; border-top: 1px solid var(--line); }
+  .listrow:first-of-type { border-top: 0; padding-top: 4px; }
+  .listrow p { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
+  .listrow .sw { display: flex; align-items: center; gap: 10px; min-height: 28px; font-weight: 600; cursor: pointer; }
+  .listrow .btnrow { margin-top: 6px; }
+  input[role='switch'] {
+    appearance: none; flex: none; position: relative; width: 40px; height: 24px; margin: 0;
+    border-radius: 6px; background: var(--muted); cursor: pointer;
+  }
+  input[role='switch']::before {
+    content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    border-radius: 3px; background: var(--bg);
+  }
+  input[role='switch']:checked { background: var(--fg); }
+  input[role='switch']:checked::before { translate: 16px 0; }
+  input[role='switch']:disabled { opacity: 0.5; cursor: default; }
+  #addRow { display: flex; gap: 8px; }
+  #listUrl { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
+  #addForm { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+  #listMsg { margin-top: 8px; font-size: 13px; }
+  /* As in the popup: forced colours draw a non-system background as the page
+     colour, so the switch states its track, knob and border in system colours. */
+  @media (forced-colors: active) {
+    input[role='switch'] { border: 2px solid ButtonText; background: Canvas; }
+    input[role='switch']::before { top: 1px; left: 1px; background: ButtonText; }
+    input[role='switch']:checked { background: Highlight; border-color: ButtonText; }
+    input[role='switch']:checked::before { background: HighlightText; }
+  }
   .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   button { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
   button.primary { background: var(--btn); border-color: var(--btn); color: #fff; font-weight: 600; }
@@ -59,9 +87,24 @@
 <body>
 <header class="top">
   <img src="../icons/icon-32.png" width="24" height="24" alt="">
-  <h1>AI Anti-Slop: export and import</h1>
+  <h1>AI Anti-Slop: lists, export and import</h1>
 </header>
 <p id="have" class="small muted">Loading…</p>
+
+<section class="card" id="listsCard">
+  <h2>Lists</h2>
+  <p class="small">Replies are hidden from every account on the lists you switch on. Always show beats every list.</p>
+  <div id="listRows"></div>
+  <div id="addForm">
+    <label class="field" for="listUrl">Add a list by its address</label>
+    <div id="addRow">
+      <input type="url" id="listUrl" placeholder="https://" autocomplete="off" spellcheck="false">
+      <button id="addList" type="button">Add</button>
+    </div>
+    <p class="hint">A text file with one handle per line, like an Also hide export. Lists you add hide replies only; muting uses clankwall's AI flags alone. At most 5.</p>
+    <div role="status"><p id="listMsg" class="small" hidden></p></div>
+  </div>
+</section>
 
 <section class="card">
   <h2>Export</h2>
