@@ -3,60 +3,63 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Anti-Slop: lists, export and import</title>
+<title>AI Anti-Slop settings</title>
 <style>
+  /* The popup's tokens (src/popup.html), plus a raised surface and a soft
+     tint for callouts. Rose marks the brand only; orange-red marks what
+     needs care. */
   :root {
     color-scheme: light dark;
-    --bg: #ffffff; --fg: #0f1419; --muted: #536471; --line: #e1e5e9; --card: #f7f9fa;
-    --focus: #2563eb; --link: #1d4ed8; --btn: #e11d48;
-    --warn-bg: #fff7ed; --warn-line: #f59e0b; --bad: #b91c1c;
+    --bg: #fffcfc; --surface: #ffffff; --fg: #1f1719; --muted: #5e5054; --rule: #e6dcdf; --edge: #8a787d;
+    --hover: #f6eef0; --fg-hover: #3f3337;
+    --rose: #e11d48; --bad: #c2410c; --bad-soft: #fff3eb; --focus: #2563eb;
+    --thumb: #ffffff; --thumb-on: #ffffff;
+    --outline: oklch(0 0 0 / 0.1);
+    --lift: 0 1px 2px oklch(0.2 0.02 0 / 0.06), 0 4px 16px oklch(0.2 0.02 0 / 0.05);
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #15181c; --fg: #e7e9ea; --muted: #8b98a5; --line: #2f3439; --card: #1d2126;
-      --focus: #93c5fd; --link: #93c5fd;
-      --warn-bg: #2b2112; --warn-line: #d97706; --bad: #f87171;
+      --bg: #1b1517; --surface: #221b1e; --fg: #f6eef0; --muted: #b4a6aa; --rule: #3d3236; --edge: #857479;
+      --hover: #271f22; --fg-hover: #e3d8db;
+      --rose: #fb7185; --bad: #fb923c; --bad-soft: #36220f; --focus: #93c5fd;
+      --thumb: #f6eef0; --thumb-on: #1b1517;
+      --outline: oklch(1 0 0 / 0.1);
+      --lift: 0 0 0 1px oklch(1 0 0 / 0.04);
     }
   }
   * { box-sizing: border-box; }
   html { background: var(--bg); }
-  body { max-width: 600px; margin: 0 auto; padding: 20px 16px 32px; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, 'Segoe UI', sans-serif; }
-  p { margin: 0; }
-  a { color: var(--link); }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+  }
+  p, h1, h2, h3, ul { margin: 0; }
+  ul { padding: 0; list-style: none; }
+  a { color: inherit; text-decoration-thickness: from-font; text-underline-offset: 0.15em; }
+  a:hover { text-decoration-thickness: 2px; }
   [hidden] { display: none !important; }
+  .vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+  .ico { display: block; flex: none; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   .muted { color: var(--muted); }
-  .small { font-size: 13px; }
   .bad { color: var(--bad); }
 
-  .top { display: flex; align-items: center; gap: 10px; }
-  .top img { display: block; }
-  .top h1 { font-size: 18px; margin: 0; }
-  #have { margin-top: 6px; }
-
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-top: 14px; }
-  .card h2 { font-size: 15px; margin: 0 0 6px; }
-  .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
-  .warn { margin-top: 10px; padding: 8px 10px; font-size: 13px; line-height: 1.4; background: var(--warn-bg); border-left: 3px solid var(--warn-line); border-radius: 4px; }
-  .listrow { padding: 10px 0; border-top: 1px solid var(--line); }
-  .listrow:first-of-type { border-top: 0; padding-top: 4px; }
-  .listrow p { margin-top: 4px; font-size: 13px; overflow-wrap: anywhere; }
-  .listrow .sw { display: flex; align-items: center; gap: 10px; min-height: 28px; font-weight: 600; cursor: pointer; }
-  .listrow .btnrow { margin-top: 6px; }
+  /* ---- switches: native checkboxes, the popup's 40 x 24 track */
   input[role='switch'] {
     appearance: none; flex: none; position: relative; width: 40px; height: 24px; margin: 0;
-    border-radius: 6px; background: var(--muted); cursor: pointer;
+    border-radius: 6px; background: var(--edge); cursor: pointer;
+    transition: background-color 150ms ease-out;
   }
   input[role='switch']::before {
     content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
-    border-radius: 3px; background: var(--bg);
+    border-radius: 3px; background: var(--thumb); transition: translate 150ms ease-out;
   }
   input[role='switch']:checked { background: var(--fg); }
-  input[role='switch']:checked::before { translate: 16px 0; }
-  input[role='switch']:disabled { opacity: 0.5; cursor: default; }
-  #addRow { display: flex; gap: 8px; }
-  #listUrl { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); }
-  #addForm { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-  #listMsg { margin-top: 8px; font-size: 13px; }
+  input[role='switch']:checked::before { translate: 16px 0; background: var(--thumb-on); }
+  /* Locked on while muting is on: it still reads as on, with the lock line beside it. */
+  input[role='switch']:disabled { cursor: not-allowed; }
+  input[role='switch']:disabled:not(:checked) { opacity: 0.45; }
   /* As in the popup: forced colours draw a non-system background as the page
      colour, so the switch states its track, knob and border in system colours. */
   @media (forced-colors: active) {
@@ -65,78 +68,186 @@
     input[role='switch']:checked { background: Highlight; border-color: ButtonText; }
     input[role='switch']:checked::before { background: HighlightText; }
   }
-  .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-  button { font: inherit; font-size: 13px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg); cursor: pointer; }
-  button.primary { background: var(--btn); border-color: var(--btn); color: #fff; font-weight: 600; }
-  button:disabled { opacity: 0.6; cursor: default; }
-  .field { display: block; font-size: 13px; margin-bottom: 6px; }
-  input[type='file'] { display: block; max-width: 100%; font: inherit; font-size: 13px; }
-  #msg { margin-top: 10px; font-size: 13px; }
-  #preview { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-  #fileKind { font-weight: 600; }
-  #changes { margin: 8px 0 0; padding-left: 20px; }
-  #changes li { margin: 4px 0; overflow-wrap: anywhere; }
-  #muteNote { overflow-wrap: anywhere; }
-  #preview summary { margin-top: 4px; color: var(--link); cursor: pointer; }
-  #preview details p { margin-top: 4px; }
 
-  footer { margin-top: 16px; font-size: 12px; color: var(--muted); }
-  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  /* ---- buttons: the popup's edge, hover and press */
+  button, .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    font: inherit; font-size: 13px; font-weight: 500; min-height: 32px; padding: 4px 12px;
+    border: 1px solid var(--edge); border-radius: 6px; background: var(--bg); color: var(--fg);
+    cursor: pointer; white-space: nowrap; text-decoration: none;
+    transition-property: scale, background-color, color, border-color; transition-duration: 150ms; transition-timing-function: ease-out;
+  }
+  button:hover:enabled, .btn:hover { background: var(--hover); }
+  button:active:enabled, .btn:active { scale: 0.97; }
+  button.primary { background: var(--fg); border-color: var(--fg); color: var(--bg); font-weight: 600; }
+  button.primary:hover:enabled { background: var(--fg-hover); border-color: var(--fg-hover); }
+  button.text { border-color: transparent; background: transparent; padding-inline: 8px; color: var(--muted); }
+  button.text:hover:enabled { color: var(--fg); background: var(--hover); }
+  button[aria-disabled='true'] { opacity: 0.6; cursor: progress; }
+  input[type='url'] {
+    flex: 1; font: inherit; font-size: 14px; min-height: 36px; padding: 6px 10px; min-width: 0;
+    border: 1px solid var(--edge); border-radius: 6px; background: var(--surface); color: var(--fg);
+  }
+  input[type='url']::placeholder { color: var(--muted); opacity: 1; }
+  /* The file input stays focusable but unseen; its label is the button, and
+     takes the focus ring when the input has focus. */
+  input[type='file'].vh:focus-visible + .btn { outline: 2px solid var(--focus); outline-offset: 2px; }
+  @keyframes spin { to { rotate: 360deg; } }
+  .spin { animation: spin 900ms linear infinite; }
+  details > summary { cursor: pointer; list-style: none; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] > summary .chev { rotate: 180deg; }
+  .chev { transition: rotate 150ms ease-out; }
+
+  /* ---- callouts: a failed download, muting's note in the import preview */
+  .callout { display: flex; gap: 8px; padding: 10px 12px; border-radius: 8px; font-size: 13px; line-height: 1.45; text-wrap: pretty; overflow-wrap: anywhere; }
+  .callout.warn { background: var(--bad-soft); border-left: 3px solid var(--bad); }
+  .callout.note { background: var(--hover); }
+  .callout > .ico { margin-top: 1px; }
+  .callout.warn > .ico { color: var(--bad); }
+
+  /* ---- page */
+  .page { max-width: 640px; margin: 0 auto; padding: 32px 16px 48px; }
+  .top { display: flex; align-items: center; gap: 12px; }
+  .top img { display: block; flex: none; border-radius: 8px; outline: 1px solid var(--outline); outline-offset: -1px; }
+  .brand { font-size: 13px; font-weight: 650; color: var(--rose); line-height: 1.2; }
+  h1 { font-size: 22px; line-height: 1.2; font-weight: 700; letter-spacing: -0.01em; }
+  #summary { margin-top: 16px; font-size: 15px; text-wrap: pretty; }
+  #summary strong { font-weight: 650; }
+  section { margin-top: 36px; }
+  h2 { font-size: 17px; line-height: 1.3; font-weight: 650; }
+  .lede { margin-top: 4px; font-size: 13px; color: var(--muted); text-wrap: pretty; }
+  .group { margin-top: 20px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .rows { margin-top: 6px; border-top: 1px solid var(--rule); }
+
+  /* ---- one list: name and status on the left, the switch on the right;
+     its failure and its About fold across the row below. */
+  .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .name { font-weight: 600; cursor: pointer; overflow-wrap: anywhere; }
+  .name.locked { cursor: default; }
+  .where { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+  /* The words wrap beside the icon, never under it. */
+  .stat { margin-top: 2px; font-size: 13px; color: var(--muted); display: flex; align-items: flex-start; gap: 6px; }
+  .stat > .ico { margin-top: 3px; }
+  .stat.bad { color: var(--bad); }
+  .ctl { display: flex; align-items: center; gap: 8px; align-self: start; min-height: 24px; }
+  details.more { grid-column: 1 / -1; margin-top: 8px; }
+  details.more summary { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; color: var(--muted); border-radius: 4px; }
+  details.more summary:hover { color: var(--fg); }
+  details.more p { margin-top: 6px; font-size: 13px; line-height: 1.5; max-width: 60ch; text-wrap: pretty; }
+  /* Inline, so the icon follows the last word when the link wraps. */
+  details.more a .ico { display: inline-block; vertical-align: -2px; margin-left: 4px; }
+  .fail { grid-column: 1 / -1; margin-top: 10px; }
+  .fail .reported { margin-top: 4px; font-size: 12px; color: var(--muted); }
+  .fail button { margin-top: 8px; }
+  .undo { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; margin: 6px 0; border-radius: 8px; background: var(--hover); font-size: 13px; overflow-wrap: anywhere; }
+  .add { margin-top: 14px; }
+  #addForm { margin-top: 10px; }
+  .addrow { display: flex; gap: 8px; }
+  .hint { margin-top: 8px; font-size: 13px; color: var(--muted); text-wrap: pretty; }
+  .msg { margin-top: 8px; font-size: 13px; overflow-wrap: anywhere; }
+
+  /* ---- back up and share: one row per task */
+  .tasks { margin-top: 12px; border-top: 1px solid var(--rule); }
+  .task { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--rule); }
+  .task h3 { font-size: 14px; font-weight: 600; }
+  .task p { margin-top: 2px; font-size: 13px; color: var(--muted); text-wrap: pretty; }
+  @media (max-width: 480px) {
+    .task { grid-template-columns: 1fr; row-gap: 10px; }
+    .task > :last-child { justify-self: start; }
+  }
+
+  /* ---- the import preview */
+  #preview { margin-top: 16px; padding: 16px; border: 1px solid var(--rule); border-radius: 10px; background: var(--surface); box-shadow: var(--lift); }
+  .pv-head { display: flex; align-items: center; gap: 8px; font-weight: 600; overflow-wrap: anywhere; }
+  .pv-head span { min-width: 0; }
+  #stale { margin-top: 12px; }
+  #changes { margin-top: 12px; display: grid; gap: 8px; }
+  #changes li { font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+  #muteNote { display: block; margin-top: 12px; }
+  #preview details summary { display: inline-block; margin-top: 2px; color: var(--muted); text-decoration: underline; text-decoration-thickness: from-font; text-underline-offset: 0.15em; }
+  #preview details summary:hover { color: var(--fg); }
+  #preview details p { margin-top: 4px; }
+  .pv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+  footer { margin-top: 40px; font-size: 13px; color: var(--muted); text-wrap: pretty; }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
+<div class="page">
 <header class="top">
-  <img src="../icons/icon-32.png" width="24" height="24" alt="">
-  <h1>AI Anti-Slop: lists, export and import</h1>
+  <img src="../icons/icon.svg" width="36" height="36" alt="">
+  <div>
+    <p class="brand">AI Anti-Slop</p>
+    <h1>Settings</h1>
+  </div>
 </header>
-<p id="have" class="small muted">Loading…</p>
+<p id="summary">Loading…</p>
 
-<section class="card" id="listsCard">
-  <h2>Lists</h2>
-  <p class="small">Replies are hidden from every account on the lists you switch on. Always show beats every list.</p>
-  <div id="listRows"></div>
-  <div id="addForm">
-    <label class="field" for="listUrl">Add a list by its address</label>
-    <div id="addRow">
-      <input type="url" id="listUrl" placeholder="https://" autocomplete="off" spellcheck="false">
-      <button id="addList" type="button">Add</button>
+<main>
+<section id="listsCard" aria-labelledby="listsH">
+  <h2 id="listsH">Lists</h2>
+  <p class="lede">Replies by any account on a list that is on are hidden. Always show, in the popup, beats every list.</p>
+  <div id="listRows">
+    <h3 class="group">Built in</h3>
+    <ul class="rows" id="builtRows"></ul>
+    <h3 class="group" id="ownH">Added by you</h3>
+    <ul class="rows" id="ownRows" hidden></ul>
+  </div>
+  <div class="add">
+    <button type="button" class="text" id="addOpen" aria-expanded="false" aria-controls="addForm"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>Add a list by address</button>
+    <form id="addForm" hidden novalidate>
+      <label for="listUrl" class="vh">Address of a list</label>
+      <div class="addrow">
+        <input type="url" id="listUrl" placeholder="https://gist.githubusercontent.com/…/raw/list.txt" autocomplete="off" spellcheck="false" aria-describedby="addHint">
+        <button type="submit" id="addList">Add</button>
+      </div>
+      <p class="hint" id="addHint"></p>
+    </form>
+  </div>
+  <div role="status"><p id="listMsg" class="msg" hidden></p></div>
+</section>
+
+<section aria-labelledby="filesH">
+  <h2 id="filesH">Back up and share</h2>
+  <p class="lede">Files you save stay on your computer, and import reads only the file you pick.</p>
+  <div class="tasks">
+    <div class="task">
+      <div><h3>Settings file</h3><p id="have">Loading…</p></div>
+      <button type="button" id="exportSettings" aria-describedby="have"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export settings</button>
     </div>
-    <p class="hint">A text file with one handle per line, like an Also hide export. Lists you add hide replies only; muting uses clankwall's AI flags alone. At most 5.</p>
-    <div role="status"><p id="listMsg" class="small" hidden></p></div>
+    <div class="task">
+      <div><h3>Also hide as a list</h3><p id="listDesc">One handle per line. Anyone can import it, or put it online and add it here as a list.</p></div>
+      <button type="button" id="exportList" aria-describedby="listDesc"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export list</button>
+    </div>
+    <div class="task">
+      <div><h3>Import a file</h3><p id="impDesc">A settings file, or a text file with one handle per line. Import adds accounts and never removes one; a settings file also sets the bot choices and tag setting it holds. It never turns muting on or changes the number of mutes a day, and nothing changes until you confirm.</p></div>
+      <div>
+        <input type="file" id="file" class="vh" accept=".json,.txt,application/json,text/plain" aria-describedby="impDesc">
+        <label for="file" class="btn" id="choose"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 16V5M7 10l5-5 5 5M5 20h14"/></svg>Choose a file…</label>
+      </div>
+    </div>
   </div>
-</section>
-
-<section class="card">
-  <h2>Export</h2>
-  <p class="small">A settings file holds your Always show and Also hide accounts, each bot's choice, and whether posts that tag a hidden bot are hidden.</p>
-  <p class="hint">It never holds muting on or off, the number of mutes a day, the account muting runs as, the list address, pause or your labels.</p>
-  <div class="btnrow">
-    <button id="exportSettings" class="primary">Export settings</button>
-    <button id="exportList">Export Also hide as a list</button>
-  </div>
-  <p class="hint">The list is a text file with one handle per line. Anyone can import it into their own Also hide.</p>
-  <p id="exportMsg" class="small muted" hidden></p>
-</section>
-
-<section class="card">
-  <h2>Import</h2>
-  <label class="field" for="file">A settings file, or a text file of handles (one per line; lines starting with # are skipped)</label>
-  <input type="file" id="file" accept=".json,.txt,application/json,text/plain">
-  <p class="hint">Import adds accounts and never removes one. A settings file also sets the bot choices and tag setting it holds. It never turns muting on and never changes the number of mutes a day. Nothing changes until you confirm.</p>
-  <p id="msg" hidden></p>
-  <div id="preview" hidden>
-    <p id="fileKind"></p>
-    <p id="stale" class="warn" hidden>Your settings changed since this preview, so it was made again. Check it before importing.</p>
+  <div role="status"><p id="msg" class="msg" hidden></p></div>
+  <div id="preview" tabindex="-1" role="region" aria-labelledby="fileKind" hidden>
+    <p class="pv-head"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5zM14 3v5h5"/></svg><span id="fileKind"></span></p>
+    <p id="stale" class="callout warn" tabindex="-1" hidden>Your settings changed since this preview, so it was made again. Check it before importing.</p>
     <ul id="changes"></ul>
     <div id="muteNote" hidden></div>
-    <div class="btnrow">
-      <button id="confirm" class="primary">Import these changes</button>
-      <button id="cancel">Cancel</button>
+    <div class="pv-actions">
+      <button id="confirm" class="primary" type="button">Import these changes</button>
+      <button id="cancel" type="button">Cancel</button>
     </div>
   </div>
 </section>
+</main>
 
-<footer>Exported files stay where you save them, and import reads only the file you pick. Nothing is sent anywhere. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How AI Anti-Slop works</a></footer>
+<footer>No account, no server, no analytics: the extension's own requests only download the lists you switch on. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How AI Anti-Slop works</a></footer>
+</div>
 <script src="lib.js"></script>
 <script src="settings.js"></script>
 </body>

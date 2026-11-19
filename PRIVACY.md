@@ -22,7 +22,7 @@ updated 2026-11-19.
   those visits and mutes as your activity.
 - Labels leave your browser only as a file, when you click **Export labels**.
   Your account lists and bot choices leave it only as a file, when you click
-  **Export settings** or **Export Also hide as a list**.
+  **Export settings** or **Export list** (Also hide as a list).
 
 ## What it reads on x.com
 
@@ -122,10 +122,10 @@ download. Nothing is uploaded.
 
 **Export settings** saves your **Always show** and **Also hide** accounts, your
 choice for each bot and whether to hide posts that tag a bot, as a `.json` file
-through your browser's download. **Export Also hide as a list** saves the
+through your browser's download. **Export list** saves the
 **Also hide** accounts alone as a `.txt` file. Neither file holds muting on or
 off, the daily mute cap, the X handle muting runs as, which lists are switched
-on, the addresses of lists you added, pause or labels. **Import** reads only the file you pick, inside the extension's own
+on, the addresses of lists you added, pause or labels. **Import a file** reads only the file you pick, inside the extension's own
 page, and changes those same settings only after you confirm what it shows.
 Nothing is uploaded or fetched.
 
