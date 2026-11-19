@@ -714,4 +714,5 @@ held code), the userscript's **Hide every account clankwall
 flagged / AI flags only** menu item in a userscript manager, the refresh alarm
 firing on its own after 6 hours (it was re-created to fire early), and the
 shrink guard refusing an update of All flags or an added list over the network
-(the unit tests cover it).
+(the unit tests cover it). For levelsio's list: any of it in Brave or on real
+x.com, and a refresh of it after the first fetch.
