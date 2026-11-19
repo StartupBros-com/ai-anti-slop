@@ -259,7 +259,9 @@ function askTab(tabId) {
 }
 
 // Whether the user has an x.com tab of their own open: what a daily cap
-// above 25 needs before each mute visit. Needs no permission: without
+// above 25 needs before a mute visit past the day's first 25
+// (L.visitNeedsXOpen). A tab opened before the extension was updated or
+// reloaded cannot answer until it is refreshed. Needs no permission: without
 // "tabs", tabs.query returns tabs without their URLs, so every tab is asked
 // except discarded ones and the ones opened for jobs.
 async function userHasXOpen() {
@@ -375,8 +377,8 @@ async function finishJob(job, reported) {
   if (run) chainRun(gap + 50);
 }
 
-// What tickWith returns when a mute visit is due at 50 or 100 a day and the
-// tabs have not been asked yet.
+// What tickWith returns when a mute visit past the day's first 25 is due at
+// 50 or 100 a day and the tabs have not been asked yet.
 const ASK_TABS = 'ask-tabs';
 
 // One step of the mute loop, run by the alarm once a minute (runTick): finish
@@ -386,8 +388,9 @@ function tick() {
   return tickWith(null);
 }
 
-// The alarm's step. At 50 or 100 a day a mute visit also needs an x.com tab
-// of the user's own open, and the tabs are asked outside the queue: a tab
+// The alarm's step. At 50 or 100 a day a mute visit past the day's first 25
+// also needs an x.com tab of the user's own open, and the tabs are asked
+// outside the queue: a tab
 // that has just loaded answers only once the worker has answered its
 // xsh:job question, which waits in the queue behind any step running there.
 async function runTick() {
@@ -454,7 +457,7 @@ async function tickWith(xOpen) {
     await startJob('check', null, s.muteAccount, now);
     return;
   }
-  if (!run && canVisit && L.capNeedsXOpen(cap)) {
+  if (!run && canVisit && L.visitNeedsXOpen(rec, L.utcDay(now), cap)) {
     if (xOpen === null) return ASK_TABS;
     canVisit = xOpen === true;
   }

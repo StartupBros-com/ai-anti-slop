@@ -970,8 +970,9 @@
         send({ type: 'xsh:job-go', id: job.id }).then((ok) => ok === true, () => false),
       reportJob: (result) => send({ type: 'xsh:job-result', result }).catch(() => {}),
       noteSighting: (handle) => send({ type: 'xsh:sighting', handle }).catch(() => {}),
-      // Asked by the worker before a mute visit at 50 or 100 a day: is an
-      // x.com tab of the user's own open? fn answers no in a job's tab.
+      // Asked by the worker before a mute visit past the day's first 25 at 50
+      // or 100 a day: is an x.com tab of the user's own open? fn answers no in
+      // a job's tab.
       answerPresent(fn) {
         chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!msg || msg.type !== 'xsh:present') return false;

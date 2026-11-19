@@ -30,11 +30,11 @@
     const cap = L.muteCap(s);
     const sel = $('muteCap');
     if (document.activeElement !== sel) setChoice(sel, String(cap));
-    // Above the lowest number, muting runs only while x.com is open: said
-    // beside the choice, not only in How muting works, or it seems to stall.
+    // Above the lowest number, muting past it runs only while x.com is open:
+    // said beside the choice, not only in How muting works, or it seems to stall.
     const low = Math.min(...L.DEFAULTS.muteCaps);
     setHidden($('capNote'), cap === low);
-    setText($('capNote'), cap === low ? '' : 'Runs only while x.com is open in a tab.');
+    setText($('capNote'), cap === low ? '' : `Past ${low}, runs only while x.com is open in a tab.`);
     const top = Math.max(...L.DEFAULTS.muteCaps);
     const left = L.muteCandidates(handles, s, m).length;
     setText(
@@ -390,9 +390,17 @@
     redraw();
   });
 
-  // While the popup is open, visits change the mute record and a run starts
-  // or ends: draw the muting section again, never the boxes the user may be
-  // typing in. Draws do not overlap; a change during one draws once more.
+  // The list lines alone: counts, age and the last refresh error. Text only,
+  // so like the muting section they can be drawn while the popup is in use.
+  async function renderListLines() {
+    const o = await chrome.storage.local.get([K.list, K.settings]);
+    await renderLists(o[K.settings] || {}, o[K.list]);
+  }
+
+  // While the popup is open, visits change the mute record, a run starts or
+  // ends, a list is fetched and lists are turned on or off: draw the muting
+  // section and the list lines again, never the boxes the user may be typing
+  // in. Draws do not overlap; a change during one draws once more.
   let drawing = null;
   let drawAgain = false;
   function redraw() {
@@ -401,6 +409,7 @@
       return;
     }
     drawing = renderMutingPart()
+      .then(renderListLines)
       .catch(() => {})
       .finally(() => {
         drawing = null;
@@ -411,7 +420,8 @@
       });
   }
   chrome.storage.onChanged.addListener((changes, area) => {
-    if ((area === 'local' && changes[K.mutes]) || (area === 'session' && changes[L.RUN_KEY])) redraw();
+    const local = area === 'local' && (changes[K.mutes] || changes[K.settings] || Object.keys(changes).some(L.isListKey));
+    if (local || (area === 'session' && changes[L.RUN_KEY])) redraw();
   });
 
   $('muteCap').addEventListener('change', () => {

@@ -16,7 +16,7 @@ its account to your own Also hide list.
 Hiding works on the page in your desktop browser, in this browser profile
 only, and the Pause switch shows the posts again. Muting is off until you turn
 it on in the extension's popup. It then mutes up to 25 accounts a day (or 50 or
-100, which run only while you have x.com open), or every account waiting when
+100, whose mutes past 25 run only while you have x.com open), or every account waiting when
 you press **Run now**, by clicking X's own Mute on x.com, so the mutes apply in
 the X app too. It unmutes an account it muted
 once the account leaves the list. It never blocks anyone and does not use the
@@ -400,22 +400,29 @@ Under **Mutes a day** the popup offers 25, 50 and 100.
 
 - 25 is the default. It runs whenever the browser is open with the extension
   loaded, as in earlier versions.
-- At 50 or 100, a mute visit starts only while you have x.com open in a tab of
-  your own. Before each visit, the background worker asks your open tabs, and
-  goes ahead only if the extension's script on an x.com page answers within
-  1.5 s. The tabs it opens for its own visits never count, nor do tabs the
-  browser has discarded to save memory. Without such a tab it waits; a check of
-  `x.com/settings/muted/all` that is due still runs.
+- At 50 or 100, the day's first 25 mutes (and first 50 visits) run as at 25,
+  with no x.com tab needed. Past that, a mute visit starts only while you have
+  x.com open in a tab of your own. Before each such visit, the background worker
+  asks your open tabs, and goes ahead only if the extension's script on an
+  x.com page answers within 1.5 s. The tabs it opens for its own visits never
+  count, nor do tabs the browser has discarded to save memory. Without such a
+  tab it waits; a check of `x.com/settings/muted/all` that is due still runs.
+  0.9.0 and earlier needed the tab for every visit at 50 or 100.
+- After the extension is updated or reloaded, an x.com tab that was already
+  open cannot answer until you refresh it (or open x.com in a new tab), so
+  until then muting past 25 waits. This was seen in Chromium after a reload
+  from the extensions page; an update from the Chrome Web Store is expected to
+  do the same.
 - The 1 to 3 minute gap between visits is the same at every setting, and visits
-  stay capped at twice the mute number. So 100 mutes need about 2 to 7 hours of
-  x.com being open.
+  stay capped at twice the mute number. So 100 mutes need about 2 to 7 hours,
+  the 75 past 25 of them with x.com open.
 - No setting goes above 100, and a stored value other than 25, 50 or 100 counts
   as 25. Hiding already covers this browser, so muting only adds the X apps;
   at 100 a day, the 773 accounts listed on 2026-11-08 take 8 days. The popup
   shows that figure, under **How muting works**, for the accounts it has left
   to mute. **Run now** visits them without waiting for the next day.
-- At 50 or 100, **Mutes a day** has a line under it: "Runs only while x.com
-  is open in a tab."
+- At 50 or 100, **Mutes a day** has a line under it: "Past 25, runs only
+  while x.com is open in a tab."
 
 A lower number means less scripted clicking on your account each day. No
 number makes it allowed: X's rules forbid scripting the X website at any rate
@@ -684,8 +691,8 @@ The privacy policy, with what each storage key holds, is
   rule, the **Hide as slop** buttons and the notice that offers **Undo**, and
   hands each label you click, with the post's text, to the background worker
   to store once its Undo window ends.
-- At 50 or 100 mutes a day, before each visit outside **Run now** the worker
-  lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
+- At 50 or 100 mutes a day, before each visit past the day's first 25 mutes
+  (or 50 visits) outside **Run now** the worker lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
   tab's id and whether the browser has discarded it, never its address or
   title, and only the extension's script on an x.com page answers.
 - It clicks only in a tab the background worker opened for a visit. The worker
@@ -844,6 +851,9 @@ reads (see [Limits](#limits)). Please open an issue.
 - At 50 or 100 a day, any x.com tab of yours counts as "x.com open", including
   one left open in the background or in another window. The check learns that
   such a tab is open, not that you are looking at it.
+- After an update or a reload of the extension, an x.com tab opened before it
+  does not count until you refresh it, so at 50 or 100 a day muting past 25
+  waits until then ([How many a day](#how-many-a-day)).
 - The clicks are script events (their `isTrusted` is false). X's menu accepted
   them on 2026-11-06, but X can change its menu or how it treats such clicks at
   any time. A changed menu stops muting for the day; AI Anti-Slop does not
