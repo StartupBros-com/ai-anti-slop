@@ -103,8 +103,10 @@ where it clicks X's own Mute menu item, and your muted-accounts page
 (`https://x.com/settings/muted/all`), which it reads to check earlier mutes. Your
 browser loads these pages with your x.com login, the same as if you opened them,
 so X receives the visits and the mutes as your activity. The extension sends
-nothing else to X. At a daily cap of 50 or 100, before a visit past the day's
-first 25 mutes, outside **Run now**, it asks your open tabs whether one of them is an x.com tab. It uses only each tab's id and whether
+nothing else to X. At a daily cap of 50 or 100, before a visit outside
+**Run now** once the day has had 25 mutes and unmutes or 50 visits (in 0.9.0
+and earlier, before every visit outside **Run now**), it asks your open tabs
+whether one of them is an x.com tab. It uses only each tab's id and whether
 the browser has unloaded it; it does not read tab addresses or titles.
 
 A slop label, made with **Hide as slop**, adds the account to **Also hide**.

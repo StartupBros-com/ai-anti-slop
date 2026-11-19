@@ -421,8 +421,8 @@ Under **Mutes a day** the popup offers 25, 50 and 100.
   at 100 a day, the 773 accounts listed on 2026-11-08 take 8 days. The popup
   shows that figure, under **How muting works**, for the accounts it has left
   to mute. **Run now** visits them without waiting for the next day.
-- At 50 or 100, **Mutes a day** has a line under it: "Past 25, runs only
-  while x.com is open in a tab."
+- At 50 or 100, **Mutes a day** has a line under it: "Mutes past 25 need an
+  x.com tab open."
 
 A lower number means less scripted clicking on your account each day. No
 number makes it allowed: X's rules forbid scripting the X website at any rate
@@ -691,8 +691,9 @@ The privacy policy, with what each storage key holds, is
   rule, the **Hide as slop** buttons and the notice that offers **Undo**, and
   hands each label you click, with the post's text, to the background worker
   to store once its Undo window ends.
-- At 50 or 100 mutes a day, before each visit past the day's first 25 mutes
-  (or 50 visits) outside **Run now** the worker lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
+- At 50 or 100 mutes a day, before each visit outside **Run now** once the day
+  has had 25 mutes and unmutes or 50 visits (in 0.9.0 and earlier, before every
+  visit outside **Run now**) the worker lists your open tabs and asks each one whether it is an x.com tab of yours. It uses only each
   tab's id and whether the browser has discarded it, never its address or
   title, and only the extension's script on an x.com page answers.
 - It clicks only in a tab the background worker opened for a visit. The worker

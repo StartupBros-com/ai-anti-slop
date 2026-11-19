@@ -1479,7 +1479,7 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   // What a number above 25 changes is said beside the choice, in view, and
   // the select is described by it.
   assert.equal($('capNote').hidden, false);
-  assert.equal($('capNote').textContent, 'Past 25, runs only while x.com is open in a tab.');
+  assert.equal($('capNote').textContent, 'Mutes past 25 need an x.com tab open.');
   assert.equal(Boolean($('capNote').closest('details')), false, 'the x.com note is not folded');
   assert.equal(Boolean($('capNote').closest('.caprow .caplabel')), true, 'the note is under Mutes a day, beside the select');
   assert.equal($('muteCap').getAttribute('aria-describedby'), 'capNote');
@@ -1489,7 +1489,7 @@ test('popup: the daily number offers 25, 50 and 100, saves the one picked, and s
   assert.equal(choice(p, 'muteCap'), '50');
   assert.equal($('muteToday').textContent, 'Today (UTC): 2 of 50 mutes, 5 of 100 visits');
   assert.equal($('capNote').hidden, false);
-  assert.equal($('capNote').textContent, 'Past 25, runs only while x.com is open in a tab.');
+  assert.equal($('capNote').textContent, 'Mutes past 25 need an x.com tab open.');
   choose(p, 'muteCap', '25');
   await settle();
   assert.equal($('capNote').hidden, true, '25 runs whenever the browser is open: no note');

@@ -31,10 +31,11 @@
     const sel = $('muteCap');
     if (document.activeElement !== sel) setChoice(sel, String(cap));
     // Above the lowest number, muting past it runs only while x.com is open:
-    // said beside the choice, not only in How muting works, or it seems to stall.
+    // said beside the choice, not only in How muting works, or it seems to
+    // stall. One line at the popup's 400 pixels.
     const low = Math.min(...L.DEFAULTS.muteCaps);
     setHidden($('capNote'), cap === low);
-    setText($('capNote'), cap === low ? '' : `Past ${low}, runs only while x.com is open in a tab.`);
+    setText($('capNote'), cap === low ? '' : `Mutes past ${low} need an x.com tab open.`);
     const top = Math.max(...L.DEFAULTS.muteCaps);
     const left = L.muteCandidates(handles, s, m).length;
     setText(
