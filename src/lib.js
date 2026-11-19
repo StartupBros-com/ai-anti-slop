@@ -727,14 +727,16 @@
   // muteCheckRetryMs has passed since the try was due. One later than that
   // (the browser was closed, muting was off, the mutes waiting were
   // unmuted) is a first failure again. Kept apart from nextAt, which Run
-  // now clears, so pressing Run now does not skip the wait.
+  // now clears, so pressing Run now does not skip the wait. Only an error
+  // (the page did not load, or showed no rows) is tried again: logged out or
+  // logged in as another account stops the day at once, as a visit does.
   function recordCheckFailed(rec, result, now, account) {
     const r = structuredCloneish(rec || emptyMutes());
     const res = result || {};
     const why = `settings/muted/all check: ${res.status}${res.reason ? ` (${res.reason})` : ''}`;
     const who = account || null;
     const c = r.checkRetry;
-    if (c && c.account === who && now < (Number(c.at) || 0) + DEFAULTS.muteCheckRetryMs) {
+    if (res.status !== 'error' || (c && c.account === who && now < (Number(c.at) || 0) + DEFAULTS.muteCheckRetryMs)) {
       delete r.checkRetry;
       return stopDay(r, now, why);
     }

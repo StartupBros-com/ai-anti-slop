@@ -776,6 +776,16 @@ test('recordCheckFailed: a good check in between starts the count again', () => 
   assert.equal(r.checkRetry.at, NOW + 35 * 60000);
 });
 
+test('recordCheckFailed: logged out, or logged in as another account, stops the day at once', () => {
+  const login = lib.recordCheckFailed(pendingOne(), { status: 'login', reason: 'x.com shows a login button' }, NOW, ACCT);
+  assert.equal(login.days[DAY].stopped, 'settings/muted/all check: login (x.com shows a login button)');
+  assert.equal(login.checkRetry, undefined);
+  assert.equal(lib.checkWaitMs(login, ACCT, NOW), 0, 'no wait, and no "did not load" line in the popup');
+  assert.deepEqual(login.sinceCheck, ['m1']);
+  const other = { status: 'wrong-account', reason: 'logged in as @someone_else, not @startupbros' };
+  assert.equal(lib.recordCheckFailed(pendingOne(), other, NOW, ACCT).days[DAY].stopped, `settings/muted/all check: wrong-account (${other.reason})`);
+});
+
 test('recordCheckFailed: a failure long after the second try was due is a first failure again', () => {
   const r = lib.recordCheckFailed(pendingOne(), NO_ROWS, NOW, ACCT);
   const due = NOW + 15 * 60000;
