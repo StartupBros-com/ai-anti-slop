@@ -1631,16 +1631,25 @@ test('userscript: never shows label buttons, even with labelling saved as on', a
 // Run the real settings.js against settings.html. Downloads are recorded
 // from the <a download> click, and a picked file is set on the input.
 // `timers` (fakeTimers) holds the Undo timer; `focused` lists the id of each
-// element the page focused, in order (linkedom keeps no activeElement).
+// element focused, in order. linkedom keeps no activeElement, so the page
+// gets one as a browser keeps it: the element focused last, or the body once
+// that element has left the page. A click on a control focuses it first, as
+// in Chrome.
 function loadSettings(store) {
   const { window, document } = parseHTML(src('src/settings.html'));
   const chrome = fakeChrome();
   Object.assign(chrome.store, structuredClone(store));
   const timers = fakeTimers();
   const focused = [];
+  let active = null;
   window.HTMLElement.prototype.focus = function () {
     focused.push(this.id);
+    active = this;
   };
+  window.HTMLElement.prototype.blur = function () {
+    if (active === this) active = null;
+  };
+  Object.defineProperty(document, 'activeElement', { configurable: true, get: () => (active && active.isConnected ? active : document.body) });
   const made = [];
   class TestURL extends URL {
     static createObjectURL(blob) {
@@ -1657,7 +1666,10 @@ function loadSettings(store) {
   vm.runInContext(src('src/lib.js'), ctx, { filename: 'src/lib.js' });
   vm.runInContext(src('src/settings.js'), ctx, { filename: 'src/settings.js' });
   const $ = (id) => document.getElementById(id);
-  const click = (id) => $(id).dispatchEvent(new window.Event('click'));
+  const click = (id) => {
+    if ($(id).matches('button, input, summary, a[href], [tabindex]')) $(id).focus();
+    $(id).dispatchEvent(new window.Event('click'));
+  };
   const submit = (id) => $(id).dispatchEvent(new window.Event('submit'));
   // A `text` of null fails the test if the page reads the file at all.
   const pickFile = (name, text, size) => {
@@ -1830,6 +1842,7 @@ test('settings page: settings that change after the preview are shown again, not
   await settle();
   assert.deepEqual(p.chrome.store['xsh:settings'], changed, 'nothing written');
   assert.equal(p.$('stale').hidden, false);
+  assert.equal(p.document.activeElement.id, 'stale', 'the warning takes focus, so it is read out before Confirm');
   assert.deepEqual(p.changes(), ['Also hide gains 1 account: @spam_b.']);
   assert.equal(p.$('muteNote').className, 'callout warn');
   assert.equal(
@@ -2261,7 +2274,9 @@ test('visit key: a job dropped because muting was turned off leaves no key', asy
 
 // ------------------------------------------------------------ Run now
 
-// Timers the test fires by hand, so a run's next step needs no real wait.
+// Timers the test fires by hand, so a run's next step needs no real wait. A
+// cleared timer stays in `due`, marked `cleared`, so a test can tell it from
+// a live one.
 function fakeTimers() {
   const due = [];
   return {
@@ -2270,7 +2285,9 @@ function fakeTimers() {
       due.push({ fn, ms });
       return due.length;
     },
-    clearTimeout: () => {},
+    clearTimeout: (handle) => {
+      if (due[handle - 1]) due[handle - 1].cleared = true;
+    },
   };
 }
 
@@ -3435,7 +3452,101 @@ test('settings page: Undo leaves after 10 seconds and the removal stands', async
   await settle();
   assert.equal(s.$('undo'), null);
   assert.deepEqual(s.chrome.store['xsh:settings'].customLists, [LISTS3[0], LISTS3[1]]);
-  assert.equal(s.focused.at(-1), 'addOpen', 'focus moves to Add when Undo goes');
+  assert.equal(s.focused.at(-1), 'addOpen', 'focus was on Undo, so it moves to Add when Undo goes');
+  assert.equal(s.$('listMsg').textContent, 'Removed three.txt.', 'the message no longer offers Undo');
+});
+
+test('settings page: when Undo goes, focus anywhere else stays where it is', async () => {
+  const s = loadSettings({ 'xsh:settings': { customLists: LISTS3 } });
+  await settle();
+  s.click('rm-uthree');
+  await settle();
+  // A click on plain text: focus leaves Undo for the page itself.
+  s.document.activeElement.blur();
+  assert.equal(s.document.activeElement === s.document.body, true, 'focus is on the page itself');
+  const moves = s.focused.length;
+  s.timers.due[0].fn();
+  await settle();
+  assert.equal(s.$('undo'), null);
+  assert.equal(s.focused.length, moves, 'no focus moved');
+  assert.equal(s.document.activeElement === s.document.body, true, 'focus is still on the page itself');
+});
+
+test('settings page: Undo, or a second removal, stops the earlier 10-second timer', async () => {
+  const s = loadSettings({ 'xsh:settings': { customLists: LISTS3 } });
+  await settle();
+  s.click('rm-uone');
+  await settle();
+  s.click('undo');
+  await settle();
+  assert.deepEqual(s.timers.due.map((t) => !!t.cleared), [true], 'Undo stops its timer');
+  s.click('rm-uone');
+  await settle();
+  s.click('rm-utwo');
+  await settle();
+  assert.deepEqual(s.timers.due.map((t) => !!t.cleared), [true, true, false], "the second removal stops the first one's timer");
+  assert.deepEqual(
+    [...s.document.querySelectorAll('#ownRows li')].map((li) => li.getAttribute('data-list') || li.textContent),
+    ['Removed two.txt.Undo', 'uthree'],
+    "only two.txt's Undo is left: one.txt's went with its timer",
+  );
+  assert.equal(s.$('listMsg').textContent, 'Removed two.txt. Undo is in its place for 10 seconds.');
+});
+
+// The page writes the whole settings object, so writes made close together
+// must each start from the one before, or the last one puts back what an
+// earlier one changed.
+test('settings page: a change made while an earlier one is still being stored builds on it', async () => {
+  const s = loadSettings({ 'xsh:settings': { allowlist: 'friend', customLists: LISTS3 } });
+  await settle();
+  s.click('rm-uone');
+  flip(s, 'uthree', false);
+  s.click('addOpen');
+  s.$('listUrl').value = 'https://a.example/four.txt';
+  s.submit('addForm');
+  await settle();
+  const saved = s.chrome.store['xsh:settings'];
+  assert.deepEqual(
+    saved.customLists.map((c) => [c.url, c.on]),
+    [
+      [LISTS3[1].url, false],
+      [LISTS3[2].url, false],
+      ['https://a.example/four.txt', true],
+    ],
+  );
+  assert.equal(saved.allowlist, 'friend');
+  s.click('undo');
+  flip(s, 'utwo', true);
+  await settle();
+  assert.deepEqual(
+    s.chrome.store['xsh:settings'].customLists.map((c) => [c.id === 'uone' ? 'uone' : c.url, c.on]),
+    [
+      ['uone', true],
+      [LISTS3[1].url, true],
+      [LISTS3[2].url, false],
+      ['https://a.example/four.txt', true],
+    ],
+  );
+});
+
+test('settings page: a redraw keeps focus on the switch it was on, and moves none while typing', async () => {
+  const s = loadSettings({ 'xsh:settings': {} });
+  await settle();
+  const old = s.$('list-levelsio');
+  old.focus();
+  flip(s, 'levelsio', true);
+  await settle();
+  assert.equal(s.$('list-levelsio') === old, false, 'the row was drawn again');
+  assert.equal(s.document.activeElement === s.$('list-levelsio'), true, 'focus is on the new switch');
+  s.click('addOpen');
+  s.$('listUrl').value = 'https://a.exa';
+  const moves = s.focused.length;
+  await s.chrome.storage.local.set({ 'xsh:list': record(['h1'], AI_URL) });
+  await settle();
+  assert.equal(stat(s, 'clankwall-ai'), '1 account · updated just now', 'it drew again');
+  assert.equal(s.focused.length, moves, 'a record arriving moves no focus');
+  assert.equal(s.document.activeElement.id, 'listUrl');
+  assert.equal(s.$('listUrl').value, 'https://a.exa');
 });
 
 test('settings page: Undo is refused when the address is back already or five lists are added', async () => {
@@ -3474,7 +3585,7 @@ test('settings page: Try again asks the background to download the lists again a
   const url = 'https://a.example/one.txt';
   const s = loadSettings({
     'xsh:settings': { customLists: [{ id: 'uone', url, on: true }] },
-    'xsh:list:uone': record([], url, { fetchedAt: 0, lastError: 'HTTP 500' }),
+    'xsh:list:uone': record([], url, { fetchedAt: 0, lastAttemptAt: 1, lastError: 'HTTP 500' }),
   });
   const sent = [];
   let answer;
@@ -3495,6 +3606,8 @@ test('settings page: Try again asks the background to download the lists again a
   s.click('retry-uone');
   await settle();
   assert.equal(sent.length, 1, 'one download at a time');
+  // The background stores the new attempt before it answers.
+  await s.chrome.storage.local.set({ 'xsh:list:uone': record([], url, { fetchedAt: 0, lastError: 'HTTP 500' }) });
   answer({ ok: false, reason: 'HTTP 500', count: 0 });
   await settle();
   assert.equal(s.$('listMsg').textContent, 'It failed again. The note under the list says what to try.');
@@ -3529,6 +3642,99 @@ test('settings page: Try again that cannot reach the background says so', async 
   assert.equal(s.$('listMsg').textContent, 'The download could not start: Could not establish connection. Receiving end does not exist.');
   assert.equal(s.$('listMsg').classList.contains('bad'), true);
   assert.equal(stat(s, 'uone'), 'Download failed');
+});
+
+// The background answers ok:false with a reason both when a list failed and
+// when the refresh itself threw; the list's own record tells them apart.
+test('settings page: Try again tells a download that did not run from another list failing', async () => {
+  const url = 'https://a.example/one.txt';
+  const s = loadSettings({
+    'xsh:settings': { customLists: [{ id: 'uone', url, on: true }] },
+    'xsh:list:uone': record([], url, { fetchedAt: 0, lastAttemptAt: 1, lastError: 'HTTP 500' }),
+  });
+  let reply;
+  s.chrome.runtime.sendMessage = async () => reply();
+  await settle();
+  // refresh() threw before any list was tried: background.js answers { ok: false, reason: String(e) }.
+  reply = () => ({ ok: false, reason: 'Error: QUOTA_BYTES quota exceeded' });
+  s.click('retry-uone');
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'The download did not finish: Error: QUOTA_BYTES quota exceeded.');
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  // This list came down; another list that is on did not.
+  reply = async () => {
+    await s.chrome.storage.local.set({ 'xsh:list:uone': record(['h1'], url) });
+    return { ok: false, reason: 'clankwall: AI flags: HTTP 503', count: 1 };
+  };
+  s.click('retry-uone');
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'This list downloaded. Another list that is on failed; the note under it says what to try.');
+  assert.equal(stat(s, 'uone'), '1 account · updated just now');
+});
+
+test('settings page: two added lists with the same file name are told apart by their addresses', async () => {
+  const lists = [
+    { id: 'ua', url: 'https://gist.githubusercontent.com/one/abc/raw/list.txt', on: true },
+    { id: 'ub', url: 'https://gist.githubusercontent.com/two/def/raw/list.txt', on: false },
+  ];
+  const s = loadSettings({ 'xsh:settings': { customLists: lists } });
+  await settle();
+  for (const { id, url } of lists) {
+    assert.equal(rowOf(s, id).querySelector('label').textContent, 'list.txt');
+    assert.equal(s.$(`where-${id}`).textContent, url.slice('https://'.length));
+    assert.equal(s.$(`list-${id}`).getAttribute('aria-describedby'), `where-${id} stat-${id}`);
+    assert.equal(s.$(`rm-${id}`).getAttribute('aria-describedby'), `where-${id}`);
+  }
+  assert.equal(s.$('list-levelsio').getAttribute('aria-describedby'), 'stat-levelsio', 'a built-in list has no address line');
+});
+
+test('settings page: a built-in list that came back too short or too big says when it tries again', async () => {
+  const hour = 60 * 60e3;
+  const s = loadSettings({
+    'xsh:settings': { lists: { levelsio: true, 'clankwall-all': true } },
+    'xsh:list:levelsio': record(['a1', 'a2', 'a3'], 'https://blockedforaireply.levels.io/api/usernames.txt', {
+      fetchedAt: Date.now() - hour,
+      lastError: 'list shrank from 3 to 1',
+    }),
+    [ALL_KEY]: record([], ALL_URL, { fetchedAt: 0, lastError: 'feed larger than 1000000 bytes' }),
+  });
+  await settle();
+  assert.equal(
+    failNote(s, 'levelsio').text,
+    'The new copy was much shorter than the last one, so it was not used. It tries again at its next refresh, or press Try again. ' +
+      'Until then it hides the 3 accounts from the last good download.',
+  );
+  assert.equal(failNote(s, 'clankwall-all').text, 'The list is bigger than the extension reads. It tries again within 6 hours, or press Try again.');
+});
+
+test('settings page: a file picked while another is still being read wins', async () => {
+  const p = loadSettings({ 'xsh:list': LIST, 'xsh:settings': { extraList: '' } });
+  await settle();
+  let finish;
+  const slow = { name: 'a.txt', size: 8, text: () => new Promise((resolve) => (finish = resolve)) };
+  Object.defineProperty(p.$('file'), 'files', { configurable: true, value: [slow] });
+  p.$('file').dispatchEvent(new p.document.defaultView.Event('change'));
+  p.pickFile('b.txt', 'spam_b\n');
+  await settle();
+  finish('spam_a\n');
+  await settle();
+  assert.equal(p.$('fileKind').textContent, 'b.txt: a list of 1 handle, for Also hide');
+  assert.deepEqual(p.changes(), ['Also hide gains 1 account: @spam_b.']);
+  p.click('confirm');
+  await settle();
+  assert.equal(p.chrome.store['xsh:settings'].extraList, 'spam_b');
+});
+
+test('settings page: an address typed while the last one is being added stays', async () => {
+  const s = loadSettings({ 'xsh:settings': {} });
+  await settle();
+  s.click('addOpen');
+  s.$('listUrl').value = 'https://a.example/one.txt';
+  s.submit('addForm');
+  s.$('listUrl').value = 'https://a.example/tw';
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists.map((c) => c.url), ['https://a.example/one.txt']);
+  assert.equal(s.$('listUrl').value, 'https://a.example/tw');
 });
 
 // A built-in list that has a copy keeps hiding it after a failed download. The

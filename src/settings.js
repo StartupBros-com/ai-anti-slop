@@ -75,7 +75,26 @@
   async function getSettings() {
     return (await chrome.storage.local.get(K.settings))[K.settings] || {};
   }
-  const saveSettings = (s) => chrome.storage.local.set({ [K.settings]: s });
+
+  // Settings are one stored object, so every write here goes through this
+  // queue: one at a time, each from a fresh read. A change made while an
+  // earlier one is still being stored then builds on it instead of putting
+  // back what it removed. `fn` gets the settings and answers what to write
+  // as `patch` (nothing when it has none, or `ok` is false); update answers
+  // whatever `fn` answered. The popup writes the same object outside this
+  // queue, so a change it makes in the moment between a read and a write
+  // here can still be lost, as before.
+  let writing = Promise.resolve();
+  function update(fn) {
+    const run = writing.then(async () => {
+      const cur = await getSettings();
+      const out = await fn(cur);
+      if (out && out.ok !== false && out.patch) await chrome.storage.local.set({ [K.settings]: Object.assign({}, cur, out.patch) });
+      return out;
+    });
+    writing = run.catch(() => {});
+    return run;
+  }
 
   // ------------------------------------------------------------------ lists
 
@@ -159,10 +178,10 @@
       next = own ? 'Check that the address points at the list itself, one handle per line.' : retry;
     } else if (/^list shrank/.test(reason)) {
       what = 'The new copy was much shorter than the last one, so it was not used.';
-      next = own ? 'If the list really got shorter, remove it and add it again.' : '';
+      next = own ? 'If the list really got shorter, remove it and add it again.' : retry;
     } else if (/^feed larger than|^too many handles/.test(reason)) {
       what = 'The list is bigger than the extension reads.';
-      next = own ? 'Ask its owner for a smaller file, or remove it.' : '';
+      next = own ? 'Ask its owner for a smaller file, or remove it.' : retry;
     } else {
       what = 'The download could not be used.';
       next = retry;
@@ -196,39 +215,44 @@
     const count = rec && Array.isArray(rec.handles) ? rec.handles.length : 0;
     const state = stateOf(sub, rec);
     const statId = `stat-${sub.id}`;
-    const box = h('input', { type: 'checkbox', role: 'switch', id: `list-${sub.id}`, 'aria-describedby': statId });
+    // An added list's address is part of its description: two Gists can both
+    // be named list.txt, and only the address tells them apart.
+    const whereId = where ? `where-${sub.id}` : null;
+    const described = [whereId, statId, sub.locked ? `lock-${sub.id}` : null].filter(Boolean).join(' ');
+    const box = h('input', { type: 'checkbox', role: 'switch', id: `list-${sub.id}`, 'aria-describedby': described });
     box.checked = sub.on;
     box.disabled = sub.locked;
     box.addEventListener('change', async () => {
-      const cur = await getSettings();
-      const r = L.listOnPatch(cur, sub.id, box.checked);
+      const want = box.checked;
+      const r = await update((cur) => L.listOnPatch(cur, sub.id, want));
       if (!r.ok) {
         note($('listMsg'), r.reason, true);
         return draw();
       }
       note($('listMsg'), '');
-      await saveSettings(Object.assign({}, cur, r.patch));
     });
     const stat = h('p', { class: `stat${state === 'failed' || state === 'stale' ? ' bad' : ''}`, id: statId });
     if (state === 'trying') stat.append(icon('refresh', 14, 'spin'));
     if (state === 'failed' || state === 'stale') stat.append(icon('alert', 14));
     stat.append(statusText(state, count, rec));
-    let lock = null;
-    if (sub.locked) {
-      lock = h('p', { class: 'stat', id: `lock-${sub.id}` }, icon('lock', 13), 'Stays on while muting is on');
-      box.setAttribute('aria-describedby', `${statId} lock-${sub.id}`);
-    }
+    const lock = sub.locked ? h('p', { class: 'stat', id: `lock-${sub.id}` }, icon('lock', 13), 'Stays on while muting is on') : null;
     const main = h(
       'div',
       { class: 'main' },
       h('label', { for: box.id, class: `name${sub.locked ? ' locked' : ''}` }, title),
-      where ? h('p', { class: 'where' }, where) : null,
+      where ? h('p', { class: 'where', id: whereId }, where) : null,
       stat,
       lock,
     );
     const ctl = h('div', { class: 'ctl' });
     if (!sub.builtin) {
-      ctl.append(h('button', { type: 'button', class: 'text', id: `rm-${sub.id}`, 'aria-label': `Remove ${title}`, onclick: () => removeList(sub, title) }, 'Remove'));
+      ctl.append(
+        h(
+          'button',
+          { type: 'button', class: 'text', id: `rm-${sub.id}`, 'aria-label': `Remove ${title}`, 'aria-describedby': whereId, onclick: () => removeList(sub, title) },
+          'Remove',
+        ),
+      );
     }
     ctl.append(box);
     const li = h('li', { class: 'row', 'data-list': sub.id }, main, ctl);
@@ -309,14 +333,15 @@
       `Always show ${num(L.parseAllowlist(s.allowlist).size)}, Also hide ${num(L.parseAllowlist(s.extraList).size)}, ` +
       `${plural(bots, 'bot choice', 'bot choices')} and the tag setting. It leaves out muting, pause, list choices and labels.`;
 
+    // The draw that wins uses up focusNext, so it never fires on a later,
+    // unrelated draw.
     if (focusNext) {
+      const want = focusNext;
+      focusNext = null;
       const a = document.activeElement;
       const lost = !a || a === document.body || !a.isConnected;
-      const target = focusNext.map((id) => $(id)).find(Boolean);
-      if (target) {
-        focusNext = null;
-        if (lost && typeof target.focus === 'function') target.focus({ preventScroll: true });
-      }
+      const target = want.map((id) => $(id)).find(Boolean);
+      if (target && lost && typeof target.focus === 'function') target.focus({ preventScroll: true });
     }
   }
 
@@ -324,15 +349,19 @@
   // its place. The background deletes the list's record; Undo puts the entry
   // back and the background downloads it again.
   async function removeList(sub, title) {
-    const cur = await getSettings();
-    const patch = L.removeListPatch(cur, sub.id);
-    if (!patch) return;
-    const custom = L.subscriptions(cur).filter((l) => !l.builtin);
-    const index = custom.findIndex((l) => l.id === sub.id);
-    await saveSettings(Object.assign({}, cur, patch));
+    const out = await update((cur) => {
+      const patch = L.removeListPatch(cur, sub.id);
+      if (!patch) return null;
+      const index = L.subscriptions(cur)
+        .filter((l) => !l.builtin)
+        .findIndex((l) => l.id === sub.id);
+      return { patch, index };
+    });
+    if (!out) return;
     if (undo) clearTimeout(undo.timer);
-    undo = { entry: { id: sub.id, url: sub.url, on: sub.on }, index, name: title, timer: setTimeout(endUndo, 10000) };
-    note($('listMsg'), `Removed ${title}. Undo is in its place for 10 seconds.`);
+    const said = `Removed ${title}. Undo is in its place for 10 seconds.`;
+    undo = { entry: { id: sub.id, url: sub.url, on: sub.on }, index: out.index, name: title, said, timer: setTimeout(endUndo, 10000) };
+    note($('listMsg'), said);
     focusNext = ['undo', 'addOpen'];
     draw();
   }
@@ -342,52 +371,71 @@
     if (!u) return;
     clearTimeout(u.timer);
     undo = null;
-    const cur = await getSettings();
-    const subs = L.subscriptions(cur);
-    const custom = subs.filter((l) => !l.builtin).map((l) => ({ id: l.id, url: l.url, on: l.on }));
-    let refused = null;
-    if (subs.some((l) => l.url === u.entry.url || l.id === u.entry.id)) refused = `${u.name} is already here.`;
-    else if (custom.length >= L.DEFAULTS.customListMax) {
-      refused = `${u.name} could not go back: ${L.DEFAULTS.customListMax} lists are added. Remove one first.`;
-    }
-    if (refused) {
-      note($('listMsg'), refused, true);
+    const out = await update((cur) => {
+      const subs = L.subscriptions(cur);
+      const custom = subs.filter((l) => !l.builtin).map((l) => ({ id: l.id, url: l.url, on: l.on }));
+      if (subs.some((l) => l.url === u.entry.url || l.id === u.entry.id)) return { ok: false, reason: `${u.name} is already here.` };
+      if (custom.length >= L.DEFAULTS.customListMax) {
+        return { ok: false, reason: `${u.name} could not go back: ${L.DEFAULTS.customListMax} lists are added. Remove one first.` };
+      }
+      custom.splice(Math.min(u.index, custom.length), 0, u.entry);
+      return { ok: true, patch: { customLists: custom } };
+    });
+    if (!out.ok) {
+      note($('listMsg'), out.reason, true);
       focusNext = ['addOpen'];
       return draw();
     }
-    custom.splice(Math.min(u.index, custom.length), 0, u.entry);
-    await saveSettings(Object.assign({}, cur, { customLists: custom }));
     note($('listMsg'), `${u.name} is back.${u.entry.on ? ' Downloading it again.' : ''}`);
     focusNext = [`list-${u.entry.id}`, 'addOpen'];
     draw();
   }
 
+  // Undo's time is up: its offer leaves the message too. Focus follows only
+  // when it was on Undo; anywhere else it stays where the user put it.
   function endUndo() {
+    const u = undo;
     undo = null;
-    focusNext = ['addOpen'];
+    if (u && $('listMsg').textContent === u.said) note($('listMsg'), `Removed ${u.name}.`);
+    if (document.activeElement && document.activeElement.id === 'undo') focusNext = ['addOpen'];
     draw();
   }
 
   // Try again downloads every list that is on (the popup's refresh) and
   // waits for the answer; until then the lists that are on say Downloading.
+  // The answer's ok covers every list, so the list's own record says how
+  // this one went: a new attempt with an error, a new attempt without one
+  // (another list failed), or no new attempt (the download did not run).
   async function tryAgain(id) {
     if (trying) return;
     trying = true;
     note($('listMsg'), 'Downloading the lists that are on again…');
     draw();
+    const key = L.listKey(id);
+    const attempt = async () => {
+      const rec = (await chrome.storage.local.get(key))[key];
+      return rec ? { at: rec.lastAttemptAt, error: rec.lastError } : null;
+    };
     let r;
+    let before = null;
     try {
+      before = await attempt();
       r = await chrome.runtime.sendMessage({ type: 'xsh:refresh' });
     } catch (e) {
       r = { ok: false, error: String((e && e.message) || e) };
     }
+    const after = r && !r.error ? await attempt() : null;
     trying = false;
+    const why = (s) => String(s).replace(/[\s.]+$/, '');
     if (r && r.ok) note($('listMsg'), 'Downloaded. Every list that is on is up to date.');
-    else if (!r || r.error) {
-      const why = String((r && r.error) || 'no answer from the extension').replace(/[\s.]+$/, '');
-      note($('listMsg'), `The download could not start: ${why}.`, true);
-    }
-    else note($('listMsg'), 'It failed again. The note under the list says what to try.', true);
+    else if (!r || r.error) note($('listMsg'), `The download could not start: ${why((r && r.error) || 'no answer from the extension')}.`, true);
+    else if (after && after.at && (!before || after.at !== before.at)) {
+      note(
+        $('listMsg'),
+        after.error ? 'It failed again. The note under the list says what to try.' : 'This list downloaded. Another list that is on failed; the note under it says what to try.',
+        true,
+      );
+    } else note($('listMsg'), `The download did not finish: ${why(r.reason || 'no reason given')}.`, true);
     focusNext = [`retry-${id}`, `list-${id}`];
     draw();
   }
@@ -404,15 +452,15 @@
     if (adding) return;
     adding = true;
     try {
-      const cur = await getSettings();
-      const r = L.addListPatch(cur, $('listUrl').value, Date.now());
+      const typed = $('listUrl').value;
+      const r = await update((cur) => L.addListPatch(cur, typed, Date.now()));
       if (!r.ok) {
         note($('listMsg'), r.reason, true);
         $('listUrl').focus();
         return;
       }
-      await saveSettings(Object.assign({}, cur, r.patch));
-      $('listUrl').value = '';
+      // Anything typed while it was being stored stays.
+      if ($('listUrl').value === typed) $('listUrl').value = '';
       note($('listMsg'), 'Added. Downloading it now.');
     } finally {
       adding = false;
@@ -538,10 +586,15 @@
     );
     $('stale').hidden = !stale;
     $('preview').hidden = false;
-    $('preview').focus();
+    // Made again at Confirm: focus on the warning, so it is read out first.
+    (stale ? $('stale') : $('preview')).focus();
   }
 
+  // The newest pick wins: a file still being read when another is picked is
+  // dropped, so the preview always belongs to the file the input holds.
+  let pickSeq = 0;
   $('file').addEventListener('change', async () => {
+    const mine = ++pickSeq;
     const input = $('file');
     const f = input.files && input.files[0];
     pending = null;
@@ -558,11 +611,13 @@
         r = { ok: false, reason: 'the file could not be read' };
       }
     }
+    if (mine !== pickSeq) return;
     if (!r.ok) {
       reset();
       return note($('msg'), `Not imported: ${r.reason}. Pick a settings file or a text file with one handle per line.`, true);
     }
     const { settings, handles } = await current();
+    if (mine !== pickSeq) return;
     const plan = L.importPlan(settings, r, handles);
     pending = { file: r, key: JSON.stringify(plan) };
     $('fileKind').textContent =
@@ -578,23 +633,33 @@
     if (!was || confirming) return;
     confirming = true;
     try {
-      const { settings, handles } = await current();
-      if (pending !== was) return;
-      const plan = L.importPlan(settings, was.file, handles);
-      const key = JSON.stringify(plan);
-      if (key !== was.key) {
-        was.key = key;
-        return showPlan(plan, true);
-      }
-      await chrome.storage.local.set({ [K.settings]: Object.assign({}, settings, plan.patch) });
+      // In the write queue, so the plan is checked against the settings it
+      // is written onto.
+      const out = await update(async (settings) => {
+        const { handles } = await current();
+        if (pending !== was) return null;
+        const plan = L.importPlan(settings, was.file, handles);
+        const key = JSON.stringify(plan);
+        if (key !== was.key) {
+          was.key = key;
+          return { ok: false, plan };
+        }
+        return { ok: true, plan, patch: plan.patch };
+      });
+      if (!out) return;
+      const plan = out.plan;
+      if (!out.ok) return showPlan(plan, true);
       const done = [];
       if (plan.addShow.length) done.push(`Always show gained ${plan.addShow.length}`);
       if (plan.addHide.length) done.push(`Also hide gained ${plan.addHide.length}`);
       if (plan.botChanges.length) done.push(plural(plan.botChanges.length, 'bot choice changed', 'bot choices changed'));
       if (plan.mentions !== null) done.push(`tag hiding turned ${plan.mentions ? 'on' : 'off'}`);
-      reset();
+      // A file picked while this was being stored keeps its own preview.
+      if (pending === was) {
+        reset();
+        $('file').focus();
+      }
       note($('msg'), `Imported: ${done.join(', ')}.`);
-      $('file').focus();
       draw();
     } finally {
       confirming = false;
