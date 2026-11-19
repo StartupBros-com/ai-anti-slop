@@ -715,10 +715,11 @@ The privacy policy, with what each storage key holds, is
   hands that tab its job once, so a reload of the tab does not click again.
 - The one kind of network request the extension's own code sends is a list
   fetch, from the background worker, for each list that is on: clankwall's
-  at `clankwall.vogel.dev` (the only host permission), and each list you add
-  at its own address. A list you add is fetched with no host permission, so
-  the browser lets the extension read it only when its host allows other sites
-  to (an `Access-Control-Allow-Origin` header). Every fetch sends no cookies
+  at `clankwall.vogel.dev` (the only host permission), levelsio's at
+  `blockedforaireply.levels.io`, and each list you add at its own address.
+  levelsio's list and a list you add are fetched with no host permission, so
+  the browser lets the extension read one only when its host allows other
+  sites to (an `Access-Control-Allow-Origin` header; levelsio's sends `*`). Every fetch sends no cookies
   (`credentials: 'omit'`) and bypasses the cache. The userscript fetches
   clankwall's lists through its manager (`@connect clankwall.vogel.dev`,
   `anonymous: true`, so no cookies); the cache setting applies to the

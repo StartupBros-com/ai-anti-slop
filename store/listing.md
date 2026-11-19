@@ -76,7 +76,7 @@ MUTING (optional, off until you turn it on)
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
-- No account, no server, no analytics. The extension's own code makes one kind of request: it downloads the lists you have switched on, clankwall's and any you add, without cookies. Everything it keeps stays in your browser's extension storage.
+- No account, no server, no analytics. The extension's own code makes one kind of request: it downloads the lists you have switched on, clankwall's, levelsio's and any you add, without cookies. Everything it keeps stays in your browser's extension storage.
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
