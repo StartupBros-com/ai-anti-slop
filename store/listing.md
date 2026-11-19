@@ -54,7 +54,7 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. On the settings page you can also switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
+AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. On the settings page you can also switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or levelsio's Blocked for AI reply list (blockedforaireply.levels.io), or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
 - A post is hidden when its author is on a list you have switched on, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
@@ -72,7 +72,7 @@ SETTINGS FILES
 
 MUTING (optional, off until you turn it on)
 - When you turn it on, AI Anti-Slop mutes the accounts on clankwall's AI list, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: the first 25 run whenever the browser is open, and at 50 or 100 the rest run only while you have an x.com tab open. Run now visits every account waiting, one after another and 2 to 5 seconds apart, past the daily number, until none are left, you press Stop or muting stops for the day.
-- Muting uses clankwall's AI list alone, never All flags or a list you add, and that list stays on while muting is on. It skips accounts you follow and accounts in Always show. If an account it muted leaves that list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
+- Muting uses clankwall's AI list alone, never All flags, levelsio's list or a list you add, and that list stays on while muting is on. It skips accounts you follow and accounts in Always show. If an account it muted leaves that list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
@@ -81,7 +81,7 @@ PRIVACY
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
 
-AI Anti-Slop is not affiliated with, endorsed by or sponsored by X Corp. It does not run or maintain the clankwall list.
+AI Anti-Slop is not affiliated with, endorsed by or sponsored by X Corp. It does not run or maintain the clankwall or levelsio lists.
 ```
 
 The MUTING paragraph is the one to cut, with the muting UI, if a hide-only

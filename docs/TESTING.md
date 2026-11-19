@@ -620,6 +620,25 @@ So the worker can read a Gist's raw address. A Gist that holds a list of
 handles was not tried: none of the 26 small public text Gists sampled that day
 held one.
 
+## levelsio's list in Chromium
+
+On 2026-11-19 the unpacked extension from the working tree of the branch
+that adds levelsio's list (manifest 0.9.0) ran in headless Chromium
+157.0.8103.50 through Playwright. Both lists came from the real network.
+Nothing loaded x.com.
+
+| Step | Result |
+|---|---|
+| Install | AI flags fetched, 786 accounts; levelsio's list off and not fetched |
+| Settings page | The row "levelsio: Blocked for AI reply", switched off, with its note and an About link to `https://blockedforaireply.levels.io/` |
+| levelsio's list switched on in the settings page | Fetched in under a second: 3,734 accounts, no error. The row then read "3734 accounts · updated just now". A direct download right after held the same 3,734 distinct handles with the same ETag |
+| Popup opened | "3766 accounts on 2 lists" |
+| Permissions, before and after | `host_permissions` still `https://clankwall.vogel.dev/*` alone; `chrome.permissions.getAll()` the same before and after |
+
+So the extension reads levelsio's list with no new permission: the list's
+server sends `access-control-allow-origin: *`. The userscript cannot read it, and
+the unit tests check that it never asks to.
+
 ## An x.com tab left open across a reload, in Chromium
 
 On 2026-11-19, headless Chromium 157.0.8103.50 loaded the extension built from

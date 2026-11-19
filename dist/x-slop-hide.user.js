@@ -270,7 +270,7 @@
 
   // ----------------------------------------------------------------- lists
   //
-  // The lists AI Anti-Slop hides from. Two come with it; the user may switch
+  // The lists AI Anti-Slop hides from. Three come with it; the user may switch
   // them on or off and add up to customListMax more by address. Muting reads
   // only MUTE_LIST: every other list hides replies and nothing more.
   const BUILTIN_LISTS = Object.freeze([
@@ -285,8 +285,19 @@
       about: 'https://clankwall.vogel.dev/',
       note: 'Every account clankwall flagged, AI or spam, mostly crypto spam. About half of those not on the AI list rest on a single flag, so expect some mistakes. Hides replies only.',
     }),
+    // Fetched by the extension alone (userscript: false): the userscript's
+    // @connect names clankwall's host only.
+    Object.freeze({
+      id: 'levelsio', name: 'levelsio: Blocked for AI reply', format: 'text', on: false, mute: false, userscript: false,
+      url: 'https://blockedforaireply.levels.io/api/usernames.txt',
+      about: 'https://blockedforaireply.levels.io/',
+      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Hides replies only.',
+    }),
   ]);
   const MUTE_LIST = 'clankwall-ai';
+  // The built-in lists the userscript can fetch: its @connect names
+  // clankwall's host alone.
+  const USERSCRIPT_LISTS = new Set(BUILTIN_LISTS.filter((b) => b.userscript !== false).map((b) => b.id));
 
   // Where a list's record is stored. The AI list keeps the key it has always
   // had, so nothing is migrated; every other list is xsh:list:<id>.
@@ -382,10 +393,11 @@
     return out;
   }
 
-  // The lists that are on. With opts.builtinOnly, only the built-in ones: the
-  // userscript cannot reach any other address.
+  // The lists that are on. With opts.userscript, only those the userscript
+  // can fetch (USERSCRIPT_LISTS): it cannot reach any other address.
   function enabledLists(settings, opts) {
-    return subscriptions(settings).filter((l) => l.on && !(opts && opts.builtinOnly && !l.builtin));
+    const userscript = !!(opts && opts.userscript);
+    return subscriptions(settings).filter((l) => l.on && !(userscript && !USERSCRIPT_LISTS.has(l.id)));
   }
 
   // The settings change that adds a list by address, or why it is refused:
@@ -1462,11 +1474,12 @@
   const K = L.STORAGE_KEYS;
   const subscribers = [];
 
-  // The handles of the built-in lists that are on, as one list. The userscript
-  // reads no added list: its @connect names clankwall only.
+  // The handles of clankwall's lists that are on, as one list. The userscript
+  // reads neither levelsio's list nor an added one: its @connect names
+  // clankwall only.
   const read = () => {
     const settings = GM_getValue(K.settings, {});
-    const recs = L.enabledLists(settings, { builtinOnly: true }).map((l) => GM_getValue(L.listKey(l.id), null));
+    const recs = L.enabledLists(settings, { userscript: true }).map((l) => GM_getValue(L.listKey(l.id), null));
     return { list: { handles: L.unionHandles(recs) }, settings };
   };
   const notify = () => {
@@ -1517,7 +1530,7 @@
     return p;
   }
   function refresh(force) {
-    return Promise.all(L.enabledLists(read().settings, { builtinOnly: true }).map((sub) => refreshList(sub, force)));
+    return Promise.all(L.enabledLists(read().settings, { userscript: true }).map((sub) => refreshList(sub, force)));
   }
 
   function patchSettings(patch) {

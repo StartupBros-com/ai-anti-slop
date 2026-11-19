@@ -7,11 +7,12 @@
   const K = L.STORAGE_KEYS;
   const subscribers = [];
 
-  // The handles of the built-in lists that are on, as one list. The userscript
-  // reads no added list: its @connect names clankwall only.
+  // The handles of clankwall's lists that are on, as one list. The userscript
+  // reads neither levelsio's list nor an added one: its @connect names
+  // clankwall only.
   const read = () => {
     const settings = GM_getValue(K.settings, {});
-    const recs = L.enabledLists(settings, { builtinOnly: true }).map((l) => GM_getValue(L.listKey(l.id), null));
+    const recs = L.enabledLists(settings, { userscript: true }).map((l) => GM_getValue(L.listKey(l.id), null));
     return { list: { handles: L.unionHandles(recs) }, settings };
   };
   const notify = () => {
@@ -62,7 +63,7 @@
     return p;
   }
   function refresh(force) {
-    return Promise.all(L.enabledLists(read().settings, { builtinOnly: true }).map((sub) => refreshList(sub, force)));
+    return Promise.all(L.enabledLists(read().settings, { userscript: true }).map((sub) => refreshList(sub, force)));
   }
 
   function patchSettings(patch) {
