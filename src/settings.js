@@ -346,21 +346,23 @@
   }
 
   // Remove at once and keep what Undo needs: the entry as lib stores it and
-  // its place. The background deletes the list's record; Undo puts the entry
-  // back and the background downloads it again.
+  // its place, both read from the settings this removal changes, so a switch
+  // flipped just before is what Undo puts back. The background deletes the
+  // list's record; Undo puts the entry back and the background downloads it
+  // again.
   async function removeList(sub, title) {
     const out = await update((cur) => {
       const patch = L.removeListPatch(cur, sub.id);
       if (!patch) return null;
-      const index = L.subscriptions(cur)
-        .filter((l) => !l.builtin)
-        .findIndex((l) => l.id === sub.id);
-      return { patch, index };
+      const custom = L.subscriptions(cur).filter((l) => !l.builtin);
+      const index = custom.findIndex((l) => l.id === sub.id);
+      const { id, url, on } = custom[index];
+      return { patch, index, entry: { id, url, on } };
     });
     if (!out) return;
     if (undo) clearTimeout(undo.timer);
     const said = `Removed ${title}. Undo is in its place for 10 seconds.`;
-    undo = { entry: { id: sub.id, url: sub.url, on: sub.on }, index: out.index, name: title, said, timer: setTimeout(endUndo, 10000) };
+    undo = { entry: out.entry, index: out.index, name: title, said, timer: setTimeout(endUndo, 10000) };
     note($('listMsg'), said);
     focusNext = ['undo', 'addOpen'];
     draw();

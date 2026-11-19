@@ -3529,6 +3529,31 @@ test('settings page: a change made while an earlier one is still being stored bu
   );
 });
 
+test('settings page: Undo puts a list back as it was switched, even when Remove came before the switch was stored', async () => {
+  const s = loadSettings({ 'xsh:settings': { customLists: LISTS3 } });
+  await settle();
+  const onOf = (id) => {
+    const c = s.chrome.store['xsh:settings'].customLists.find((x) => x.id === id);
+    return c ? c.on : 'gone';
+  };
+  assert.deepEqual([onOf('utwo'), onOf('uthree')], [false, true]);
+  flip(s, 'uthree', false);
+  s.click('rm-uthree');
+  await settle();
+  assert.equal(onOf('uthree'), 'gone');
+  s.click('undo');
+  await settle();
+  assert.equal(onOf('uthree'), false, 'switched off, then removed: it comes back off');
+  assert.equal(s.$('listMsg').textContent, 'three.txt is back.');
+  flip(s, 'utwo', true);
+  s.click('rm-utwo');
+  await settle();
+  s.click('undo');
+  await settle();
+  assert.equal(onOf('utwo'), true, 'switched on, then removed: it comes back on');
+  assert.equal(s.$('listMsg').textContent, 'two.txt is back. Downloading it again.');
+});
+
 test('settings page: a redraw keeps focus on the switch it was on, and moves none while typing', async () => {
   const s = loadSettings({ 'xsh:settings': {} });
   await settle();
@@ -3547,6 +3572,31 @@ test('settings page: a redraw keeps focus on the switch it was on, and moves non
   assert.equal(s.focused.length, moves, 'a record arriving moves no focus');
   assert.equal(s.document.activeElement.id, 'listUrl');
   assert.equal(s.$('listUrl').value, 'https://a.exa');
+});
+
+test('settings page: where focus goes after Try again is used up by the next draw, even when its list is gone', async () => {
+  const url = 'https://a.example/one.txt';
+  const entry = { id: 'uone', url, on: true };
+  const s = loadSettings({
+    'xsh:settings': { customLists: [entry] },
+    'xsh:list:uone': record([], url, { fetchedAt: 0, lastAttemptAt: 1, lastError: 'HTTP 500' }),
+  });
+  await settle();
+  // Another tab removes the list while this tab's Try again is running.
+  s.chrome.runtime.sendMessage = async () => {
+    await s.chrome.storage.local.set({ 'xsh:settings': { customLists: [] } });
+    return { ok: false, reason: 'HTTP 500', count: 0 };
+  };
+  s.click('retry-uone');
+  await settle();
+  assert.equal(s.$('list-uone'), null);
+  assert.equal(s.document.activeElement === s.document.body, true, 'focus went with the row');
+  const moves = s.focused.length;
+  // That tab's Undo puts the list back; focus is still on the page itself.
+  await s.chrome.storage.local.set({ 'xsh:settings': { customLists: [entry] } });
+  await settle();
+  assert.equal(s.$('retry-uone') === null, false, 'the row is back with its Try again');
+  assert.equal(s.focused.length, moves, 'the old target does not pull focus on this later draw');
 });
 
 test('settings page: Undo is refused when the address is back already or five lists are added', async () => {
