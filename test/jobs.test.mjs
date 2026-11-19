@@ -329,3 +329,19 @@ test('unmute job: a deleted or suspended profile is reported gone, with no click
   assert.deepEqual(await t.done, { id: 'j1', status: 'gone', reason: 'Account suspended' });
   assert.deepEqual(clicks, []);
 });
+
+// Planted negative: a page that looks gone for one poll and then draws the
+// live profile is muted, not settled as gone for good.
+test('mute job: a gone-looking page that turns into the live profile is muted, not reported gone', async () => {
+  const t = runContent(titled(profile([goneBox('This account doesn’t exist')]), 'Profile / X'), { pathname: `/${H}`, state: muting, job: job({ waitMs: 3000 }) });
+  const clicks = [];
+  setTimeout(() => {
+    t.document.querySelector('[data-testid="emptyState"]').remove();
+    t.document.title = `Some One (@${H}) / X`;
+    t.document.querySelector('[aria-label="Timeline"]').insertAdjacentHTML('beforeend', postWithCaret({ author: H }));
+    wireMenu(t.document, { items: MENU, handle: H, clicks });
+  }, 200);
+  const r = await t.done;
+  assert.equal(r.status, 'muted');
+  assert.deepEqual(clicks, ['Mute']);
+});

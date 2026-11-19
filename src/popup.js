@@ -94,8 +94,9 @@
     const b = L.muteBudget(m, L.utcDay(now), L.muteCap(s));
     const t = L.muteSummary(m);
     const inRun = !!(run && run.account === s.muteAccount);
-    // A check of the muted list that failed waits before its second try, run or not.
-    const wait = (m.sinceCheck || []).length ? L.checkWaitMs(m, s.muteAccount, now) : 0;
+    // A check of the muted list that failed waits before its second try, run
+    // or not, and nothing is visited until then (background.js tickWith).
+    const wait = !b.stopped && (m.sinceCheck || []).length ? L.checkWaitMs(m, s.muteAccount, now) : 0;
     let next = '';
     if (wait) next = ` · your muted list did not load, next try in ${Math.ceil(wait / 60000)} min`;
     else if (!inRun && m.nextAt && m.nextAt > now) next = ` · next visit in ${Math.ceil((m.nextAt - now) / 60000)} min`;

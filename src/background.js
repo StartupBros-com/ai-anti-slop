@@ -396,12 +396,16 @@ async function tickWith(xOpen) {
   const next = unmutes.length ? { kind: 'unmute', handle: unmutes[0] } : candidates.length ? { kind: 'mute', handle: candidates[0] } : null;
   const pending = (rec.sinceCheck || []).length;
   // A check that failed waits before it runs again (L.recordCheckFailed),
-  // and while one is due nothing else is visited. A run waits with it.
-  const checkWait = pending ? L.checkWaitMs(rec, s.muteAccount, now) : 0;
+  // and until then nothing is visited, however few mutes wait to be checked.
+  // A run waits with it.
+  if (pending && L.checkWaitMs(rec, s.muteAccount, now)) return;
   // A run skips the caps and the x.com-tab rule; nothing else.
   let canVisit = next !== null && (run !== null || (b.mutesLeft > 0 && b.visitsLeft > 0));
-  if (pending >= L.DEFAULTS.muteCheckEvery) {
-    if (!checkWait) await startJob('check', null, s.muteAccount, now);
+  // A check is due after muteCheckEvery mutes, and the second try of one
+  // that failed comes first once its wait is over.
+  const retry = !!(rec.checkRetry && rec.checkRetry.account === s.muteAccount);
+  if (pending >= L.DEFAULTS.muteCheckEvery || (pending && retry)) {
+    await startJob('check', null, s.muteAccount, now);
     return;
   }
   if (!run && canVisit && L.capNeedsXOpen(cap)) {
@@ -409,7 +413,7 @@ async function tickWith(xOpen) {
     canVisit = xOpen === true;
   }
   if (pending && !canVisit) {
-    if (!checkWait) await startJob('check', null, s.muteAccount, now);
+    await startJob('check', null, s.muteAccount, now);
     return;
   }
   if (!canVisit) {

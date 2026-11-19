@@ -775,3 +775,15 @@ test('recordCheckFailed: a good check in between starts the count again', () => 
   assert.equal(lib.muteBudget(r, DAY).stopped, null, 'fail, good, fail: no stop');
   assert.equal(r.checkRetry.at, NOW + 35 * 60000);
 });
+
+test('recordCheckFailed: a failure long after the second try was due is a first failure again', () => {
+  const r = lib.recordCheckFailed(pendingOne(), NO_ROWS, NOW, ACCT);
+  const due = NOW + 15 * 60000;
+  // The browser was closed or muting was off through the try: hours later, a
+  // failure waits again instead of stopping the day.
+  const late = lib.recordCheckFailed(r, NO_ROWS, due + 15 * 60000, ACCT);
+  assert.equal(lib.muteBudget(late, DAY).stopped, null);
+  assert.equal(late.checkRetry.at, due + 30 * 60000);
+  // Within that time after it was due, it is the second try failing.
+  assert.equal(lib.recordCheckFailed(r, NO_ROWS, due + 15 * 60000 - 1, ACCT).days[DAY].stopped, NO_ROWS_STOP);
+});

@@ -2676,3 +2676,30 @@ test('popup: a failed check waiting for its second try says so, during a run too
   await settle();
   assert.match($('muteToday').textContent, / · your muted list did not load, next try in 15 min$/);
 });
+
+test('background: while a failed check waits nothing is visited, with fewer than 5 mutes waiting too; the retry comes first after it', async () => {
+  const t = fakeTimers();
+  const three = ['m1', 'm2', 'm3'];
+  const handles = Object.fromEntries(three.map((h) => [h, { status: 'muted', confirmed: null, account: ME, at: 1 }]));
+  const checkRetry = { at: Date.now() + 10 * 60000, account: ME, reason: 'settings/muted/all check: error (x)' };
+  const bg = await muteBackground({ handles: [...three, 'slop_z'], mutes: { ...capUsed(handles), sinceCheck: three, checkRetry }, timers: t });
+  assert.deepEqual(await runOn(bg), { ok: true, waiting: 1 });
+  await settle();
+  await alarm(bg);
+  assert.deepEqual(bg.chrome.tabs.opened, [], 'Run now skips the caps, not the wait');
+  bg.chrome.store['xsh:mutes'].checkRetry.at = Date.now() - 1;
+  await alarm(bg);
+  assert.equal(lastTab(bg).url, 'https://x.com/settings/muted/all', 'the second try, before slop_z');
+  await answer(bg, { status: 'checked', rows: [...three].reverse() });
+  await nextStep(bg, t);
+  assert.equal(lastTab(bg).url, 'https://x.com/slop_z');
+});
+
+test('popup: a stopped day does not also say a check is waiting', async () => {
+  const handles = { m1: { status: 'muted', confirmed: null, account: ME, at: 1 } };
+  const checkRetry = { at: Date.now() + 10 * 60000, account: ME, reason: 'x' };
+  const stoppedDay = { [today()]: { mutes: 3, visits: 4, stopped: '@slop_x: refused' } };
+  const p = runPopup(popupStore({ ...capUsed(handles), sinceCheck: ['m1'], checkRetry, days: stoppedDay }));
+  await settle();
+  assert.doesNotMatch(p.document.getElementById('muteToday').textContent, /muted list did not load/);
+});

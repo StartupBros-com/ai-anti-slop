@@ -747,15 +747,19 @@
   // Fold a check that could not read settings/muted/all into the record (a
   // new object). The mutes since the last check stay waiting for the next
   // one. The first failure sets checkRetry, the time muteCheckRetryMs on
-  // when the check, as the same account, may run again (checkWaitMs); a
-  // failure while that is set stops the day. Kept apart from nextAt, which
-  // Run now clears, so pressing Run now does not skip the wait.
+  // when the check, as the same account, may run again (checkWaitMs). The
+  // second try failing too stops the day: a failure as that account before
+  // muteCheckRetryMs has passed since the try was due. One later than that
+  // (the browser was closed, muting was off, the mutes waiting were
+  // unmuted) is a first failure again. Kept apart from nextAt, which Run
+  // now clears, so pressing Run now does not skip the wait.
   function recordCheckFailed(rec, result, now, account) {
     const r = structuredCloneish(rec || emptyMutes());
     const res = result || {};
     const why = `settings/muted/all check: ${res.status}${res.reason ? ` (${res.reason})` : ''}`;
     const who = account || null;
-    if (r.checkRetry && r.checkRetry.account === who) {
+    const c = r.checkRetry;
+    if (c && c.account === who && now < (Number(c.at) || 0) + DEFAULTS.muteCheckRetryMs) {
       delete r.checkRetry;
       return stopDay(r, now, why);
     }
