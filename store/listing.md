@@ -54,10 +54,10 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
+AI Anti-Slop hides posts on x.com by accounts on clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev). The list refreshes every 6 hours. On the settings page you can also switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
-- A post is hidden when its author is on the list, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
+- A post is hidden when its author is on a list you have switched on, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
 - On an x.com tab, the popup counts what that tab hid. Pause hiding shows every post again.
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
@@ -71,12 +71,12 @@ SETTINGS FILES
 - Import a settings file or a shared list. Import adds accounts and never removes any, shows what will change before it changes anything, and never turns muting on.
 
 MUTING (optional, off until you turn it on)
-- When you turn it on, AI Anti-Slop mutes the listed accounts, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open. Run now visits every account waiting, one after another and 2 to 5 seconds apart, past the daily number, until none are left, you press Stop or muting stops for the day.
-- It skips accounts you follow and accounts in Always show. If an account it muted leaves the list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
+- When you turn it on, AI Anti-Slop mutes the accounts on clankwall's AI list, the accounts in your Also hide box and any bot you set to Mute on X, on your X account. It clicks X's own Mute item on x.com, in background tabs it opens and closes, one visit about every 1 to 4 minutes. You pick 25, 50 or 100 mutes a day: 25 runs whenever the browser is open; 50 and 100 run only while you have an x.com tab open. Run now visits every account waiting, one after another and 2 to 5 seconds apart, past the daily number, until none are left, you press Stop or muting stops for the day.
+- Muting uses clankwall's AI list alone, never All flags or a list you add, and that list stays on while muting is on. It skips accounts you follow and accounts in Always show. If an account it muted leaves that list or moves to Always show, it unmutes it the same way. It never blocks and does not use the X API.
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
-- No account, no server, no analytics. The extension's own code makes one kind of request: it downloads the public list, without cookies. Everything it keeps stays in your browser's extension storage.
+- No account, no server, no analytics. The extension's own code makes one kind of request: it downloads the lists you have switched on, clankwall's and any you add, without cookies. Everything it keeps stays in your browser's extension storage.
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
@@ -139,19 +139,22 @@ Hide posts on x.com by accounts on a public list of AI-reply spam accounts, or o
 **Permission justifications:** the dashboard takes all host access, the
 clankwall host and the x.com content scripts, in a single **Host permission
 justification** field, which holds the last two rows of this table joined
-(989 of the field's 1,000 characters).
+(985 of the field's 1,000 characters: the host row below is 4 characters shorter than the one measured at 989).
 
 | Permission | Justification |
 |---|---|
-| `storage` | Keeps the downloaded list and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on. All of it stays in the browser's extension storage. |
-| `alarms` | Refreshes the list every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
-| Host permission `https://clankwall.vogel.dev/*` | The service worker downloads the public list from `https://clankwall.vogel.dev/api/usernames.txt`, without cookies. No other data is sent there. |
+| `storage` | Keeps the downloaded lists and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on. All of it stays in the browser's extension storage. |
+| `alarms` | Refreshes the lists every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
+| Host permission `https://clankwall.vogel.dev/*` | The service worker downloads clankwall's public lists from `https://clankwall.vogel.dev/api/`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except on posts by the account whose page is open and, once X shows who is logged in, the user's own, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
 **Remote code:** the dashboard asked no remote-code question when 0.7.1 was
 submitted, so nothing was entered. If it asks, the answer is No: all
-JavaScript ships in the package, and the list it downloads is plain text, one
-handle per line, read as data and never run.
+JavaScript ships in the package, and the lists it downloads are data, read and
+never run: plain text with one handle per line, or clankwall's JSON lines, of
+which only the `username` field is read. A list the user adds by address is
+fetched without any host permission, so only a host that lets other sites read
+the file (an `Access-Control-Allow-Origin` header) can serve one.
 
 **Data usage.** The docs show the checkbox labels only in a screenshot, so the
 names below may differ from the dashboard's; tick the dashboard's nearest box

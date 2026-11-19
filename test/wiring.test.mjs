@@ -612,6 +612,7 @@ test('userscript: fetches via GM_xmlhttpRequest, caches, and hides listed author
     'Pause / resume hiding',
     'Show / hide @grok',
     'Refresh list now',
+    'Hide every account clankwall flagged / AI flags only',
     'Edit always-show list',
     'Edit extra accounts to hide',
     'Show or hide a bot',
@@ -2702,4 +2703,564 @@ test('popup: a stopped day does not also say a check is waiting', async () => {
   const p = runPopup(popupStore({ ...capUsed(handles), sinceCheck: ['m1'], checkRetry, days: stoppedDay }));
   await settle();
   assert.doesNotMatch(p.document.getElementById('muteToday').textContent, /muted list did not load/);
+});
+
+// ------------------------------------------------------------------ lists
+//
+// Choosing which lists hide replies. Muting reads the AI list's record alone;
+// every other list only hides. Handles are invented.
+
+const AI_URL = 'https://clankwall.vogel.dev/api/usernames.txt';
+const ALL_URL = 'https://clankwall.vogel.dev/api/accounts.ndjson';
+const ALL_KEY = 'xsh:list:clankwall-all';
+const ndjson = (...names) => names.map((n) => JSON.stringify({ username: n, verdict: 'x' })).join('\n');
+const record = (handles, source, extra = {}) => ({ handles, fetchedAt: Date.now(), source, lastAttemptAt: Date.now(), lastError: null, ...extra });
+const ALL_ON = { 'clankwall-all': true };
+
+// storage.onChanged in a real browser carries oldValue; this fake's set does
+// not, so the lists tests give it one.
+function withOldValues(bg) {
+  const { store } = bg.chrome;
+  bg.chrome.storage.local.set = async (o) => {
+    const changes = Object.fromEntries(
+      Object.keys(o).map((k) => [k, { oldValue: k in store ? structuredClone(store[k]) : undefined, newValue: structuredClone(o[k]) }]),
+    );
+    Object.assign(store, structuredClone(o));
+    bg.chrome.storage.onChanged.fire(changes, 'local');
+  };
+  return bg;
+}
+
+// A worker whose lists answer by address: the AI list `aiBody`, the NDJSON
+// `allBody`, any other address `otherBody`.
+function listsBackground({ store = {}, aiBody = 'aionly\nboth\n', allBody = ndjson('both', 'spamonly'), otherBody = 'custom1\ncustom2\n', timers = null } = {}) {
+  const bg = loadBackground(
+    (url) => ok(url === ALL_URL ? allBody : url === AI_URL ? aiBody : otherBody),
+    store,
+    undefined,
+    timers,
+  );
+  return withOldValues(bg);
+}
+
+const startup = async (bg) => {
+  bg.chrome.runtime.onStartup.fire();
+  await settle();
+};
+
+// Muting on, an account set, the AI list ['aionly', 'both'] at xsh:list, the
+// All flags list ['both', 'spamonly'] at its own key, and All flags on.
+async function twoListBackground({ lists = ALL_ON, extra = {}, timers = null } = {}) {
+  const bg = listsBackground({ timers });
+  Object.assign(bg.chrome.store, {
+    'xsh:list': record(['aionly', 'both'], AI_URL),
+    [ALL_KEY]: record(['both', 'spamonly'], ALL_URL),
+    'xsh:settings': { muteEnabled: true, muteAccount: ME, lists },
+    ...extra,
+  });
+  await startup(bg);
+  assert.deepEqual(bg.requests, [], 'both records are fresh, so startup fetches nothing');
+  return bg;
+}
+
+test('lists, muting: a sighting of an account only on All flags is not noted; one on the AI list is', async () => {
+  const bg = await twoListBackground();
+  await send(bg, { type: 'xsh:sighting', handle: 'spamonly' }, 7);
+  assert.equal(bg.chrome.store['xsh:mutes'], undefined, 'nothing written to the mute record');
+  await send(bg, { type: 'xsh:sighting', handle: 'both' }, 7);
+  assert.deepEqual(bg.chrome.store['xsh:mutes'].front, ['both']);
+});
+
+test('lists, muting: ticks visit the AI list accounts and never an account only on All flags', async () => {
+  const bg = await twoListBackground();
+  const urls = [];
+  for (let i = 0; i < 3; i++) {
+    await alarm(bg);
+    const tab = lastTab(bg);
+    urls.push(tab.url);
+    if (tab.url.endsWith('/muted/all')) break;
+    await answer(bg, { status: 'muted' });
+    due(bg);
+  }
+  assert.deepEqual(urls, ['https://x.com/aionly', 'https://x.com/both', 'https://x.com/settings/muted/all']);
+  assert.equal(bg.chrome.store['xsh:mutes'].handles.spamonly, undefined);
+});
+
+test('lists, muting: Run now waits on the same number with All flags on as with it off', async () => {
+  const on = await twoListBackground({ timers: fakeTimers() });
+  const off = await twoListBackground({ lists: {}, timers: fakeTimers() });
+  assert.deepEqual(await runOn(on), { ok: true, waiting: 2 });
+  assert.deepEqual(await runOn(off), { ok: true, waiting: 2 });
+  await settle();
+  assert.equal(lastTab(on).url, 'https://x.com/aionly');
+});
+
+test('lists, muting: an account it muted that is on All flags only is still unmuted, because muting reads the AI list', async () => {
+  const bg = await twoListBackground({ extra: { 'xsh:mutes': { ...lib.emptyMutes(), handles: { spamonly: mutedAs(ME) } } } });
+  await alarm(bg);
+  const tab = lastTab(bg);
+  assert.equal(tab.url, 'https://x.com/spamonly');
+  const job = await send(bg, { type: 'xsh:job' }, tab.id);
+  assert.deepEqual([job.kind, job.handle], ['unmute', 'spamonly']);
+  assert.equal(await send(bg, { type: 'xsh:job-go', id: job.id }, tab.id), true);
+});
+
+test('lists, fetching: switching All flags on fetches the NDJSON once and stores it under its own key', async () => {
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': {} } });
+  await startup(bg);
+  assert.deepEqual(bg.requests, []);
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await settle();
+  assert.deepEqual(bg.requests.map((r) => r.url), [ALL_URL]);
+  const rec = bg.chrome.store[ALL_KEY];
+  assert.deepEqual(rec.handles, ['both', 'spamonly']);
+  assert.equal(rec.source, ALL_URL);
+  assert.equal(rec.seq, 1);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly', 'both'], 'the AI record is untouched');
+  // Off, then on again while the record is fresh: no second fetch.
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await settle();
+  assert.equal(bg.requests.length, 1);
+});
+
+test('lists, fetching: a record that came from another address, or is due, is fetched when its list is switched on', async () => {
+  const bg = listsBackground({
+    store: {
+      'xsh:list': record(['aionly'], AI_URL),
+      [ALL_KEY]: record(['old1'], 'https://elsewhere.example/a.ndjson'),
+      'xsh:settings': {},
+    },
+  });
+  await startup(bg);
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await settle();
+  assert.equal(bg.requests.length, 1);
+  assert.deepEqual(bg.chrome.store[ALL_KEY].handles, ['both', 'spamonly']);
+  // Seven hours old: due.
+  const stale = Date.now() - 7 * 3600e3;
+  bg.chrome.store[ALL_KEY] = record(['old2'], ALL_URL, { fetchedAt: stale, lastAttemptAt: stale });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await settle();
+  assert.equal(bg.requests.length, 2);
+});
+
+test('lists, fetching: a label, an Also hide edit, a bot row or muting on start no fetch', async () => {
+  const bg = listsBackground({
+    store: {
+      'xsh:list': record(['aionly'], AI_URL),
+      [ALL_KEY]: record(['spamonly'], ALL_URL),
+      'xsh:settings': { labeling: true, lists: ALL_ON },
+    },
+  });
+  await startup(bg);
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], extraList: 'x1\nx2' } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], bots: { grok: 'show' } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], muteEnabled: true, muteAccount: ME } });
+  await settle();
+  assert.deepEqual(bg.requests, []);
+});
+
+test('lists, fetching: adding a list fetches its address, and removing it deletes its record', async () => {
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': {} } });
+  await startup(bg);
+  const mine = { id: 'uabc', url: 'https://raw.example.com/x/list.txt', on: true };
+  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [mine] } });
+  await settle();
+  assert.deepEqual(bg.requests.map((r) => r.url), [mine.url]);
+  assert.deepEqual(bg.chrome.store['xsh:list:uabc'].handles, ['custom1', 'custom2']);
+  assert.equal(bg.requests[0].init.credentials, 'omit');
+  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [] } });
+  await settle();
+  assert.equal('xsh:list:uabc' in bg.chrome.store, false);
+  assert.equal(bg.requests.length, 1);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly']);
+});
+
+test('lists, fetching: a list removed while its fetch is out leaves no record', async () => {
+  const pending = [];
+  const bg = withOldValues(loadBackground(() => new Promise((resolve) => pending.push(resolve))));
+  Object.assign(bg.chrome.store, { 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': {} });
+  const mine = { id: 'uabc', url: 'https://raw.example.com/x/list.txt', on: true };
+  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [mine] } });
+  await settle();
+  assert.equal(pending.length, 1);
+  await bg.chrome.storage.local.set({ 'xsh:settings': {} });
+  await settle();
+  pending[0](ok('custom1\ncustom2\n'));
+  await settle();
+  assert.equal('xsh:list:uabc' in bg.chrome.store, false);
+});
+
+test('lists, fetching: xsh:refresh and the alarm fetch only the lists that are on', async () => {
+  const bg = listsBackground({
+    store: {
+      'xsh:list': record(['aionly', 'both'], AI_URL),
+      [ALL_KEY]: record(['spamonly'], ALL_URL),
+      'xsh:settings': { lists: { 'clankwall-all': false }, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
+    },
+  });
+  const r = await reply(send(bg, { type: 'xsh:refresh' }, undefined));
+  assert.deepEqual(bg.requests.map((q) => q.url), [AI_URL]);
+  assert.deepEqual(r, { ok: true, reason: null, count: 2 });
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-refresh' });
+  await settle();
+  assert.deepEqual(bg.requests.map((q) => q.url), [AI_URL, AI_URL]);
+  assert.equal('xsh:list:uoff' in bg.chrome.store, false);
+});
+
+test('lists, fetching: with several lists on, refresh fetches each, counts the union and names the first failure', async () => {
+  const bg = listsBackground({
+    store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': { lists: ALL_ON } },
+  });
+  assert.deepEqual(await reply(send(bg, { type: 'xsh:refresh' }, undefined)), { ok: true, reason: null, count: 3 });
+  assert.deepEqual(bg.requests.map((q) => q.url).sort(), [ALL_URL, AI_URL].sort());
+  // The NDJSON list fails; the AI list's own record still updates.
+  const failing = loadBackground((url) => (url === ALL_URL ? { ok: false, status: 503, headers: { get: () => null }, text: async () => '' } : ok('aionly\nboth\n')));
+  Object.assign(failing.chrome.store, { 'xsh:list': record(['aionly', 'both'], AI_URL), [ALL_KEY]: record(['both', 'spamonly'], ALL_URL), 'xsh:settings': { lists: ALL_ON } });
+  assert.deepEqual(await reply(send(failing, { type: 'xsh:refresh' }, undefined)), {
+    ok: false,
+    reason: 'clankwall: All flags: HTTP 503',
+    count: 3,
+  });
+  assert.equal(failing.chrome.store[ALL_KEY].lastError, 'HTTP 503');
+  assert.deepEqual(failing.chrome.store[ALL_KEY].handles, ['both', 'spamonly']);
+  assert.equal(failing.chrome.store['xsh:list'].lastError, null);
+});
+
+test('lists, fetching: with only the AI list on, the refresh reply is the one it always was', async () => {
+  const bg = loadBackground(() => ({ ok: false, status: 503, headers: { get: () => null }, text: async () => '' }));
+  bg.chrome.store['xsh:list'] = record(['known_slop'], AI_URL);
+  assert.deepEqual(await reply(send(bg, { type: 'xsh:refresh' }, undefined)), { ok: false, reason: 'HTTP 503', count: 1 });
+});
+
+test('lists, fetching: startup refreshes each list that is on and due, and no other', async () => {
+  const stale = Date.now() - 7 * 3600e3;
+  const bg = listsBackground({
+    store: {
+      'xsh:list': record(['aionly'], AI_URL),
+      [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: stale, lastAttemptAt: stale }),
+      'xsh:settings': { lists: ALL_ON, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
+    },
+  });
+  await startup(bg);
+  assert.deepEqual(bg.requests.map((q) => q.url), [ALL_URL]);
+  assert.deepEqual(bg.chrome.store[ALL_KEY].handles, ['both', 'spamonly']);
+});
+
+test('lists, labels: a label says which lists hold the account, from the lists that are on', async () => {
+  const bg = listsBackground({
+    store: {
+      'xsh:list': record(['aionly'], AI_URL),
+      [ALL_KEY]: record(['reply_a'], ALL_URL),
+      'xsh:list:uoff': record(['reply_a'], 'https://off.example/l.txt'),
+      'xsh:settings': { labeling: true, lists: ALL_ON, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
+    },
+  });
+  assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
+  const r = bg.chrome.store['xsh:label:2'];
+  assert.deepEqual([r.list, r.lists, r.hidden], ['clankwall.vogel.dev', ['clankwall-all'], true]);
+});
+
+// ---------------------------------------------------------- userscript
+
+test('userscript: the menu switches All flags on, fetches the NDJSON and hides an account only on it', async () => {
+  const respond = (req) => {
+    const body = req.url === ALL_URL ? ndjson('both', 'spamonly') : 'aionly\nboth\n';
+    const type = req.url === ALL_URL ? 'application/x-ndjson' : 'text/plain';
+    setTimeout(() => req.onload({ status: 200, responseHeaders: `content-type: ${type}\r\n`, responseText: body }), 0);
+  };
+  const us = loadUserscript({
+    respond,
+    cells: [post({ author: 'spamonly', status: '1' }), post({ author: 'aionly', status: '2' }), post({ author: 'human1', status: '3' })],
+  });
+  await settle();
+  const hidden = (s) => us.document.querySelector(`[data-fixture="${s}"]`).hasAttribute('data-xsh-hidden');
+  assert.deepEqual(us.requests.map((r) => r.url), [AI_URL]);
+  assert.deepEqual(['1', '2', '3'].map(hidden), [false, true, false]);
+  const item = 'Hide every account clankwall flagged / AI flags only';
+  assert.ok(us.menu[item], 'the menu has the toggle');
+  us.menu[item]();
+  await settle();
+  assert.deepEqual(us.values['xsh:settings'].lists, ALL_ON);
+  assert.deepEqual(us.requests.map((r) => r.url), [AI_URL, ALL_URL]);
+  assert.deepEqual(us.values[ALL_KEY].handles, ['both', 'spamonly']);
+  assert.deepEqual(['1', '2', '3'].map(hidden), [true, true, false]);
+  // Back to AI flags only: nothing fetched, the account shows again.
+  us.menu[item]();
+  await settle();
+  assert.deepEqual(us.values['xsh:settings'].lists, { 'clankwall-all': false });
+  assert.equal(us.requests.length, 2);
+  assert.deepEqual(['1', '2', '3'].map(hidden), [false, true, false]);
+});
+
+test('userscript: added lists are not read or fetched', async () => {
+  const us = loadUserscript({
+    values: { 'xsh:settings': { customLists: [{ id: 'uabc', url: 'https://other.example/l.txt', on: true }] }, 'xsh:list:uabc': record(['human1'], 'https://other.example/l.txt') },
+    respond: gmOk('aionly\n'),
+    cells: [post({ author: 'human1', status: '1' })],
+  });
+  await settle();
+  assert.deepEqual(us.requests.map((r) => r.url), [AI_URL]);
+  assert.equal(us.document.querySelector('[data-fixture="1"]').hasAttribute('data-xsh-hidden'), false);
+});
+
+// ------------------------------------------------------- popup, settings
+
+test('popup: with two lists on it says how many accounts on how many lists and how old the oldest is', async () => {
+  const p = loadPopup({
+    'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 2 * 3600e3 }),
+    [ALL_KEY]: record(['both', 'spamonly'], ALL_URL),
+    'xsh:settings': { lists: ALL_ON },
+  });
+  await settle();
+  const text = (id) => p.document.getElementById(id).textContent;
+  assert.equal(text('list'), '3 accounts on 2 lists');
+  assert.equal(text('listAge'), 'From 2 lists, oldest updated 2 h ago');
+  assert.equal(p.document.getElementById('err').hidden, true);
+  assert.equal(p.document.getElementById('chooseLists').textContent, 'Choose lists');
+});
+
+test('popup: with only the AI list on the list lines are what they always were', async () => {
+  const p = loadPopup({
+    'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 3600e3 }),
+    [ALL_KEY]: record(['spamonly'], ALL_URL),
+    'xsh:settings': {},
+  });
+  await settle();
+  const text = (id) => p.document.getElementById(id).textContent;
+  assert.equal(text('list'), '2 accounts on the list');
+  assert.equal(text('listAge'), 'From clankwall.vogel.dev, updated 1 h ago');
+});
+
+test('popup: a list never fetched, a failing list and no list at all', async () => {
+  const at = Date.now();
+  let p = loadPopup({
+    'xsh:list': record(['aionly'], AI_URL),
+    'xsh:settings': { lists: ALL_ON },
+  });
+  await settle();
+  assert.equal(p.document.getElementById('list').textContent, '1 account on 2 lists');
+  assert.equal(p.document.getElementById('listAge').textContent, 'From 2 lists, not all fetched yet');
+  p = loadPopup({
+    'xsh:list': record(['aionly'], AI_URL),
+    [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: at - 3600e3, lastAttemptAt: at, lastError: 'HTTP 503' }),
+    'xsh:settings': { lists: ALL_ON },
+  });
+  await settle();
+  assert.equal(p.document.getElementById('err').hidden, false);
+  assert.equal(p.document.getElementById('err').textContent, 'clankwall: All flags: last refresh failed (just now): HTTP 503. Still using the previous list.');
+  p = loadPopup({
+    'xsh:list': record(['aionly'], AI_URL),
+    [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: 0, lastAttemptAt: at, lastError: 'HTTP 503' }),
+    'xsh:settings': { lists: ALL_ON },
+  });
+  await settle();
+  assert.equal(p.document.getElementById('err').textContent, 'clankwall: All flags: last refresh failed (just now): HTTP 503.');
+  p = loadPopup({ 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': { lists: { 'clankwall-ai': false } } });
+  await settle();
+  assert.equal(p.document.getElementById('list').textContent, 'No list is on');
+  assert.equal(p.document.getElementById('listAge').textContent, '');
+  assert.equal(p.document.getElementById('err').hidden, true);
+});
+
+test('popup: the bot rows follow every list that is on, and muting counts the AI list alone', async () => {
+  const p = loadPopup({
+    'xsh:list': record(['aionly'], AI_URL),
+    [ALL_KEY]: record(['askperplexity'], ALL_URL),
+    'xsh:settings': { lists: ALL_ON, muteEnabled: true, muteAccount: ME },
+  });
+  await settle();
+  assert.equal(rowMode(p, 'askperplexity'), 'hide');
+  const off = loadPopup({ 'xsh:list': record(['aionly'], AI_URL), [ALL_KEY]: record(['askperplexity'], ALL_URL), 'xsh:settings': {} });
+  await settle();
+  assert.equal(rowMode(off, 'askperplexity'), 'show');
+  // Run now's count comes from the AI list only.
+  assert.equal(p.document.getElementById('runWhat').textContent.includes('1 account '), true);
+});
+
+test('popup: Choose lists opens the options page', async () => {
+  const p = loadPopup({ 'xsh:settings': {} });
+  let opened = 0;
+  p.chrome.runtime.openOptionsPage = async () => {
+    opened += 1;
+  };
+  await settle();
+  p.document.getElementById('chooseLists').dispatchEvent(new p.window.Event('click'));
+  await settle();
+  assert.equal(opened, 1);
+});
+
+const rows = (s) => [...s.document.querySelectorAll('#listRows [data-list]')];
+const rowOf = (s, id) => rows(s).find((r) => r.getAttribute('data-list') === id);
+function flip(s, id, checked) {
+  const box = s.document.getElementById(`list-${id}`);
+  box.checked = checked;
+  box.dispatchEvent(new s.document.defaultView.Event('change'));
+}
+
+test('settings page: the Lists card is first, retitled, and shows both built-in lists', async () => {
+  const s = loadSettings({ 'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 5 * 60e3 }), 'xsh:settings': {} });
+  await settle();
+  assert.equal(s.document.title, 'AI Anti-Slop: lists, export and import');
+  assert.equal(s.document.querySelector('h1').textContent, 'AI Anti-Slop: lists, export and import');
+  assert.equal(s.document.querySelector('section.card h2').textContent, 'Lists');
+  assert.match(s.document.querySelector('#listsCard > p').textContent, /^Replies are hidden from every account on the lists you switch on\. Always show beats every list\.$/);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all']);
+  const ai = rowOf(s, 'clankwall-ai');
+  const all = rowOf(s, 'clankwall-all');
+  assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
+  assert.equal(ai.querySelector('input').getAttribute('role'), 'switch');
+  assert.equal(ai.querySelector('input').checked, true);
+  assert.equal(all.querySelector('input').checked, false);
+  assert.match(ai.textContent, /2 accounts · updated 5 min ago/);
+  assert.match(all.textContent, /off/);
+  assert.match(ai.textContent, /Accounts whose replies clankwall scored as AI\. Muting uses this list\./);
+  assert.match(all.textContent, /About half of those not on the AI list rest on a single flag/);
+  assert.equal(ai.querySelector('a').getAttribute('href'), 'https://clankwall.vogel.dev/?filter=ai');
+  assert.equal(ai.querySelector('a').textContent, 'About this list and asking for removal');
+  assert.equal(all.querySelector('a').getAttribute('href'), 'https://clankwall.vogel.dev/');
+  assert.equal(ai.querySelector('button'), null, 'a built-in list has no Remove');
+  // Export and Import are still there.
+  assert.ok(s.$('exportSettings') && s.$('file'));
+});
+
+test('settings page: switching All flags on writes settings.lists and keeps the rest', async () => {
+  const s = loadSettings({ 'xsh:settings': { allowlist: 'friend', lists: { 'clankwall-ai': true } } });
+  await settle();
+  flip(s, 'clankwall-all', true);
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'], { allowlist: 'friend', lists: { 'clankwall-ai': true, 'clankwall-all': true } });
+  assert.equal(s.document.getElementById('list-clankwall-all').checked, true);
+  assert.match(rowOf(s, 'clankwall-all').textContent, /not fetched yet/);
+  flip(s, 'clankwall-all', false);
+  await settle();
+  assert.equal(s.chrome.store['xsh:settings'].lists['clankwall-all'], false);
+});
+
+test('settings page: the AI switch is checked and disabled while muting is on, and says why', async () => {
+  const s = loadSettings({ 'xsh:settings': { muteEnabled: true, muteAccount: ME, lists: { 'clankwall-ai': false } } });
+  await settle();
+  const box = s.document.getElementById('list-clankwall-ai');
+  assert.equal(box.checked, true);
+  assert.equal(box.disabled, true);
+  assert.match(rowOf(s, 'clankwall-ai').textContent, /Muting uses this list\. It stays on while muting is on\./);
+  assert.equal(s.document.getElementById('list-clankwall-all').disabled, false);
+  // Even a change event writes nothing.
+  box.checked = false;
+  box.dispatchEvent(new s.document.defaultView.Event('change'));
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'].lists, { 'clankwall-ai': false });
+  assert.equal(s.document.getElementById('list-clankwall-ai').checked, true);
+  assert.equal(s.document.getElementById('listMsg').textContent, 'Muting uses this list, so it stays on while muting is on.');
+});
+
+test('settings page: Add refuses http://, and a good address adds an entry that the background then fetches', async () => {
+  const s = loadSettings({ 'xsh:settings': { allowlist: 'friend' } });
+  await settle();
+  const add = async (value) => {
+    s.$('listUrl').value = value;
+    s.click('addList');
+    await settle();
+  };
+  await add('http://raw.example.com/list.txt');
+  assert.equal(s.chrome.store['xsh:settings'].customLists, undefined);
+  assert.match(s.$('listMsg').textContent, /starts with https:\/\//);
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  await add('https://raw.example.com/x/list.txt#top');
+  const [mine, ...more] = s.chrome.store['xsh:settings'].customLists;
+  assert.equal(more.length, 0);
+  assert.deepEqual([mine.url, mine.on, /^u[a-z0-9]{1,16}$/.test(mine.id)], ['https://raw.example.com/x/list.txt', true, true]);
+  assert.equal(s.chrome.store['xsh:settings'].allowlist, 'friend');
+  assert.equal(s.$('listMsg').textContent, 'Added. Fetching it now.');
+  assert.equal(s.$('listUrl').value, '');
+  const row = rowOf(s, mine.id);
+  assert.equal(row.querySelector('label').textContent, 'raw.example.com/x/list.txt');
+  // The same address again, and clankwall's own, are refused.
+  await add('https://raw.example.com/x/list.txt');
+  assert.match(s.$('listMsg').textContent, /already here/);
+  await add('https://clankwall.vogel.dev/api/accounts.ndjson');
+  assert.match(s.$('listMsg').textContent, /already here/);
+  assert.equal(s.chrome.store['xsh:settings'].customLists.length, 1);
+});
+
+test('settings page: an added list shows its error, the network hint, and Remove; Remove drops the entry', async () => {
+  const mine = { id: 'uabc', url: 'https://raw.example.com/x/list.txt', on: true };
+  const s = loadSettings({
+    'xsh:settings': { customLists: [mine, { id: 'udef', url: 'https://b.example/l.txt', on: true }] },
+    'xsh:list:uabc': record([], mine.url, { fetchedAt: 0, lastError: 'network error: Failed to fetch' }),
+    'xsh:list:udef': record(['h1'], 'https://b.example/l.txt', { lastError: 'HTTP 404' }),
+  });
+  await settle();
+  const a = rowOf(s, 'uabc');
+  assert.equal(a.querySelector('.bad').textContent, 'Last refresh failed: network error: Failed to fetch.');
+  assert.match(a.textContent, /its host may not let other sites read it\. A raw GitHub or Gist link works\./);
+  const b = rowOf(s, 'udef');
+  assert.match(b.querySelector('.bad').textContent, /HTTP 404/);
+  assert.doesNotMatch(b.textContent, /Gist link/);
+  assert.equal(a.querySelector('a'), null, 'an added list has no About link');
+  a.querySelector('button').dispatchEvent(new s.document.defaultView.Event('click'));
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'].customLists.map((c) => c.id), ['udef']);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'udef']);
+});
+
+test('settings page: the card draws again when a list record changes, and builds names as text', async () => {
+  const evil = '<img src=x onerror=alert(1)>';
+  const s = loadSettings({ 'xsh:settings': { customLists: [{ id: 'uabc', url: `https://a.example/${encodeURI(evil)}`, on: true }] } });
+  await settle();
+  assert.equal(s.document.querySelector('#listRows img'), null);
+  assert.match(rowOf(s, 'uabc').querySelector('label').textContent, /a\.example\//);
+  assert.match(rowOf(s, 'uabc').textContent, /not fetched yet/);
+  await s.chrome.storage.local.set({ 'xsh:list:uabc': record(['h1', 'h2'], 'https://a.example/x') });
+  await settle();
+  assert.match(rowOf(s, 'uabc').textContent, /2 accounts · updated just now/);
+});
+
+test('settings page: importing still gets only the AI list handles', async () => {
+  const s = loadSettings({
+    'xsh:list': record(['aionly'], AI_URL),
+    [ALL_KEY]: record(['spamonly'], ALL_URL),
+    'xsh:settings': { lists: ALL_ON, muteEnabled: true, muteAccount: ME },
+  });
+  await settle();
+  s.pickFile('shared.txt', 'aionly\nspamonly\n');
+  await settle();
+  const t = s.changes().join(' ');
+  assert.match(t, /Also hide gains 2 accounts/);
+  assert.equal(s.$('muteNote').textContent.includes('@spamonly'), true, 'only the AI list is already muted, so the other is new');
+  assert.equal(s.$('muteNote').textContent.includes('@aionly'), false);
+});
+
+test('lists, fetching: a new AI list address while a fetch of the old one is out is fetched after it, and only its result is kept', async () => {
+  const pending = [];
+  const bg = withOldValues(loadBackground((url) => new Promise((resolve) => pending.push({ url, resolve }))));
+  Object.assign(bg.chrome.store, { 'xsh:settings': {} });
+  const one = 'https://one.example/list.txt';
+  const two = 'https://two.example/list.txt';
+  await bg.chrome.storage.local.set({ 'xsh:settings': { feedUrl: one } });
+  await settle();
+  assert.deepEqual(pending.map((p) => p.url), [one]);
+  await bg.chrome.storage.local.set({ 'xsh:settings': { feedUrl: two } });
+  await settle();
+  assert.deepEqual(pending.map((p) => p.url), [one], 'the new address waits for the fetch in flight');
+  pending[0].resolve(ok('old1\nold2\n'));
+  await settle();
+  assert.deepEqual(pending.map((p) => p.url), [one, two]);
+  assert.equal('xsh:list' in bg.chrome.store, false, "the old address's result is not kept");
+  pending[1].resolve(ok('new1\nnew2\n'));
+  await settle();
+  assert.equal(bg.chrome.store['xsh:list'].source, two);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['new1', 'new2']);
+});
+
+test('settings page: the lists message sits inside a live region that is always there', async () => {
+  const s = loadSettings({ 'xsh:settings': {} });
+  await settle();
+  const msg = s.$('listMsg');
+  assert.equal(msg.hasAttribute('role'), false);
+  assert.equal(msg.parentElement.getAttribute('role'), 'status');
+  assert.equal(msg.parentElement.hasAttribute('hidden'), false);
 });

@@ -561,6 +561,44 @@ Refresh list button, an icon with no border since the popup was made shorter,
 fails the test's rule that a control's edge contrasts 3:1 with the popup,
 because it has no edge. Its icon contrasts 7.48:1 in light and 7.7:1 in dark.
 
+## Lists in Chromium, with the real lists
+
+On 2026-11-19 the unpacked extension from the branch that adds the choice of
+lists (issue #71) ran in headless Chromium 157 through Playwright. Its worker
+fetched the real lists over the network. x.com was answered by a fixture page
+of three replies: one by an account on clankwall's AI flags list, one by an
+account only on its All flags list, and one by an account on neither.
+
+| Step | Result |
+|---|---|
+| Install | AI flags fetched, 787 accounts, no error; All flags off and not fetched |
+| AI flags only | The AI-flags reply hidden, the other two shown |
+| All flags switched on in the settings page | Fetched at once: 2,811 accounts, the same number as the distinct usernames in the file; the All-flags-only reply hidden without a reload |
+| A public list added by its raw GitHub address | "Added. Fetching it now."; 813 accounts, no error |
+| `https://example.com/` added | `network error: Failed to fetch` and the hint about hosts that do not let other sites read a file; its stored record holds the error and no accounts |
+| `http://`, the same address again, an address with a user name and password | Refused: "Use an address that starts with https://", "That list is already here.", "Leave the user name and password out of the address." |
+| Popup with the four lists on | "2951 accounts on 4 lists", "From 4 lists, not all fetched yet", and the example.com list's error |
+| **Choose lists** in the popup | Opened the settings page; with it already open, no second one opened |
+| The example.com list removed | Its stored copy deleted, three rows left |
+| Muting switched on | The AI flags switch disabled, "It stays on while muting is on." |
+| All flags switched off | The All-flags-only reply shown again |
+
+The only requests outside the extension were the three list addresses,
+`https://example.com/` and the fixture page. Before any list was added, a
+probe on the unchanged 0.9.0 manifest had found the same thing from the
+worker: a raw GitHub file (ACAO `*`) was read without a host permission, and
+`https://example.com/`, which sends no such header, failed with
+`TypeError: Failed to fetch`.
+
+Muting was then checked against a copy of the maintainer's stored records
+(787 accounts on the AI list, 287 in the mute record, muting on at 50 a day),
+with the worker of the 0.9.0 code and of this branch each run in Node against a
+stand-in for the extension's storage and tabs, and the network refused. Both
+answered **Run now** with 527 accounts waiting and started with the same
+account. With All flags switched on and all 2,811 of its accounts stored, the
+branch gave the same 527 and the same first account, and a reply seen from an
+account only on All flags left the mute record as it was.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -610,3 +648,8 @@ real x.com or in Brave. For export and import: Brave
 and branded Chrome, a file picked from a desktop file dialog (the run above set
 the file input directly), and whether a file picker opened from the popup
 would close it, which is why import has a page of its own.
+For choosing lists: any of it in Brave or on real x.com, a Gist address (only
+raw GitHub was tried), the userscript's **Hide every account clankwall
+flagged / AI flags only** menu item in a userscript manager, several lists
+refreshing on the 6-hour alarm, and the shrink guard refusing an update of
+All flags or an added list over the network (the unit tests cover it).

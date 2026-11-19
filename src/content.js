@@ -938,13 +938,25 @@
       }
     };
     const send = (msg) => safe(() => chrome.runtime.sendMessage(msg));
+    // The handles of every list that is on, as one list: hiding does not care
+    // which list an account came from. The AI list's record comes with the
+    // settings; any other list's is a second read.
     const read = () =>
-      chrome.storage.local.get([K.list, K.settings]).then((o) => ({ list: o[K.list], settings: o[K.settings] }));
+      chrome.storage.local.get([K.list, K.settings]).then((o) => {
+        const settings = o[K.settings];
+        const keys = L.enabledLists(settings).map((l) => L.listKey(l.id));
+        const rest = keys.filter((k) => k !== K.list);
+        const more = rest.length ? chrome.storage.local.get(rest) : Promise.resolve({});
+        return more.then((recs) => ({
+          list: { handles: L.unionHandles(keys.map((k) => (k === K.list ? o[K.list] : recs[k]))) },
+          settings,
+        }));
+      });
     return {
       load: read,
       subscribe(cb) {
         chrome.storage.onChanged.addListener((changes, area) => {
-          if (area === 'local' && (changes[K.list] || changes[K.settings])) read().then(cb);
+          if (area === 'local' && Object.keys(changes).some((k) => k === K.settings || L.isListKey(k))) read().then(cb);
         });
       },
       serveStats(fn) {

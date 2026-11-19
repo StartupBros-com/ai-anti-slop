@@ -177,29 +177,63 @@
     renderCap(s, m, rec.handles);
   }
 
+  // The list lines: what the lists that are on hold between them, how old
+  // they are and the first one whose last refresh failed. With only the AI
+  // list on, the lines are the ones it always had. Returns the handles of
+  // every list that is on, for the bot rows.
+  async function renderLists(s, aiRec) {
+    const on = L.enabledLists(s);
+    const keys = on.map((l) => L.listKey(l.id));
+    if (on.length === 1 && on[0].id === L.MUTE_LIST) {
+      const rec = aiRec || { handles: [] };
+      let host = '';
+      try {
+        host = new URL(rec.source || L.DEFAULTS.feedUrl).host;
+      } catch (_) {
+        host = String(rec.source || '');
+      }
+      setText($('list'), `${plural(rec.handles.length, 'account', 'accounts')} on the list`);
+      setText($('listAge'), `From ${host}, ${rec.fetchedAt ? `updated ${ago(rec.fetchedAt)}` : 'not fetched yet'}`);
+      setHidden($('err'), !rec.lastError);
+      setText($('err'), rec.lastError ? `Last refresh failed (${ago(rec.lastAttemptAt)}): ${rec.lastError}.${rec.fetchedAt ? ' Still using the previous list.' : ''}` : '');
+      return rec.handles;
+    }
+    const recs = keys.length ? await chrome.storage.local.get(keys) : {};
+    const handles = L.unionHandles(keys.map((k) => recs[k]));
+    if (!on.length) {
+      setText($('list'), 'No list is on');
+      setText($('listAge'), '');
+      setHidden($('err'), true);
+      setText($('err'), '');
+      return handles;
+    }
+    const k = plural(on.length, 'list', 'lists');
+    setText($('list'), `${plural(handles.length, 'account', 'accounts')} on ${k}`);
+    const times = keys.map((key) => (recs[key] && recs[key].fetchedAt) || 0);
+    setText($('listAge'), times.includes(0) ? `From ${k}, not all fetched yet` : `From ${k}, oldest updated ${ago(Math.min(...times))}`);
+    const i = keys.findIndex((key) => recs[key] && recs[key].lastError);
+    const bad = i >= 0 ? recs[keys[i]] : null;
+    setHidden($('err'), !bad);
+    setText(
+      $('err'),
+      bad ? `${on[i].name}: last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}.${bad.fetchedAt ? ' Still using the previous list.' : ''}` : '',
+    );
+    return handles;
+  }
+
   async function render() {
     await renderMutingPart();
     const o = await chrome.storage.local.get([K.list, K.settings, K.labelCount]);
-    const rec = o[K.list] || { handles: [] };
     const s = o[K.settings] || {};
     const n = o[K.labelCount];
     renderLabels(s, Number.isInteger(n) && n > 0 ? n : 0);
-    let host = '';
-    try {
-      host = new URL(rec.source || L.DEFAULTS.feedUrl).host;
-    } catch (_) {
-      host = String(rec.source || '');
-    }
-    setText($('list'), `${plural(rec.handles.length, 'account', 'accounts')} on the list`);
-    setText($('listAge'), `From ${host}, ${rec.fetchedAt ? `updated ${ago(rec.fetchedAt)}` : 'not fetched yet'}`);
-    setHidden($('err'), !rec.lastError);
-    setText($('err'), rec.lastError ? `Last refresh failed (${ago(rec.lastAttemptAt)}): ${rec.lastError}.${rec.fetchedAt ? ' Still using the previous list.' : ''}` : '');
+    const handles = await renderLists(s, o[K.list]);
     $('paused').checked = !!s.paused;
     if (document.activeElement !== $('allow')) $('allow').value = s.allowlist || '';
     if (document.activeElement !== $('extra')) $('extra').value = s.extraList || '';
     const count = (text) => L.parseAllowlist(text).size;
     setText($('listsSum'), `Always show ${count(s.allowlist)} · Also hide ${count(s.extraList)}`);
-    renderBots(s, rec.handles);
+    renderBots(s, handles);
     $('mentions').checked = s.hideBotMentions === true;
 
     let st = null;
@@ -433,6 +467,8 @@
   // Export and import live on the options page: a file picker opened from
   // the popup can close the popup before the file is read.
   $('files').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  // Choosing lists lives there too.
+  $('chooseLists').addEventListener('click', () => chrome.runtime.openOptionsPage());
   // aria-disabled, not disabled, while it refreshes: a disabled button drops
   // keyboard focus. aria-disabled does not stop clicks, so the flag does.
   // The button is an icon, so its name changes, never its text.

@@ -2,7 +2,8 @@
 // chrome.storage.local, and, when the user has turned muting on, mutes listed
 // accounts one at a time in background tabs it opens and closes itself, and
 // unmutes accounts it muted once muting no longer picks them. Its
-// only network request is the feed URL; muting goes through X's own page.
+// only network requests are the addresses of the lists that are on; muting
+// goes through X's own page and reads only the AI list.
 importScripts('lib.js');
 
 const L = self.XSlopHide;
@@ -23,30 +24,75 @@ async function settings() {
 
 const stored = async () => (await chrome.storage.local.get(K.list))[K.list];
 
-// Install, alarm, startup and popup triggers can overlap. They share one
-// in-flight refresh, so only one fetch and one write happen at a time.
-let inflight = null;
-function refresh() {
-  if (!inflight) inflight = runRefresh().finally(() => (inflight = null));
-  return inflight;
+// Each list has its own record, at L.listKey(id). Muting reads only the AI
+// list's (stored() above), never a union with the others.
+const recordOf = async (id) => (await chrome.storage.local.get(L.listKey(id)))[L.listKey(id)];
+
+// Install, alarm, startup, popup and settings triggers can overlap. They share
+// one in-flight refresh per list, so only one fetch and one write happen at a
+// time for each. A call for another address (the AI list's feedUrl changed)
+// waits for the one in flight and then fetches the new address.
+const inflight = new Map();
+function refreshList(sub) {
+  const cur = inflight.get(sub.id);
+  if (cur && cur.url === sub.url) return cur.p;
+  const p = (cur ? cur.p.catch(() => {}) : Promise.resolve())
+    .then(() => runRefresh(sub))
+    .finally(() => {
+      if (inflight.get(sub.id) === entry) inflight.delete(sub.id);
+    });
+  const entry = { url: sub.url, p };
+  inflight.set(sub.id, entry);
+  return p;
 }
 
-async function runRefresh() {
-  const s = await settings();
-  const url = s.feedUrl || L.DEFAULTS.feedUrl;
-  const prev = await stored();
+async function runRefresh(sub) {
+  const key = L.listKey(sub.id);
+  const prev = await recordOf(sub.id);
   const startSeq = (prev && prev.seq) || 0;
-  const result = await L.fetchList({ url, fetchImpl: fetch, prevHandles: prev && prev.handles });
-  const latest = await stored();
-  const record = L.commitRecord(latest, result, url, startSeq, Date.now());
-  if (record) await chrome.storage.local.set({ [K.list]: record });
+  const result = await L.fetchList({ url: sub.url, format: sub.format, fetchImpl: fetch, prevHandles: prev && prev.handles });
+  const latest = await recordOf(sub.id);
+  // An added list removed while its fetch was out leaves no record behind,
+  // and neither does a fetch of an address the list no longer has.
+  const exists = L.subscriptions(await settings()).some((l) => l.id === sub.id && l.url === sub.url);
+  const record = exists ? L.commitRecord(latest, result, sub.url, startSeq, Date.now()) : null;
+  if (record) await chrome.storage.local.set({ [key]: record });
   const kept = record || latest;
-  return { ok: result.ok, reason: result.reason || null, count: kept ? kept.handles.length : 0 };
+  return { ok: result.ok, reason: result.reason || null, count: kept ? kept.handles.length : 0, handles: kept ? kept.handles : [] };
+}
+
+// Refresh every list that is on, in parallel. Answers { ok, reason, count }:
+// ok when every list fetched, reason the first failure (named by its list
+// when more than one is on), count the size of the union of their records.
+async function refresh() {
+  const subs = L.enabledLists(await settings());
+  const results = await Promise.all(subs.map((sub) => refreshList(sub)));
+  const failed = results.findIndex((r) => !r.ok);
+  let reason = null;
+  if (failed >= 0) reason = subs.length > 1 ? `${subs[failed].name}: ${results[failed].reason}` : results[failed].reason;
+  return { ok: failed < 0, reason, count: L.unionHandles(results).length };
 }
 
 async function refreshIfDue() {
-  const prev = await stored();
-  if (L.isDue(prev && prev.fetchedAt, Date.now(), L.DEFAULTS.refreshMinutes)) await refresh();
+  const now = Date.now();
+  for (const sub of L.enabledLists(await settings())) {
+    const rec = await recordOf(sub.id);
+    if (L.isDue(rec && rec.fetchedAt, now, L.DEFAULTS.refreshMinutes)) refreshList(sub).catch(() => {});
+  }
+}
+
+// A settings change: fetch a list that was switched on (or whose address
+// changed) when its record is missing, came from another address or is due,
+// and delete the record of an added list that was removed. Any other change
+// to settings starts no fetch.
+async function listsChanged(change) {
+  const { on, gone } = L.listChanges((change && change.oldValue) || {}, (change && change.newValue) || {});
+  if (gone.length) await chrome.storage.local.remove(gone.map((id) => L.listKey(id)));
+  const now = Date.now();
+  for (const sub of L.enabledLists((change && change.newValue) || {}).filter((l) => on.includes(l.id))) {
+    const rec = await recordOf(sub.id);
+    if (!rec || rec.source !== sub.url || L.isRefreshDue(rec, now)) refreshList(sub).catch(() => {});
+  }
 }
 
 function ensureAlarm() {
@@ -443,6 +489,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes[K.settings]) {
     ensureMuteAlarm();
     serial(endRunIfOff).catch(() => {});
+    listsChanged(changes[K.settings]).catch(() => {});
   }
 });
 
@@ -560,7 +607,17 @@ async function saveLabel(msg) {
   const s = got[K.settings] || {};
   if (!L.labelsOn(s)) return { ok: false, reason: 'labels are off' };
   const list = got[K.list];
-  const r = L.labelRecord(msg, { handles: list && list.handles, source: list && list.source, settings: s }, Date.now());
+  const ctx = { handles: list && list.handles, source: list && list.source, settings: s };
+  // With another list on too, the label says which lists hold the account.
+  const on = L.enabledLists(s);
+  if (on.some((l) => l.id !== L.MUTE_LIST)) {
+    const recs = await chrome.storage.local.get(on.map((l) => L.listKey(l.id)));
+    ctx.lists = on.map((l) => {
+      const rec = recs[L.listKey(l.id)];
+      return { id: l.id, url: (rec && rec.source) || l.url, handles: (rec && rec.handles) || [] };
+    });
+  }
+  const r = L.labelRecord(msg, ctx, Date.now());
   if (!r.ok) return { ok: false, reason: r.reason };
   if (L.LABEL_PREFIX + r.id !== key) return { ok: false, reason: 'not a post URL' };
   const had = !!got[key];
