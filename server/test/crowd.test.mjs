@@ -337,6 +337,7 @@ test('pages, status and candidates', async () => {
   assert.match(home.text, /rebuilt every six hours/);
   assert.ok(home.text.includes('<li>Each install is at least 7 days old, and each report, Slop or Not slop, is at least 24 hours old.</li>'));
   assert.equal(home.text.includes('http://') || /src=["']https?:/.test(home.text), false);
+  assert.ok(home.text.includes('are open source. Their code, and the place to report a problem with either, are on <a href="https://github.com/StartupBros-com/ai-anti-slop">GitHub</a>.'), 'the page says where the code is');
   await slopFrom(w, 'cand', [1, 2], { when: OLD, nets: 2 });
   await w.buildAt();
   const s = await w.req('GET', '/v1/status');

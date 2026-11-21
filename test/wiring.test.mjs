@@ -106,6 +106,7 @@ function fakeChrome(store = {}, browser = newBrowser()) {
     runtime: {
       id: EXT_ID,
       getURL: (path) => `chrome-extension://${EXT_ID}/${path}`,
+      getManifest: () => JSON.parse(src('manifest.json')),
       onInstalled: event(),
       onStartup: event(),
       onMessage: event(),
@@ -1643,7 +1644,7 @@ test('userscript: never shows label buttons, even with labelling saved as on', a
 // gets one as a browser keeps it: the element focused last, or the body once
 // that element has left the page. A click on a control focuses it first, as
 // in Chrome.
-function loadSettings(store) {
+function loadSettings(store, globals = {}) {
   const { window, document } = parseHTML(src('src/settings.html'));
   const chrome = fakeChrome();
   Object.assign(chrome.store, structuredClone(store));
@@ -1670,7 +1671,7 @@ function loadSettings(store) {
   document.addEventListener('click', (e) => {
     if (e.target.tagName === 'A' && e.target.hasAttribute('download')) downloads.push(e.target.getAttribute('download'));
   });
-  const ctx = vm.createContext({ window, document, chrome, console, URL: TestURL, Blob, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout });
+  const ctx = vm.createContext({ window, document, chrome, console, URL: TestURL, Blob, setTimeout: timers.setTimeout, clearTimeout: timers.clearTimeout, ...globals });
   vm.runInContext(src('src/lib.js'), ctx, { filename: 'src/lib.js' });
   vm.runInContext(src('src/settings.js'), ctx, { filename: 'src/settings.js' });
   const $ = (id) => document.getElementById(id);
@@ -4529,4 +4530,39 @@ test('sharing: with sharing off, a key and no send counted, the settings page st
   assert.ok(s.$('shareOn'));
   assert.equal(s.$('shareForget').textContent, 'Delete what I shared');
   assert.equal(s.document.querySelector('#shareBody .hint').textContent, 'Anything sent from this browser stays on the server until you delete it.');
+});
+
+// Report a problem or suggest something, in the popup's and the settings
+// page's footers: GitHub's issue chooser with the manifest's version and the
+// browser's name filled in (lib's feedbackUrl and browserName).
+const BRAVE_NAV = {
+  userAgentData: { brands: [{ brand: 'Chromium', version: '158' }, { brand: 'Not.A/Brand', version: '24' }, { brand: 'Brave', version: '158' }], platform: 'Windows' },
+  userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/158.0.0.0 Safari/537.36',
+};
+const CHOOSER = 'https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose';
+const VERSION = JSON.parse(src('manifest.json')).version;
+const SHARE_KEY = '0123456789abcdef0123456789abcdef';
+
+test('popup: Report a problem links to the issue chooser with the version and browser', async () => {
+  const p = loadPopup({ 'xsh:settings': { muteEnabled: true, muteAccount: 'startupbros' }, 'xsh:share': { on: true, key: SHARE_KEY } }, { navigator: BRAVE_NAV });
+  await settle();
+  const a = p.document.getElementById('feedback');
+  const href = a.getAttribute('href');
+  assert.equal(href, `${CHOOSER}?version=${VERSION}&browser=Brave%20158%20on%20Windows`);
+  assert.ok(!href.includes('startupbros') && !href.includes(SHARE_KEY), 'no Muting as account and no sharing code');
+  assert.equal(a.textContent, 'Report a problem or suggest something');
+  assert.equal(a.getAttribute('target'), '_blank');
+  assert.equal(a.getAttribute('rel'), 'noopener');
+  const q = loadPopup({});
+  await settle();
+  assert.equal(q.document.getElementById('feedback').getAttribute('href'), `${CHOOSER}?version=${VERSION}`, 'without a navigator, the version alone');
+});
+
+test('settings: Report a problem links to the issue chooser with the version and browser', async () => {
+  const s = loadSettings({ 'xsh:settings': { muteEnabled: true, muteAccount: 'startupbros' }, 'xsh:share': { on: true, key: SHARE_KEY } }, { navigator: BRAVE_NAV });
+  await settle();
+  const href = s.$('feedback').getAttribute('href');
+  assert.equal(href, `${CHOOSER}?version=${VERSION}&browser=Brave%20158%20on%20Windows`);
+  assert.ok(!href.includes('startupbros') && !href.includes(SHARE_KEY), 'no Muting as account and no sharing code');
+  assert.equal(s.$('feedback').textContent, 'Report a problem or suggest something');
 });

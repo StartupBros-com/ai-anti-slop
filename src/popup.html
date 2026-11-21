@@ -186,6 +186,7 @@
   .bot .note { display: block; font-size: 13px; color: var(--muted); }
 
   footer { margin-top: 12px; font-size: 13px; color: var(--muted); }
+  footer p + p { margin-top: 2px; }
   footer a { display: inline-block; padding-block: 3px; color: var(--fg); }
 
   :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
@@ -301,7 +302,10 @@
 </div>
 </main>
 
-<footer>Hiding works in this browser only. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How it works</a></footer>
+<footer>
+  <p>Hiding works in this browser only. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How it works</a></p>
+  <p>Free and <a href="https://github.com/StartupBros-com/ai-anti-slop" target="_blank" rel="noopener">open source</a>. <a id="feedback" href="https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose" target="_blank" rel="noopener">Report a problem or suggest something</a></p>
+</footer>
 <script src="lib.js"></script>
 <script src="popup.js"></script>
 </body>

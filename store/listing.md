@@ -24,7 +24,8 @@ submitted version: the readers' list in the first paragraph, the sharing
 line under LABELS, the PRIVACY section, the single purpose, the storage
 justification, the readers' list under Remote code, the data-usage reasons
 and the certification line were written for the first submit that carries
-it. Field names and rules are from Google's developer documentation
+it. So was the Report a problem line at the end of the description, which
+came after sharing. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.
@@ -86,6 +87,7 @@ PRIVACY
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
+Report a problem or suggest something (with a GitHub account): https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose
 
 AI Anti-Slop is not affiliated with, endorsed by or sponsored by X Corp. It does not run or maintain the clankwall or levelsio lists.
 ```

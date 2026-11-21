@@ -1700,6 +1700,46 @@
     };
   }
 
+  // Report a problem or suggest something: GitHub's issue chooser, which hands
+  // these fields to whichever form the reader picks (a field the form lacks is
+  // ignored). Installs that never update keep the address a release shipped,
+  // so it names no template file. It carries the version and the browser and
+  // nothing else; test/feedback.test.mjs checks the bug form has both fields.
+  const REPO_URL = 'https://github.com/StartupBros-com/ai-anti-slop';
+  const FEEDBACK_FIELDS = Object.freeze(['version', 'browser']);
+
+  // The browser's name, major version and platform, such as "Brave 158 on
+  // Windows", from a navigator; '' when it says nothing usable. Chromium
+  // browsers list their own brand beside "Chromium" and a made-up one (Brave:
+  // Chromium 158, "Not.A/Brand" 24, Brave 158), and their user agent string
+  // says Chrome, so the brands come first.
+  function browserName(nav) {
+    if (!nav || typeof nav !== 'object') return '';
+    const d = nav.userAgentData;
+    const brands = d && Array.isArray(d.brands) ? d.brands.filter((b) => b && typeof b.brand === 'string' && !/not.?a.?brand/i.test(b.brand)) : [];
+    const own = brands.find((b) => b.brand !== 'Chromium') || brands[0];
+    const ua = typeof nav.userAgent === 'string' ? nav.userAgent : '';
+    let name = own ? `${own.brand} ${String(own.version || '').split('.')[0]}`.trim() : '';
+    // Edge's and Opera's strings say Chrome too, before their own token.
+    for (const [token, label] of [['Edg', 'Microsoft Edge'], ['OPR', 'Opera'], ['Firefox', 'Firefox'], ['Chrome', 'Chrome']]) {
+      if (name) break;
+      const m = new RegExp(`\\b${token}/(\\d+)`).exec(ua);
+      if (m) name = `${label} ${m[1]}`;
+    }
+    if (!name) return '';
+    let os = d && typeof d.platform === 'string' ? d.platform : '';
+    if (!os) os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'macOS' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+    return (os ? `${name} on ${os}` : name).slice(0, 80);
+  }
+
+  function feedbackUrl(version, browser) {
+    const values = { version, browser };
+    const q = FEEDBACK_FIELDS.filter((k) => typeof values[k] === 'string' && values[k])
+      .map((k) => `${k}=${encodeURIComponent(values[k])}`)
+      .join('&');
+    return `${REPO_URL}/issues/new/choose${q ? `?${q}` : ''}`;
+  }
+
   const api = {
     HANDLE_RE,
     DEFAULTS,
@@ -1794,6 +1834,10 @@
     alsoHideText,
     readSettingsFile,
     importPlan,
+    REPO_URL,
+    FEEDBACK_FIELDS,
+    browserName,
+    feedbackUrl,
   };
   root.XSlopHide = api;
   if (typeof module === 'object' && module && module.exports) module.exports = api;

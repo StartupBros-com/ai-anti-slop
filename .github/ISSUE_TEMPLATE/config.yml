@@ -1,0 +1,13 @@
+# This repository's own chooser, in place of the organization's default forms.
+# Blank issues stay open to everyone, for anything the two forms don't fit.
+blank_issues_enabled: true
+contact_links:
+  - name: An account on clankwall's lists shouldn't be there
+    url: https://clankwall.vogel.dev/
+    about: clankwall runs the AI flags and All flags lists, and Recommended takes most of its accounts from AI flags. Ask for a removal there.
+  - name: An account on levelsio's list shouldn't be there
+    url: https://blockedforaireply.levels.io/
+    about: "@levelsio runs the Blocked for AI reply list, and Recommended includes its accounts blocked with a public reply. Ask for a removal there."
+  - name: Your account is on the readers' list
+    url: https://ai-anti-slop.startupbros.com/
+    about: The readers' list is this project's. Ask for a removal with the form on its page; requests are reviewed by hand.

@@ -839,6 +839,10 @@
     if (changes[K.settings] || Object.keys(changes).some((k) => L.isListKey(k))) draw();
     if (changes[K.settings] || changes[K.share] || changes[K.labelCount]) drawShare();
   });
+  // Report a problem or suggest something, as in the popup.
+  try {
+    $('feedback').setAttribute('href', L.feedbackUrl(chrome.runtime.getManifest().version, L.browserName(globalThis.navigator)));
+  } catch {}
   draw();
   // Opened from the popup's Share your labels: the section is below the
   // lists, which draw after the page loads, so it is scrolled to once drawn.
