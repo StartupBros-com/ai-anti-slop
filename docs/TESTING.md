@@ -689,10 +689,14 @@ levelsio with fixture pages and files (Chromium's `--host-resolver-rules`), and
 passed every request for `ai-anti-slop.startupbros.com` to `wrangler dev`
 4.158.0, the real Worker from `server/` with a local D1 database, so the
 browser applied CORS to the Worker's own answers. Nothing reached the real
-hosts. The thread fixture had a post and three replies. It ran twice: first on
-the tree committed as d60c98b, then after the review fixes on the tree committed
-as 146736d (manifest 0.9.0 both times), with a new local database built from
-the migration. Both runs passed all 16 checks; the table gives the second.
+hosts. The thread fixture had a post and three replies. It ran three times:
+first on the tree committed as d60c98b, then after the review fixes on the tree
+committed as 146736d, then after the fixes from the Pro review, which moved the
+sharing switch out of the settings into the sharing record, on the tree
+committed as a91295a (manifest 0.9.0 each time), each with a new local
+database built from the migration. All three runs passed all 16 checks; the
+table gives the third, whose last share record read `"on":false` with the key
+gone.
 
 | Step | Result |
 |---|---|
