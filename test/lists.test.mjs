@@ -8,6 +8,7 @@ import { lib as L, runContent, page, post, tick, src } from './helpers.mjs';
 const AI = 'https://clankwall.vogel.dev/api/usernames.txt';
 const ALL = 'https://clankwall.vogel.dev/api/accounts.ndjson';
 const LEVELS = 'https://blockedforaireply.levels.io/api/usernames.txt';
+const LEVELS_ND = 'https://blockedforaireply.levels.io/api/accounts.ndjson';
 const nd = (...names) => names.map((n) => JSON.stringify({ username: n, verdict: 'x' })).join('\n');
 const ok = (body, type = 'application/x-ndjson') => ({ ok: true, status: 200, headers: { get: () => type }, text: async () => body });
 const many = (n) => Array.from({ length: n }, (_, i) => `h${i}`);
@@ -17,52 +18,53 @@ const many = (n) => Array.from({ length: n }, (_, i) => `h${i}`);
 test('subscriptions: by default the AI list is on, and All flags and levelsio\'s list are off', () => {
   const subs = L.subscriptions({});
   assert.deepEqual(subs.map((l) => [l.id, l.on, l.builtin, l.mute, l.locked]), [
+    ['recommended', true, true, false, false],
     ['clankwall-ai', true, true, true, false],
     ['clankwall-all', false, true, false, false],
     ['levelsio', false, true, false, false],
   ]);
-  assert.equal(subs[2].url, LEVELS);
-  assert.equal(subs[2].format, 'text');
-  assert.equal(subs[2].about, 'https://blockedforaireply.levels.io/');
-  assert.match(subs[2].note, /judgment calls, not proof\. Hides replies only\.$/);
-  assert.equal(subs[0].url, AI);
-  assert.equal(subs[0].format, 'text');
-  assert.equal(subs[1].url, ALL);
-  assert.equal(subs[1].format, 'clankwall-ndjson');
-  assert.equal(subs[0].about, 'https://clankwall.vogel.dev/?filter=ai');
-  assert.deepEqual(L.enabledLists({}).map((l) => l.id), ['clankwall-ai']);
-  assert.deepEqual(L.subscriptions(null).map((l) => l.id), ['clankwall-ai', 'clankwall-all', 'levelsio']);
+  assert.equal(subs[3].url, LEVELS);
+  assert.equal(subs[3].format, 'text');
+  assert.equal(subs[3].about, 'https://blockedforaireply.levels.io/');
+  assert.match(subs[3].note, /judgment calls, not proof\. Recommended includes the ones blocked with a public reply\. Hides replies only\.$/);
+  assert.equal(subs[1].url, AI);
+  assert.equal(subs[1].format, 'text');
+  assert.equal(subs[2].url, ALL);
+  assert.equal(subs[2].format, 'clankwall-ndjson');
+  assert.equal(subs[1].about, 'https://clankwall.vogel.dev/?filter=ai');
+  assert.deepEqual(L.enabledLists({}).map((l) => l.id), ['recommended', 'clankwall-ai']);
+  assert.deepEqual(L.subscriptions(null).map((l) => l.id), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio']);
 });
 
 test('subscriptions: settings.lists overrides each built-in, and malformed lists is ignored', () => {
   const on = (s) => L.subscriptions(s).map((l) => l.on);
-  assert.deepEqual(on({ lists: { 'clankwall-all': true } }), [true, true, false]);
-  assert.deepEqual(on({ lists: { levelsio: true } }), [true, false, true]);
-  assert.deepEqual(on({ lists: { 'clankwall-ai': false } }), [false, false, false]);
-  assert.deepEqual(on({ lists: { 'clankwall-all': 'yes', levelsio: 1 } }), [true, false, false], 'only true switches a list on');
-  assert.deepEqual(on({ lists: 'junk' }), [true, false, false]);
-  assert.deepEqual(on({ lists: ['clankwall-all'] }), [true, false, false]);
-  assert.deepEqual(L.enabledLists({ lists: { 'clankwall-ai': false, 'clankwall-all': true } }).map((l) => l.id), ['clankwall-all']);
+  assert.deepEqual(on({ lists: { 'clankwall-all': true } }), [true, true, true, false]);
+  assert.deepEqual(on({ lists: { levelsio: true } }), [true, true, false, true]);
+  assert.deepEqual(on({ lists: { 'clankwall-ai': false } }), [true, false, false, false]);
+  assert.deepEqual(on({ lists: { 'clankwall-all': 'yes', levelsio: 1 } }), [true, true, false, false], 'only true switches a list on');
+  assert.deepEqual(on({ lists: 'junk' }), [true, true, false, false]);
+  assert.deepEqual(on({ lists: ['clankwall-all'] }), [true, true, false, false]);
+  assert.deepEqual(L.enabledLists({ lists: { 'clankwall-ai': false, 'clankwall-all': true } }).map((l) => l.id), ['recommended', 'clankwall-all']);
 });
 
 test('subscriptions: the AI list is locked on while muting is on, whatever lists says', () => {
-  const [ai] = L.subscriptions({ muteEnabled: true, lists: { 'clankwall-ai': false } });
+  const [, ai] = L.subscriptions({ muteEnabled: true, lists: { 'clankwall-ai': false } });
   assert.deepEqual([ai.on, ai.locked], [true, true]);
-  const [off] = L.subscriptions({ muteEnabled: false, lists: { 'clankwall-ai': false } });
+  const [, off] = L.subscriptions({ muteEnabled: false, lists: { 'clankwall-ai': false } });
   assert.deepEqual([off.on, off.locked], [false, false]);
-  const [lockedDefault] = L.subscriptions({ muteEnabled: true });
+  const [, lockedDefault] = L.subscriptions({ muteEnabled: true });
   assert.deepEqual([lockedDefault.on, lockedDefault.locked], [true, true]);
 });
 
 test('subscriptions: feedUrl is the AI list address', () => {
-  assert.equal(L.subscriptions({ feedUrl: 'https://mirror.example/ai.txt' })[0].url, 'https://mirror.example/ai.txt');
+  assert.equal(L.subscriptions({ feedUrl: 'https://mirror.example/ai.txt' })[1].url, 'https://mirror.example/ai.txt');
 });
 
 test('subscriptions: added lists follow the built-ins, named by host, path and query', () => {
   const s = { customLists: [{ id: 'uabc', url: 'https://raw.example.com/x/list.txt?token=1#frag', on: true }, { id: 'udef', url: 'https://b.example/l.txt', on: false }] };
   const subs = L.subscriptions(s);
-  assert.deepEqual(subs.map((l) => l.id), ['clankwall-ai', 'clankwall-all', 'levelsio', 'uabc', 'udef']);
-  const [, , , a, b] = subs;
+  assert.deepEqual(subs.map((l) => l.id), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio', 'uabc', 'udef']);
+  const [, , , , a, b] = subs;
   assert.deepEqual(
     { ...a },
     {
@@ -70,6 +72,7 @@ test('subscriptions: added lists follow the built-ins, named by host, path and q
       name: 'raw.example.com/x/list.txt?token=1',
       url: 'https://raw.example.com/x/list.txt?token=1',
       format: 'text',
+      sources: null,
       on: true,
       builtin: false,
       mute: false,
@@ -79,13 +82,13 @@ test('subscriptions: added lists follow the built-ins, named by host, path and q
     },
   );
   assert.equal(b.on, false);
-  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['clankwall-ai', 'uabc']);
+  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['recommended', 'clankwall-ai', 'uabc']);
   assert.deepEqual(L.enabledLists(s, { userscript: true }).map((l) => l.id), ['clankwall-ai']);
 });
 
 test('enabledLists for the userscript: clankwall\'s lists only, never levelsio\'s or an added one', () => {
   const s = { lists: { 'clankwall-all': true, levelsio: true }, customLists: [{ id: 'uabc', url: 'https://raw.example.com/l.txt', on: true }] };
-  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['clankwall-ai', 'clankwall-all', 'levelsio', 'uabc']);
+  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio', 'uabc']);
   assert.deepEqual(L.enabledLists(s, { userscript: true }).map((l) => l.id), ['clankwall-ai', 'clankwall-all']);
 });
 
@@ -93,12 +96,13 @@ test('an added list at levelsio\'s address keeps working next to the built-in, w
   const s = { customLists: [{ id: 'ulev', url: LEVELS, on: true }] };
   const subs = L.subscriptions(s);
   assert.deepEqual(subs.map((l) => [l.id, l.on, l.url]), [
+    ['recommended', true, LEVELS_ND],
     ['clankwall-ai', true, AI],
     ['clankwall-all', false, ALL],
     ['levelsio', false, LEVELS],
     ['ulev', true, LEVELS],
   ]);
-  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['clankwall-ai', 'ulev']);
+  assert.deepEqual(L.enabledLists(s).map((l) => l.id), ['recommended', 'clankwall-ai', 'ulev']);
   assert.deepEqual(L.addListPatch({}, LEVELS, 1), { ok: false, reason: 'That list is already here.' });
   assert.deepEqual(L.listOnPatch(s, 'levelsio', true).patch, { lists: { levelsio: true } });
   assert.deepEqual(L.removeListPatch(s, 'ulev'), { customLists: [] });
@@ -135,7 +139,7 @@ test('subscriptions: malformed added lists are ignored, and at most 5 are read',
     ],
   };
   assert.deepEqual(L.subscriptions(s).filter((l) => !l.builtin).map((l) => l.id), ['u1', 'u2', 'u3', 'u4', 'u5']);
-  assert.deepEqual(L.subscriptions({ customLists: 'nope' }).map((l) => l.id), ['clankwall-ai', 'clankwall-all', 'levelsio']);
+  assert.deepEqual(L.subscriptions({ customLists: 'nope' }).map((l) => l.id), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio']);
 });
 
 // ------------------------------------------------------------------ keys

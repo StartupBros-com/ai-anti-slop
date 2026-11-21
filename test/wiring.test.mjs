@@ -138,6 +138,7 @@ const settle = async () => {
 
 test('background: install fetches the feed, stores it and schedules a 6-hour alarm', async () => {
   const bg = loadBackground(() => ok('Known_Slop\nfake_slop\n'));
+  bg.chrome.store['xsh:settings'] = { lists: { recommended: false } };
   bg.chrome.runtime.onInstalled.fire({ reason: 'install' });
   await settle();
   assert.deepEqual(bg.requests.map((r) => r.url), ['https://clankwall.vogel.dev/api/usernames.txt']);
@@ -170,6 +171,7 @@ test('background: a failed or shrunken refresh keeps the stored list', async () 
 
 test('background: startup refreshes only when due; the popup message forces it', async () => {
   const bg = loadBackground(() => ok('known_slop\n'));
+  bg.chrome.store['xsh:settings'] = { lists: { recommended: false } };
   bg.chrome.store['xsh:list'] = { handles: ['known_slop'], fetchedAt: Date.now(), source: 's' };
   bg.chrome.runtime.onStartup.fire();
   await settle();
@@ -187,6 +189,7 @@ test('background: startup refreshes only when due; the popup message forces it',
 test('background: overlapping triggers share one fetch; a later failure keeps the list', async () => {
   const pending = [];
   const bg = loadBackground(() => new Promise((resolve) => pending.push(resolve)));
+  bg.chrome.store['xsh:settings'] = { lists: { recommended: false } };
   bg.chrome.runtime.onInstalled.fire({});
   await settle();
   let reply;
@@ -225,7 +228,7 @@ test('background: a refresh commits against the list stored now, not the one it 
 
 test('background: a custom feed URL in settings is used', async () => {
   const bg = loadBackground(() => ok('known_slop\n'));
-  bg.chrome.store['xsh:settings'] = { feedUrl: 'https://mirror.example/list.txt' };
+  bg.chrome.store['xsh:settings'] = { feedUrl: 'https://mirror.example/list.txt', lists: { recommended: false } };
   bg.chrome.runtime.onInstalled.fire({});
   await settle();
   assert.equal(bg.requests[0].url, 'https://mirror.example/list.txt');
@@ -962,50 +965,50 @@ test('popup: the tab line leads with the count, says when hiding is paused, and 
     tab: p.document.getElementById('tab').textContent,
     more: p.document.getElementById('tabMore').hidden ? null : p.document.getElementById('tabMore').textContent,
   });
-  let p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} }, {}, tab({}));
+  let p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } }, {}, tab({}));
   await settle();
   assert.deepEqual(read(p), { tab: '14 posts hidden on this tab', more: 'From 9 accounts. Plus 2 posts that tag a bot. 3 on screen now.' });
   assert.equal(p.document.querySelector('#tab .num').textContent, '14', 'the count is its own element, drawn large');
   assert.equal(p.document.getElementById('list').textContent, '2 accounts on the list');
   assert.equal(p.document.getElementById('listAge').textContent, 'From clankwall.vogel.dev, updated just now');
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} }, {}, tab({ hiddenPosts: 1, hiddenAuthors: ['a'], hiddenNow: 1, hiddenMentions: 1 }));
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } }, {}, tab({ hiddenPosts: 1, hiddenAuthors: ['a'], hiddenNow: 1, hiddenMentions: 1 }));
   await settle();
   assert.deepEqual(read(p), { tab: '1 post hidden on this tab', more: 'From 1 account. Plus 1 post that tags a bot. 1 on screen now.' });
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 0, hiddenMentions: 0 }));
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 0, hiddenMentions: 0 }));
   await settle();
   assert.deepEqual(read(p), { tab: '0 posts hidden on this tab', more: null });
   // Only tag hiding hid anything: its count leads, not a 0.
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 2, hiddenMentions: 2 }));
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 2, hiddenMentions: 2 }));
   await settle();
   assert.deepEqual(read(p), { tab: '2 posts hidden on this tab', more: 'Each one tags a bot. 2 on screen now.' });
   assert.equal(p.document.querySelector('#tab .num').textContent, '2');
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 1, hiddenMentions: 1 }));
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } }, {}, tab({ hiddenPosts: 0, hiddenAuthors: [], hiddenNow: 1, hiddenMentions: 1 }));
   await settle();
   assert.deepEqual(read(p), { tab: '1 post hidden on this tab', more: 'It tags a bot. 1 on screen now.' });
   // An x.com tab reports pause; another tab still points at x.com, as in 0.6.1.
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { paused: true } }, {}, tab({ paused: true }));
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { paused: true, lists: { recommended: false } } }, {}, tab({ paused: true }));
   await settle();
   assert.deepEqual(read(p), { tab: 'Hiding is paused', more: 'Turn off Pause hiding to hide posts again.' });
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { paused: true } });
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { paused: true, lists: { recommended: false } } });
   await settle();
   assert.deepEqual(read(p), { tab: 'Open x.com in this tab to see what was hidden.', more: 'If it is already open, reload the tab.' });
-  p = loadPopup({ 'xsh:list': list, 'xsh:settings': {} });
+  p = loadPopup({ 'xsh:list': list, 'xsh:settings': { lists: { recommended: false } } });
   await settle();
   // No answer from the tab: another site, or an x.com tab opened before install.
   assert.deepEqual(read(p), { tab: 'Open x.com in this tab to see what was hidden.', more: 'If it is already open, reload the tab.' });
-  p = loadPopup({ 'xsh:list': { handles: [] }, 'xsh:settings': {} });
+  p = loadPopup({ 'xsh:list': { handles: [] }, 'xsh:settings': { lists: { recommended: false } } });
   await settle();
   assert.equal(p.document.getElementById('listAge').textContent, 'From clankwall.vogel.dev, not fetched yet');
 });
 
 test('popup: a failed refresh says the previous list is still in use only when there is one', async () => {
   const at = Date.now();
-  let p = loadPopup({ 'xsh:list': { handles: ['a'], fetchedAt: at - 3600e3, lastAttemptAt: at, lastError: 'HTTP 503', source: 's' }, 'xsh:settings': {} });
+  let p = loadPopup({ 'xsh:list': { handles: ['a'], fetchedAt: at - 3600e3, lastAttemptAt: at, lastError: 'HTTP 503', source: 's' }, 'xsh:settings': { lists: { recommended: false } } });
   await settle();
   assert.equal(p.document.getElementById('err').hidden, false);
   assert.equal(p.document.getElementById('err').textContent, 'Last refresh failed (just now): HTTP 503. Still using the previous list.');
   // The first fetch failed: there is no previous list to fall back on.
-  p = loadPopup({ 'xsh:list': { handles: [], fetchedAt: 0, lastAttemptAt: at, lastError: 'HTTP 503', source: 's' }, 'xsh:settings': {} });
+  p = loadPopup({ 'xsh:list': { handles: [], fetchedAt: 0, lastAttemptAt: at, lastError: 'HTTP 503', source: 's' }, 'xsh:settings': { lists: { recommended: false } } });
   await settle();
   assert.equal(p.document.getElementById('err').textContent, 'Last refresh failed (just now): HTTP 503.');
   assert.equal(p.document.getElementById('list').textContent, '0 accounts on the list');
@@ -1327,6 +1330,7 @@ test('background: Slop saves the record and adds the account to Also hide once; 
       text: 'hello',
       page: 'https://x.com/op/status/1',
       list: null,
+      lists: [],
       extra: false,
       allow: false,
       hidden: false,
@@ -2788,6 +2792,7 @@ const ALL_KEY = 'xsh:list:clankwall-all';
 const ndjson = (...names) => names.map((n) => JSON.stringify({ username: n, verdict: 'x' })).join('\n');
 const record = (handles, source, extra = {}) => ({ handles, fetchedAt: Date.now(), source, lastAttemptAt: Date.now(), lastError: null, ...extra });
 const ALL_ON = { 'clankwall-all': true };
+const ALL_ONLY = { ...ALL_ON, recommended: false };
 const LEVELS_URL = 'https://blockedforaireply.levels.io/api/usernames.txt';
 const LEVELS_KEY = 'xsh:list:levelsio';
 
@@ -2838,7 +2843,7 @@ async function twoListBackground({ lists = ALL_ON, extra = {}, timers = null } =
 }
 
 test('lists, muting: a sighting of an account only on All flags is not noted; one on the AI list is', async () => {
-  const bg = await twoListBackground();
+  const bg = await twoListBackground({ lists: ALL_ONLY });
   await send(bg, { type: 'xsh:sighting', handle: 'spamonly' }, 7);
   assert.equal(bg.chrome.store['xsh:mutes'], undefined, 'nothing written to the mute record');
   await send(bg, { type: 'xsh:sighting', handle: 'both' }, 7);
@@ -2846,7 +2851,7 @@ test('lists, muting: a sighting of an account only on All flags is not noted; on
 });
 
 test('lists, muting: ticks visit the AI list accounts and never an account only on All flags', async () => {
-  const bg = await twoListBackground();
+  const bg = await twoListBackground({ lists: ALL_ONLY });
   const urls = [];
   for (let i = 0; i < 3; i++) {
     await alarm(bg);
@@ -2861,8 +2866,8 @@ test('lists, muting: ticks visit the AI list accounts and never an account only 
 });
 
 test('lists, muting: Run now waits on the same number with All flags on as with it off', async () => {
-  const on = await twoListBackground({ timers: fakeTimers() });
-  const off = await twoListBackground({ lists: {}, timers: fakeTimers() });
+  const on = await twoListBackground({ lists: ALL_ONLY, timers: fakeTimers() });
+  const off = await twoListBackground({ lists: { recommended: false }, timers: fakeTimers() });
   assert.deepEqual(await runOn(on), { ok: true, waiting: 2 });
   assert.deepEqual(await runOn(off), { ok: true, waiting: 2 });
   await settle();
@@ -2870,7 +2875,7 @@ test('lists, muting: Run now waits on the same number with All flags on as with 
 });
 
 test('lists, muting: an account it muted that is on All flags only is still unmuted, because muting reads the AI list', async () => {
-  const bg = await twoListBackground({ extra: { 'xsh:mutes': { ...lib.emptyMutes(), handles: { spamonly: mutedAs(ME) } } } });
+  const bg = await twoListBackground({ lists: ALL_ONLY, extra: { 'xsh:mutes': { ...lib.emptyMutes(), handles: { spamonly: mutedAs(ME) } } } });
   await alarm(bg);
   const tab = lastTab(bg);
   assert.equal(tab.url, 'https://x.com/spamonly');
@@ -2880,10 +2885,10 @@ test('lists, muting: an account it muted that is on All flags only is still unmu
 });
 
 test('lists, fetching: switching All flags on fetches the NDJSON once and stores it under its own key', async () => {
-  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': {} } });
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': { lists: { recommended: false } } } });
   await startup(bg);
   assert.deepEqual(bg.requests, []);
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ONLY } });
   await settle();
   assert.deepEqual(bg.requests.map((r) => r.url), [ALL_URL]);
   const rec = bg.chrome.store[ALL_KEY];
@@ -2892,17 +2897,17 @@ test('lists, fetching: switching All flags on fetches the NDJSON once and stores
   assert.equal(rec.seq, 1);
   assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly', 'both'], 'the AI record is untouched');
   // Off, then on again while the record is fresh: no second fetch.
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false } } });
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false, recommended: false } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ONLY } });
   await settle();
   assert.equal(bg.requests.length, 1);
 });
 
 test('lists, fetching: switching levelsio\'s list on fetches its text file once and stores it under its own key', async () => {
-  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': {} }, otherBody: 'levelsonly\nboth\n' });
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': { lists: { recommended: false } } }, otherBody: 'levelsonly\nboth\n' });
   await startup(bg);
   assert.deepEqual(bg.requests, [], 'off by default, so nothing fetched');
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { levelsio: true } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { levelsio: true, recommended: false } } });
   await settle();
   assert.deepEqual(bg.requests.map((r) => r.url), [LEVELS_URL]);
   const rec = bg.chrome.store[LEVELS_KEY];
@@ -2912,7 +2917,7 @@ test('lists, fetching: switching levelsio\'s list on fetches its text file once 
 });
 
 test('lists, muting: a sighting of an account only on levelsio\'s list is not noted', async () => {
-  const bg = await twoListBackground({ lists: { levelsio: true }, extra: { [LEVELS_KEY]: record(['levelsonly'], LEVELS_URL) } });
+  const bg = await twoListBackground({ lists: { levelsio: true, recommended: false }, extra: { [LEVELS_KEY]: record(['levelsonly'], LEVELS_URL) } });
   await send(bg, { type: 'xsh:sighting', handle: 'levelsonly' }, 7);
   assert.equal(bg.chrome.store['xsh:mutes'], undefined, 'nothing written to the mute record');
 });
@@ -2922,19 +2927,19 @@ test('lists, fetching: a record that came from another address, or is due, is fe
     store: {
       'xsh:list': record(['aionly'], AI_URL),
       [ALL_KEY]: record(['old1'], 'https://elsewhere.example/a.ndjson'),
-      'xsh:settings': {},
+      'xsh:settings': { lists: { recommended: false } },
     },
   });
   await startup(bg);
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ONLY } });
   await settle();
   assert.equal(bg.requests.length, 1);
   assert.deepEqual(bg.chrome.store[ALL_KEY].handles, ['both', 'spamonly']);
   // Seven hours old: due.
   const stale = Date.now() - 7 * 3600e3;
   bg.chrome.store[ALL_KEY] = record(['old2'], ALL_URL, { fetchedAt: stale, lastAttemptAt: stale });
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false } } });
-  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: { 'clankwall-all': false, recommended: false } } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ONLY } });
   await settle();
   assert.equal(bg.requests.length, 2);
 });
@@ -2944,7 +2949,7 @@ test('lists, fetching: a label, an Also hide edit, a bot row or muting on start 
     store: {
       'xsh:list': record(['aionly'], AI_URL),
       [ALL_KEY]: record(['spamonly'], ALL_URL),
-      'xsh:settings': { labeling: true, lists: ALL_ON },
+      'xsh:settings': { labeling: true, lists: ALL_ONLY },
     },
   });
   await startup(bg);
@@ -2957,15 +2962,15 @@ test('lists, fetching: a label, an Also hide edit, a bot row or muting on start 
 });
 
 test('lists, fetching: adding a list fetches its address, and removing it deletes its record', async () => {
-  const bg = listsBackground({ store: { 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': {} } });
+  const bg = listsBackground({ store: { 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': { lists: { recommended: false } } } });
   await startup(bg);
   const mine = { id: 'uabc', url: 'https://raw.example.com/x/list.txt', on: true };
-  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [mine] } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [mine], lists: { recommended: false } } });
   await settle();
   assert.deepEqual(bg.requests.map((r) => r.url), [mine.url]);
   assert.deepEqual(bg.chrome.store['xsh:list:uabc'].handles, ['custom1', 'custom2']);
   assert.equal(bg.requests[0].init.credentials, 'omit');
-  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [] } });
+  await bg.chrome.storage.local.set({ 'xsh:settings': { customLists: [], lists: { recommended: false } } });
   await settle();
   assert.equal('xsh:list:uabc' in bg.chrome.store, false);
   assert.equal(bg.requests.length, 1);
@@ -2992,7 +2997,7 @@ test('lists, fetching: xsh:refresh and the alarm fetch only the lists that are o
     store: {
       'xsh:list': record(['aionly', 'both'], AI_URL),
       [ALL_KEY]: record(['spamonly'], ALL_URL),
-      'xsh:settings': { lists: { 'clankwall-all': false }, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
+      'xsh:settings': { lists: { 'clankwall-all': false, recommended: false }, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
     },
   });
   const r = await reply(send(bg, { type: 'xsh:refresh' }, undefined));
@@ -3006,13 +3011,13 @@ test('lists, fetching: xsh:refresh and the alarm fetch only the lists that are o
 
 test('lists, fetching: with several lists on, refresh fetches each, counts the union and names the first failure', async () => {
   const bg = listsBackground({
-    store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': { lists: ALL_ON } },
+    store: { 'xsh:list': record(['aionly', 'both'], AI_URL), 'xsh:settings': { lists: ALL_ONLY } },
   });
   assert.deepEqual(await reply(send(bg, { type: 'xsh:refresh' }, undefined)), { ok: true, reason: null, count: 3 });
   assert.deepEqual(bg.requests.map((q) => q.url).sort(), [ALL_URL, AI_URL].sort());
   // The NDJSON list fails; the AI list's own record still updates.
   const failing = loadBackground((url) => (url === ALL_URL ? { ok: false, status: 503, headers: { get: () => null }, text: async () => '' } : ok('aionly\nboth\n')));
-  Object.assign(failing.chrome.store, { 'xsh:list': record(['aionly', 'both'], AI_URL), [ALL_KEY]: record(['both', 'spamonly'], ALL_URL), 'xsh:settings': { lists: ALL_ON } });
+  Object.assign(failing.chrome.store, { 'xsh:list': record(['aionly', 'both'], AI_URL), [ALL_KEY]: record(['both', 'spamonly'], ALL_URL), 'xsh:settings': { lists: ALL_ONLY } });
   assert.deepEqual(await reply(send(failing, { type: 'xsh:refresh' }, undefined)), {
     ok: false,
     reason: 'clankwall: All flags: HTTP 503',
@@ -3025,6 +3030,7 @@ test('lists, fetching: with several lists on, refresh fetches each, counts the u
 
 test('lists, fetching: with only the AI list on, the refresh reply is the one it always was', async () => {
   const bg = loadBackground(() => ({ ok: false, status: 503, headers: { get: () => null }, text: async () => '' }));
+  bg.chrome.store['xsh:settings'] = { lists: { recommended: false } };
   bg.chrome.store['xsh:list'] = record(['known_slop'], AI_URL);
   assert.deepEqual(await reply(send(bg, { type: 'xsh:refresh' }, undefined)), { ok: false, reason: 'HTTP 503', count: 1 });
 });
@@ -3035,7 +3041,7 @@ test('lists, fetching: startup refreshes each list that is on and due, and no ot
     store: {
       'xsh:list': record(['aionly'], AI_URL),
       [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: stale, lastAttemptAt: stale }),
-      'xsh:settings': { lists: ALL_ON, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
+      'xsh:settings': { lists: ALL_ONLY, customLists: [{ id: 'uoff', url: 'https://off.example/l.txt', on: false }] },
     },
   });
   await startup(bg);
@@ -3119,7 +3125,7 @@ test('popup: with two lists on it says how many accounts on how many lists and h
   const p = loadPopup({
     'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 2 * 3600e3 }),
     [ALL_KEY]: record(['both', 'spamonly'], ALL_URL),
-    'xsh:settings': { lists: ALL_ON },
+    'xsh:settings': { lists: ALL_ONLY },
   });
   await settle();
   const text = (id) => p.document.getElementById(id).textContent;
@@ -3133,7 +3139,7 @@ test('popup: with only the AI list on the list lines are what they always were',
   const p = loadPopup({
     'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 3600e3 }),
     [ALL_KEY]: record(['spamonly'], ALL_URL),
-    'xsh:settings': {},
+    'xsh:settings': { lists: { recommended: false } },
   });
   await settle();
   const text = (id) => p.document.getElementById(id).textContent;
@@ -3145,7 +3151,7 @@ test('popup: a list never fetched, a failing list and no list at all', async () 
   const at = Date.now();
   let p = loadPopup({
     'xsh:list': record(['aionly'], AI_URL),
-    'xsh:settings': { lists: ALL_ON },
+    'xsh:settings': { lists: ALL_ONLY },
   });
   await settle();
   assert.equal(p.document.getElementById('list').textContent, '1 account on 2 lists');
@@ -3153,7 +3159,7 @@ test('popup: a list never fetched, a failing list and no list at all', async () 
   p = loadPopup({
     'xsh:list': record(['aionly'], AI_URL),
     [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: at - 3600e3, lastAttemptAt: at, lastError: 'HTTP 503' }),
-    'xsh:settings': { lists: ALL_ON },
+    'xsh:settings': { lists: ALL_ONLY },
   });
   await settle();
   assert.equal(p.document.getElementById('err').hidden, false);
@@ -3161,11 +3167,11 @@ test('popup: a list never fetched, a failing list and no list at all', async () 
   p = loadPopup({
     'xsh:list': record(['aionly'], AI_URL),
     [ALL_KEY]: record(['spamonly'], ALL_URL, { fetchedAt: 0, lastAttemptAt: at, lastError: 'HTTP 503' }),
-    'xsh:settings': { lists: ALL_ON },
+    'xsh:settings': { lists: ALL_ONLY },
   });
   await settle();
   assert.equal(p.document.getElementById('err').textContent, 'clankwall: All flags: last refresh failed (just now): HTTP 503.');
-  p = loadPopup({ 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': { lists: { 'clankwall-ai': false } } });
+  p = loadPopup({ 'xsh:list': record(['aionly'], AI_URL), 'xsh:settings': { lists: { 'clankwall-ai': false, recommended: false } } });
   await settle();
   assert.equal(p.document.getElementById('list').textContent, 'No list is on');
   assert.equal(p.document.getElementById('listAge').textContent, '');
@@ -3175,7 +3181,7 @@ test('popup: a list never fetched, a failing list and no list at all', async () 
 test('popup: while it is open, a list fetched or turned on elsewhere redraws the list lines, and what the user typed stays', async () => {
   const p = loadPopup({
     'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 3600e3 }),
-    'xsh:settings': {},
+    'xsh:settings': { lists: { recommended: false } },
   });
   await settle();
   const $ = (id) => p.document.getElementById(id);
@@ -3187,7 +3193,7 @@ test('popup: while it is open, a list fetched or turned on elsewhere redraws the
   assert.equal($('list').textContent, '3 accounts on the list');
   assert.equal($('listAge').textContent, 'From clankwall.vogel.dev, updated just now');
   // All flags is turned on in the settings page; then its first fetch lands.
-  await p.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ON } });
+  await p.chrome.storage.local.set({ 'xsh:settings': { lists: ALL_ONLY } });
   await settle();
   assert.equal($('list').textContent, '3 accounts on 2 lists');
   assert.equal($('listAge').textContent, 'From 2 lists, not all fetched yet');
@@ -3234,7 +3240,7 @@ function flip(s, id, checked) {
 
 const stat = (s, id) => s.$(`stat-${id}`).textContent;
 
-test('settings page: the Lists section is first, retitled, and shows the three built-in lists', async () => {
+test('settings page: the Lists section is first, retitled, and shows the four built-in lists', async () => {
   const s = loadSettings({ 'xsh:list': record(['aionly', 'both'], AI_URL, { fetchedAt: Date.now() - 5 * 60e3 }), 'xsh:settings': {} });
   await settle();
   assert.equal(s.document.title, 'AI Anti-Slop settings');
@@ -3243,17 +3249,17 @@ test('settings page: the Lists section is first, retitled, and shows the three b
   assert.equal(s.document.querySelector('main section').id, 'listsCard');
   assert.equal(s.document.querySelector('#listsCard h2').textContent, 'Lists');
   assert.equal(s.document.querySelector('#listsCard > p').textContent, 'Replies by any account on a list that is on are hidden. Always show, in the popup, beats every list.');
-  assert.equal(s.$('summary').textContent, 'Hiding replies from 2 accounts on 1 list.');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 2 accounts on 2 lists.');
   assert.deepEqual([...s.document.querySelectorAll('#listRows h3')].map((h) => h.textContent), ['Built in', 'Added by you · 0 of 5']);
   assert.equal(s.$('ownRows').hidden, true, 'no empty list of added lists');
-  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio']);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio']);
   const ai = rowOf(s, 'clankwall-ai');
   const all = rowOf(s, 'clankwall-all');
   const lev = rowOf(s, 'levelsio');
   assert.equal(lev.querySelector('label').textContent, 'levelsio: Blocked for AI reply');
   assert.equal(lev.querySelector('input').checked, false);
   assert.equal(stat(s, 'levelsio'), 'Off');
-  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Hides replies only\./);
+  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Recommended includes the ones blocked with a public reply\. Hides replies only\./);
   assert.equal(lev.querySelector('a').getAttribute('href'), 'https://blockedforaireply.levels.io/');
   assert.equal(lev.querySelector('button'), null, 'a built-in list has no Remove');
   assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
@@ -3384,12 +3390,12 @@ test('settings page: an added list shows its error, what to do, and Remove; Remo
       'Until then it hides the 1 account from the last good download.',
     reported: 'Reported: HTTP 404',
   });
-  assert.equal(s.$('summary').textContent, 'Hiding replies from 1 account on 3 lists. 2 lists need a look.');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 1 account on 4 lists. 2 lists need a look.');
   assert.equal(a.querySelector('a'), null, 'an added list has no About link');
   s.click('rm-uabc');
   await settle();
   assert.deepEqual(s.chrome.store['xsh:settings'].customLists.map((c) => c.id), ['udef']);
-  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['clankwall-ai', 'clankwall-all', 'levelsio', 'udef']);
+  assert.deepEqual(rows(s).map((r) => r.getAttribute('data-list')), ['recommended', 'clankwall-ai', 'clankwall-all', 'levelsio', 'udef']);
   // Undo takes the removed row's place, and focus.
   const first = s.document.querySelector('#ownRows li');
   assert.equal(first.hasAttribute('data-undo'), true);
@@ -3811,7 +3817,7 @@ test('settings page: a failed built-in list says when it tries again, and a stal
   });
   assert.equal(failNote(s, 'clankwall-ai'), null, 'not downloaded yet is not a failure');
   assert.equal(stat(s, 'clankwall-ai'), 'Not downloaded yet');
-  assert.equal(s.$('summary').textContent, 'Hiding replies from 3 accounts on 3 lists. 2 lists need a look.');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 3 accounts on 4 lists. 2 lists need a look.');
   // Switched off, a list shows no failure.
   flip(s, 'clankwall-all', false);
   await settle();
@@ -3852,12 +3858,12 @@ test('settings page: every download failure reason gets its own explanation', as
 });
 
 test('settings page: the summary says when no list is on and when hiding is paused', async () => {
-  const off = loadSettings({ 'xsh:settings': { lists: { 'clankwall-ai': false } } });
+  const off = loadSettings({ 'xsh:settings': { lists: { 'clankwall-ai': false, recommended: false } } });
   await settle();
   assert.equal(off.$('summary').textContent, 'No list is on.');
   const paused = loadSettings({ 'xsh:list': record(['h1'], AI_URL), 'xsh:settings': { paused: true } });
   await settle();
-  assert.equal(paused.$('summary').textContent, 'Hiding is paused in the popup. When it is on, it hides replies from 1 account on 1 list.');
+  assert.equal(paused.$('summary').textContent, 'Hiding is paused in the popup. When it is on, it hides replies from 1 account on 2 lists.');
 });
 
 test('settings page: an open About stays open when the lists draw again', async () => {
@@ -3916,4 +3922,116 @@ test('settings page: the lists message sits inside a live region that is always 
   assert.equal(msg.hasAttribute('role'), false);
   assert.equal(msg.parentElement.getAttribute('role'), 'status');
   assert.equal(msg.parentElement.hasAttribute('hidden'), false);
+});
+
+// ------------------------------------------------- Recommended (#79)
+
+const LV_ND = 'https://blockedforaireply.levels.io/api/accounts.ndjson';
+const REC_KEY = 'xsh:list:recommended';
+const lvRow = (username, tier = 'confirmed') =>
+  JSON.stringify({ username, levelsio: tier, evidence: tier === 'confirmed' ? [{ text: 'AI bot' }] : [] });
+const lvBody = (names, extra = []) => [...names.map((n) => lvRow(n)), ...extra.map((n) => lvRow(n, 'blocked'))].join('\n');
+const recRecord = (aiPart, lvPart, extra = {}) =>
+  record([...new Set([...aiPart, ...lvPart])].sort(), LV_ND, { parts: [{ source: AI_URL, handles: aiPart }, { source: LV_ND, handles: lvPart }], ...extra });
+
+test('Recommended: on by default, so install fetches its two files and stores each part; a part that halves keeps the old record', async () => {
+  const lv = Array.from({ length: 24 }, (_, i) => `lv${String(i).padStart(2, '0')}`);
+  let body = lvBody(lv, ['old_block']);
+  const bg = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : url === LV_ND ? body : 'nope'));
+  bg.chrome.runtime.onInstalled.fire({ reason: 'install' });
+  await settle();
+  // AI flags is on too, so clankwall's file is fetched once for each list.
+  assert.deepEqual(bg.requests.map((r) => r.url).sort(), [AI_URL, AI_URL, LV_ND].sort());
+  const rec = bg.chrome.store[REC_KEY];
+  assert.deepEqual(rec.handles, ['aionly', 'both', ...lv]);
+  assert.deepEqual(rec.parts, [
+    { source: AI_URL, handles: ['aionly', 'both'] },
+    { source: LV_ND, handles: lv },
+  ]);
+  assert.deepEqual([rec.source, rec.lastError, rec.seq], [LV_ND, null, 1]);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly', 'both']);
+  // levelsio's part falls from 24 to 4; clankwall's is unchanged.
+  body = lvBody(lv.slice(0, 4));
+  assert.deepEqual(await reply(send(bg, { type: 'xsh:refresh' }, undefined)), {
+    ok: false,
+    reason: 'Recommended: blockedforaireply.levels.io: list shrank from 24 to 4',
+    count: 26,
+  });
+  const kept = bg.chrome.store[REC_KEY];
+  assert.deepEqual([kept.handles, kept.parts, kept.seq], [rec.handles, rec.parts, 1]);
+  assert.equal(kept.lastError, 'blockedforaireply.levels.io: list shrank from 24 to 4');
+  // Switched off, it is not fetched.
+  const off = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : body));
+  off.chrome.store['xsh:settings'] = { lists: { recommended: false } };
+  off.chrome.runtime.onInstalled.fire({ reason: 'install' });
+  await settle();
+  assert.deepEqual(off.requests.map((r) => r.url), [AI_URL]);
+  assert.equal(REC_KEY in off.chrome.store, false);
+});
+
+test('Recommended: a label names the host of the file that holds the account, and Recommended once', async () => {
+  const bg = labelBackground({
+    settings: { labeling: true },
+    handles: ['aionly'],
+    source: AI_URL,
+    store: { [REC_KEY]: recRecord(['aionly'], ['reply_a', 'lv_b']) },
+  });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  const rec = bg.chrome.store['xsh:label:2'];
+  assert.deepEqual([rec.list, rec.lists, rec.hidden], ['blockedforaireply.levels.io', ['recommended'], true]);
+  // An account in clankwall's file names clankwall, under both lists that hold it.
+  const ai = labelBackground({
+    settings: { labeling: true },
+    handles: ['reply_a'],
+    source: AI_URL,
+    store: { [REC_KEY]: recRecord(['reply_a'], ['lv_b']) },
+  });
+  await reply(send(ai, LABEL_MSG, 7));
+  const both = ai.chrome.store['xsh:label:2'];
+  assert.deepEqual([both.list, both.lists], ['clankwall.vogel.dev', ['recommended', 'clankwall-ai']]);
+});
+
+test('Recommended: the settings page shows it first and on, with its note and a removal link for each site', async () => {
+  const s = loadSettings({
+    'xsh:list': record(['aionly', 'both'], AI_URL),
+    [REC_KEY]: recRecord(['aionly', 'both'], ['lv_a', 'lv_b', 'lv_c']),
+    'xsh:settings': {},
+  });
+  await settle();
+  assert.equal(rows(s)[0].getAttribute('data-list'), 'recommended');
+  const rec = rowOf(s, 'recommended');
+  assert.equal(rec.querySelector('label').textContent, 'Recommended');
+  assert.equal(rec.querySelector('input').checked, true);
+  assert.equal(rec.querySelector('input').disabled, false);
+  assert.equal(stat(s, 'recommended'), '5 accounts · updated just now');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 5 accounts on 2 lists.');
+  assert.equal(rec.querySelector('details summary').textContent, 'About Recommended');
+  assert.match(rec.textContent, /AI Anti-Slop's pick from two of the lists below: clankwall's AI flags, plus the accounts @levelsio blocked with a public reply, each linked on levelsio's page\. Both sites say their flags are not proof\. Hides replies only; muting uses clankwall's AI flags\./);
+  assert.deepEqual(
+    [...rec.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent, a.getAttribute('target'), a.getAttribute('rel')]),
+    [
+      ['https://clankwall.vogel.dev/?filter=ai', "clankwall's page, where you can ask for a removal", '_blank', 'noopener'],
+      ['https://blockedforaireply.levels.io/', "levelsio's page, where you can ask for a removal", '_blank', 'noopener'],
+    ],
+  );
+  assert.equal(rec.querySelector('button'), null, 'a built-in list has no Remove');
+  // Switching it off is stored like any built-in's switch.
+  flip(s, 'recommended', false);
+  await settle();
+  assert.deepEqual(s.chrome.store['xsh:settings'], { lists: { recommended: false } });
+  assert.equal(stat(s, 'recommended'), 'Off');
+  assert.equal(s.$('summary').textContent, 'Hiding replies from 2 accounts on 1 list.');
+});
+
+test('Recommended: in the default state the popup counts both lists', async () => {
+  const p = loadPopup({
+    'xsh:list': record(['aionly', 'both'], AI_URL),
+    [REC_KEY]: recRecord(['aionly', 'both'], ['lv_a']),
+    'xsh:settings': {},
+  });
+  await settle();
+  const text = (id) => p.document.getElementById(id).textContent;
+  assert.equal(text('list'), '3 accounts on 2 lists');
+  assert.equal(text('listAge'), 'From 2 lists, oldest updated just now');
+  assert.equal(p.document.getElementById('err').hidden, true);
 });

@@ -276,6 +276,7 @@ test('content: a label read throwing synchronously after an update raises nothin
           // The page loaded while the extension was there; the label read comes after it was cut off.
           get(keys) {
             if (keys.includes('xsh:list')) return Promise.resolve({ 'xsh:list': { handles: [], fetchedAt: 1 }, 'xsh:settings': { labeling: true } });
+            if (keys.some((k) => String(k).startsWith('xsh:list:'))) return Promise.resolve({});
             labelReads.push(keys);
             throw new Error('Extension context invalidated.');
           },

@@ -8,8 +8,8 @@
   const subscribers = [];
 
   // The handles of clankwall's lists that are on, as one list. The userscript
-  // reads neither levelsio's list nor an added one: its @connect names
-  // clankwall only.
+  // reads neither Recommended, levelsio's list nor an added one: its @connect
+  // names clankwall only.
   const read = () => {
     const settings = GM_getValue(K.settings, {});
     const recs = L.enabledLists(settings, { userscript: true }).map((l) => GM_getValue(L.listKey(l.id), null));

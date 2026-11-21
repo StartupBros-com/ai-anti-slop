@@ -7,7 +7,9 @@ to both old repositories redirect here.
 
 AI Anti-Slop hides posts on x.com whose author is on
 [clankwall](https://clankwall.vogel.dev/)'s public list of AI-reply spam
-accounts, and can also mute those accounts on your X account. You can add
+accounts (in the extension, also on @levelsio's list of accounts blocked
+with a public reply), and can also mute the accounts on clankwall's list on
+your X account. You can add
 accounts of your own, choose Show, Hide or Mute for each of six answer bots
 such as @grok and @AskPerplexity, and hide posts that tag one of those bots.
 In the extension, a button on each post [hides it as slop](#labels) and adds
@@ -29,8 +31,10 @@ it on.
 The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
-extension you can also switch on clankwall's wider "All flags" list (2,811
-accounts on 2026-11-19, AI and spam), levelsio's "Blocked for AI reply" list
+extension the list that starts on is **Recommended**: that list plus the
+accounts levelsio blocked with a public reply, 1,306 accounts on 2026-11-21.
+You can also switch on clankwall's wider "All flags" list (2,811
+accounts on 2026-11-19, AI and spam), the whole of levelsio's "Blocked for AI reply" list
 (3,734 accounts on 2026-11-19), or add a list of handles by its address;
 see [Lists](#lists). Muting uses the AI flags list alone. AI Anti-Slop does not
 maintain any of these lists; see [Whose list is it?](#whose-list-is-it).
@@ -260,14 +264,29 @@ seconds after.
 
 | List | Address | Starts |
 |---|---|---|
+| Recommended | `https://clankwall.vogel.dev/api/usernames.txt` and `https://blockedforaireply.levels.io/api/accounts.ndjson` | On |
 | clankwall: AI flags | `https://clankwall.vogel.dev/api/usernames.txt` | On |
 | clankwall: All flags | `https://clankwall.vogel.dev/api/accounts.ndjson` | Off |
 | levelsio: Blocked for AI reply | `https://blockedforaireply.levels.io/api/usernames.txt` | Off |
 | A list you add | The address you type | On, once added |
 
+- **Recommended** is AI Anti-Slop's pick: every account on AI flags, plus the
+  accounts on levelsio's list that were blocked with a public reply, which
+  levelsio's page links to. The extension builds it from the two files above: it keeps a
+  row of levelsio's `accounts.ndjson` only when the row says
+  `"levelsio": "confirmed"` and has at least one item under `evidence`. It held
+  1,306 accounts on 2026-11-21, 786 from AI flags and 521 from levelsio's file,
+  with 1 on both. levelsio's other accounts, blocked with no reply or copied
+  from clankwall, are left out. Each file is checked on its own, against its
+  own part of the stored copy; if either fails, Recommended keeps its previous
+  copy whole and names the file's host. It hides only, and only in the
+  extension: the userscript cannot fetch levelsio's file. It is on after the
+  update that adds it, as on a new install, until you switch it off. AI flags
+  is on too, so its file is downloaded once for each list.
 - **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
   2026-11-19. Muting uses it alone, so it stays switched on while muting is
-  on. To switch it off, turn muting off first.
+  on. To switch it off, turn muting off first. Recommended includes it, so
+  while Recommended is on, switching AI flags off hides no fewer posts.
 - **All flags** is every account clankwall flagged, for AI replies or spam:
   2,811 accounts on 2026-11-19, 787 of them also on AI flags. clankwall's
   homepage shows the same two views under those names. Most of the 2,024 not on
@@ -301,8 +320,8 @@ seconds after.
   safe](#how-list-updates-stay-safe)). One that fails keeps its previous copy
   and leaves the others as they are.
 - Export and import never carry the lists or their switches.
-- The userscript has clankwall's two lists, not levelsio's, and no lists of
-  your own. **Hide every account clankwall flagged / AI flags only** in its
+- The userscript has clankwall's two lists, not Recommended or levelsio's,
+  and no lists of your own. **Hide every account clankwall flagged / AI flags only** in its
   menu switches All flags on or off.
 
 ## Muting
@@ -605,8 +624,8 @@ A record holds:
 | `url` | The post's link, `https://x.com/handle/status/id` |
 | `text` | The first 1,000 characters of the post's own text (not a post it quotes), with its emoji |
 | `page` | The post page it was labelled on, or `null` on any other page, such as the home timeline |
-| `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null` |
-| `lists` | Only when a list other than AI flags was on: the lists that were on and had the account, `clankwall-ai` (AI flags), `clankwall-all` (All flags), `levelsio` (levelsio's list), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
+| `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null`. For Recommended, the host of the file that had it: `clankwall.vogel.dev` or `blockedforaireply.levels.io` |
+| `lists` | Only when a list other than AI flags was on (Recommended starts on): the lists that were on and had the account, `recommended` (Recommended), `clankwall-ai` (AI flags), `clankwall-all` (All flags), `levelsio` (levelsio's list), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
 | `extra`, `allow` | Whether the account was in Also hide or Always show before this click |
 | `hidden` | Whether AI Anti-Slop hid the account's posts on that page then, leaving out Pause and tag hiding |
 
@@ -664,6 +683,13 @@ The AI flags and All flags lists are clankwall's, not this project's;
 levelsio's list is @levelsio's; and a list you add is whoever publishes it.
 Neither AI Anti-Slop nor its developers check a list you add.
 
+Recommended is a rule over clankwall's and levelsio's lists, not a list of
+this project's. The extension applies it to their files as they are
+published; AI Anti-Slop adds or removes no account by hand and hosts no
+copy. An account leaves Recommended once it is neither on AI flags nor among
+levelsio's confirmed accounts, and the removal routes are those two sites'
+own, below.
+
 The AI flags list is clankwall's, not this project's. clankwall's homepage says "Flags
 aren’t proof of AI use." and states no licence or uptime terms. AI Anti-Slop
 fetches it at run time and does not copy it into this repository.
@@ -685,11 +711,15 @@ AI Anti-Slop is not affiliated with X Corp, with clankwall or with levelsio.
 
 Each list is fetched and checked on its own, and an update replaces that
 list's stored copy only if it looks like a list. If the fetch
-fails, times out, returns HTML, is over 1 MB (8 MB for All flags, whose lines
-are JSON) or 50,000 handles, is mostly lines
+fails, times out, returns HTML, is over 1 MB (8 MB for All flags and
+levelsio's `accounts.ndjson`, whose lines are JSON) or 50,000 handles, is mostly lines
 that are not handles, is empty, or has fewer than half as many handles as the
 stored list (once that list has 20 or more), the previous list stays in place
 and the popup shows why. A broken or truncated feed cannot empty your filter.
+Recommended's two files are each checked this way, against that file's own
+part of the stored copy, so levelsio's rows losing the field that marks them
+confirmed counts as an empty file even while clankwall's part is fine. If
+either file fails, all of Recommended keeps its previous copy.
 
 ## Permissions and privacy
 
@@ -723,7 +753,10 @@ The privacy policy, with what each storage key holds, is
   fetch, from the background worker, for each list that is on: clankwall's
   at `clankwall.vogel.dev` (the only host permission), levelsio's at
   `blockedforaireply.levels.io`, and each list you add at its own address.
-  levelsio's list and a list you add are fetched with no host permission, so
+  Recommended, which starts on, fetches one file from each of the first two
+  hosts: about 9 KB from clankwall and about 1 MB from levelsio (2026-11-21),
+  every 6 hours.
+  levelsio's files and a list you add are fetched with no host permission, so
   the browser lets the extension read one only when its host allows other
   sites to (an `Access-Control-Allow-Origin` header; levelsio's sends `*`). Every fetch sends no cookies
   (`credentials: 'omit'`) and bypasses the cache. The userscript fetches
