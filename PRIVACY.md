@@ -188,7 +188,10 @@ of five fields:
 
 With them goes a random code, 32 hexadecimal characters made in your browser
 when you first turn sharing on, so that your reports count as one reader's and
-can be deleted together. It is not linked to your X account.
+can be deleted together. The code is not your X handle and is made without it.
+A report can still point to you: labelling replies under a post of your own
+sends that post's id as the page you were on, and the post pages you label on
+say which threads you read.
 
 **What is never sent:** the post's words, its address or the page's address
 (beyond the two ids), your X handle, the label's other fields (which lists or
@@ -198,8 +201,10 @@ the muting record.
 **When.** A label is sent about 30 seconds or more after it is saved, so labels
 made close together go in one request of up to 50. When you turn sharing on,
 the labels already saved are sent too only if you tick **Also share the N
-labels already saved**. Clearing a label sends a retraction for its post, and
-**Delete all labels** sends one for every label. A request goes to
+labels already saved**. While sharing is on, clearing a label sends a
+retraction for its post, and **Delete all labels** sends one for every label.
+With sharing off neither does, so a report already sent stays until it is 90
+days old or you click **Delete what I shared**. A request goes to
 `https://ai-anti-slop.startupbros.com/v1/reports` (`/v1/retract` for a
 retraction), as plain text with no cookies. If the server cannot be reached,
 the request is tried again 30 minutes later; if it asks to wait, as it does
@@ -226,8 +231,10 @@ deleted 90 days after it arrives.
 
 **What is published.** The readers' list at
 `https://ai-anti-slop.startupbros.com/v1/list.ndjson`: each listed account's
-handle, how many browsers reported it and the day it was first listed, and, at
-`/v1/changes`, which accounts each rebuild added or removed. An account is
+handle, how many browsers reported it and the day it was first listed; at
+`/v1/changes`, which accounts each rebuild added or removed; and at
+`/v1/status`, the totals of listed accounts, stored reports and browsers that
+sent them, with the time of the last build. An account is
 listed once three or more browsers on two or more networks have reported it as
 slop in two or more threads, counting only reports a day old or more from
 browsers the server first heard from a week or more before, and at least three
@@ -285,7 +292,8 @@ including the Limited Use requirements.
   **Always show** stay there; remove them in the popup.
 - **Turn off sharing** stops sending and drops what is waiting. **Delete what
   I shared** deletes, on the server, every report from this browser, then the
-  browser's code. Clearing one label takes its report back.
+  browser's code. While sharing is on, clearing one label takes its report
+  back.
 - Removing the extension deletes everything it stored in the browser. It does
   not delete reports already shared; use **Delete what I shared** first.
 

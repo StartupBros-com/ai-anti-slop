@@ -668,7 +668,8 @@ saved too (**Also share the N labels already saved**), unticked.
   on, so the server can count one install once and delete its reports. The
   settings page lists all of it before the button.
 - Labels go about 30 seconds after they are saved, up to 50 in a request.
-  Clearing a label, or **Delete all labels**, takes its report back. When the
+  While sharing is on, clearing a label, or **Delete all labels**, takes its
+  report back; with sharing off, reports already sent stay. When the
   server cannot be reached, the request waits 30 minutes; when it asks to
   wait (past 100 reports from one install in a UTC day, say), it waits as long
   as it is told, up to 26 hours. At most 4,000 reports wait at once; past
