@@ -13,19 +13,14 @@ the store added an `update_url` to `manifest.json` and a
 `_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.9.0,
-field by field. 0.8.0 went to review on 2026-11-18 with the v0.8.0-era text: no Run now
-sentence, Slop and Not slop buttons under replies in LABELS, and the summary
-that ended "at a capped daily pace" in place of "daily or all at once". The
-LABELS section, the Run now sentence, the storage and content-script
-justifications, the Website content row and the test instructions below all
-changed after v0.8.0. Sharing labels came after 0.9.0 and is in no
-submitted version: the readers' list in the first paragraph, the sharing
-line under LABELS, the PRIVACY section, the single purpose, the storage
-justification, the readers' list under Remote code, the data-usage reasons
-and the certification line were written for the first submit that carries
-it. So was the Report a problem line at the end of the description, which
-came after sharing. Field names and rules are from Google's developer documentation
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.10.0,
+field by field. The store serves 0.8.0; 0.9.0 went to review on 2026-11-19 with
+the v0.9.0-era text, and 0.10.0 is meant to replace it. Sharing labels is new
+in 0.10.0, so these were written for the first submit that carries it: the
+readers' list in the first paragraph, the sharing line under LABELS, the
+PRIVACY section, the single purpose, the storage justification, the readers'
+list under Remote code, the data-usage reasons and the certification line. So
+was the Report a problem line at the end of the description. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.
