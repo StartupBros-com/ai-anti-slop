@@ -682,14 +682,17 @@ visit.
 ## Sharing labels in Chromium, against a local server
 
 On 2026-11-21 the unpacked extension from the working tree of the branch for
-issue #81 (the tree committed as d60c98b, manifest 0.9.0) ran in headless
+issue #81 ran in headless
 Chromium 157.0.8103.50 through playwright-core 1.65.1, in a fresh profile, with
 real clicks on its buttons. A local HTTPS server answered x.com, clankwall and
 levelsio with fixture pages and files (Chromium's `--host-resolver-rules`), and
 passed every request for `ai-anti-slop.startupbros.com` to `wrangler dev`
 4.158.0, the real Worker from `server/` with a local D1 database, so the
 browser applied CORS to the Worker's own answers. Nothing reached the real
-hosts. The thread fixture had a post and three replies.
+hosts. The thread fixture had a post and three replies. It ran twice: first on
+the tree committed as d60c98b, then after the review fixes on the tree committed
+as 146736d (manifest 0.9.0 both times), with a new local database built from
+the migration. Both runs passed all 16 checks; the table gives the second.
 
 | Step | Result |
 |---|---|
@@ -697,7 +700,7 @@ hosts. The thread fixture had a post and three replies.
 | Sharing off | A Hide as slop click saved its label after the Undo window, with the post's text. Nothing was posted |
 | Settings page | The sharing panel offered "Also share the 1 label already saved" |
 | Turn on, with that box ticked | The saved label was posted at once to `/v1/reports`, as `text/plain` from the extension's origin, with no cookie. The body was `{"v":1,"key":…,"reports":[{"label":"slop","handle":"xsh_demo_a","status":"3001","thread":"3000","hash":"7a59637409504a48"}]}`, with none of the post's words. The Worker's answer was readable and accepted `3001`. The share record counted 1 sent with nothing waiting, and the page read "Sharing is on. 1 report sent · last sent just now." |
-| A label while on | Posted at the share alarm, 37 s after the click |
+| A label while on | Posted at the share alarm, 31 s after the click |
 | Turn off | A new label was saved, and over the next 45 s nothing was posted or queued |
 | Delete what I shared | One POST to `/v1/forget`; the Worker removed 2 reports, the page read "Deleted 2 reports from the server. Sharing is off.", and the install's key was gone |
 | Requests outside the four hosts | None |
