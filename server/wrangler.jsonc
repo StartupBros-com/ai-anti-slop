@@ -7,8 +7,10 @@
     {
       "binding": "DB",
       "database_name": "ai-anti-slop",
-      // Placeholder. `wrangler d1 create ai-anti-slop` prints the real id; it is filled at deploy.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // The production database. The id names it but grants nothing: using it
+      // takes an API token for the account. A fork deploying its own server
+      // runs `wrangler d1 create ai-anti-slop` and puts its own id here.
+      "database_id": "14f5962d-8685-40f7-b480-789a16389589",
       "migrations_dir": "migrations"
     }
   ],
@@ -22,8 +24,8 @@
   "observability": { "enabled": false },
 
   "routes": [
-    // The hostname waits on the operator's OK. It becomes permanent once an
-    // extension release names it, so do not deploy this route before that OK.
+    // Permanent once an extension release names it: a new hostname takes a new
+    // release, and installs that have not updated keep asking this one.
     { "pattern": "ai-anti-slop.startupbros.com", "custom_domain": true }
   ]
 

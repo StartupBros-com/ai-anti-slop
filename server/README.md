@@ -82,14 +82,15 @@ node --test 'server/test/*.test.mjs'
 
 ## Deploy
 
-Nothing here is deployed yet. The hostname `ai-anti-slop.startupbros.com` waits on the operator's OK, and it is permanent once an extension release names it.
+Deployed on 2026-11-21 at `ai-anti-slop.startupbros.com`, a Workers custom domain, with the cron above. The hostname is permanent once an extension release names it. The custom domain's IPv6 records were published at once and its IPv4 record about 4 minutes later, so a new deploy may answer only over IPv6 at first.
+
+These are the steps that first deploy took. A fork deploying its own server does the same with its own database and hostname.
 
 1. `pnpm exec wrangler login`
-2. `pnpm exec wrangler d1 create ai-anti-slop`, then put the printed `database_id` in `wrangler.jsonc`.
+2. Once: `pnpm exec wrangler d1 create ai-anti-slop`, then put the printed `database_id` in `wrangler.jsonc`.
 3. `pnpm exec wrangler d1 migrations apply ai-anti-slop --remote`
-4. `pnpm exec wrangler secret put HMAC_SECRET` and `pnpm exec wrangler secret put ADMIN_TOKEN`. Use long random values and keep a copy of `HMAC_SECRET` somewhere safe.
-5. `pnpm exec wrangler deploy`
-6. Save the admin token in `~/.config/ai-anti-slop/admin-token` (or export `ANTISLOP_ADMIN_TOKEN`) for the CLI below.
+4. The first deploy uploads the two secrets with it: `pnpm exec wrangler deploy --secrets-file <file>`, where the file is JSON, `{"HMAC_SECRET": "…", "ADMIN_TOKEN": "…"}`, with long random values. Keep a copy of `HMAC_SECRET` somewhere safe, then delete the file. `pnpm exec wrangler secret list` shows both as `secret_text`. Later deploys are `pnpm exec wrangler deploy`; secrets stay.
+5. Save the admin token in `~/.config/ai-anti-slop/admin-token` (or export `ANTISLOP_ADMIN_TOKEN`) for the CLI below.
 
 ## Admin CLI
 

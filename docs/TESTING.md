@@ -709,6 +709,17 @@ gone.
 | Delete what I shared | One POST to `/v1/forget`; the Worker removed 2 reports, the page read "Deleted 2 reports from the server. Sharing is off.", and the install's key was gone |
 | Requests outside the four hosts | None |
 
+Later on 2026-11-21 the same run passed all 16 checks against the deployed
+Worker, on the tree committed as 41541dd. The local server passed each request
+for `ai-anti-slop.startupbros.com` on to the real host instead of `wrangler dev`,
+so the answers, CORS headers included, came from Cloudflare and its D1 database,
+and Cloudflare set `CF-Connecting-IP` from this machine's address. Afterwards the
+production database held 0 reports and 0 reporters; what was left was the day's
+two counters (one new install, two reports), which a build removes once they
+are older than the counters' retention. An admin `rebuild` then ran a build on
+the real database: the list file was served `public, max-age=600` with an
+`ETag`, and a request with `If-None-Match` got a 304.
+
 `server/test/roundtrip.test.mjs` runs the same lib code against the Worker's
 handler in Node, including the parts this run did not reach: the daily cap,
 the 429 for a network's 11th new install, and a list built from three
@@ -746,12 +757,13 @@ x.com (the unit and wiring tests cover the code, the run above only the
 page check), and X in other languages, where the reason kept is X's heading
 in that language. For the x.com-tab rule (after 0.9.0): an update from the
 Chrome Web Store with an x.com tab open (only a reload from the extensions
-page was tried). For sharing labels (after 0.9.0): the deployed server (the
-run above used `wrangler dev` on this machine, so Cloudflare's own
-`CF-Connecting-IP`, the Cron Trigger and the cached list file were not
-exercised), a label on real x.com, Brave, a server answer of 429 or an
-unreachable server in a browser (only the Node tests cover them), and many
-installs at once.
+page was tried). For sharing labels (after 0.9.0): the browser talking to the
+deployed server directly (the live run above went through the local server),
+the Cron Trigger firing (the build ran from an admin rebuild), whether a list
+download was answered from the Worker's cache (the Cache API) or from D1, a
+label on real x.com, Brave, a server answer
+of 429 or an unreachable server in a browser (only the Node tests cover them),
+and many installs at once.
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
 X's Dim theme (the build read before the release offered none), a theme
