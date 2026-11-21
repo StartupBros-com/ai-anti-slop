@@ -401,13 +401,13 @@ try {
   };
   await shoot(
     'screenshot-1-hide.png',
-    frame('Hide AI spam accounts on X', 'Posts by accounts on the clankwall list, or by accounts you add, are hidden from the page.', 'Example thread with made-up accounts.', panel(paused, 40, 580, ['Paused', '#d97706']) + panel(on, 660, 580, ['Hiding on', '#e11d48'])),
+    frame('Hide AI spam accounts on X', 'Posts by accounts on the Recommended list, or by accounts you add, are hidden from the page.', 'Example thread with made-up accounts.', panel(paused, 40, 580, ['Paused', '#d97706']) + panel(on, 660, 580, ['Hiding on', '#e11d48'])),
     1280,
     800,
   );
   await shoot(
     'screenshot-2-popup.png',
-    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. The list refreshes every 6 hours, or when you click the arrow.', 'Example thread with made-up accounts.', panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
+    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. Lists refresh every 6 hours, or when you click the arrow.', 'Example thread with made-up accounts.', panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
     1280,
     800,
   );

@@ -725,6 +725,43 @@ handler in Node, including the parts this run did not reach: the daily cap,
 the 429 for a network's 11th new install, and a list built from three
 installs, read back through Recommended's own source.
 
+## Updating from the store's 0.8.0, in Chromium
+
+Store users were on 0.8.0 when 0.10.0 was made, since 0.9.0 was still in
+review, so this is the update most of them take. On 2026-11-21 the package the
+store serves for 0.8.0 (its `update_url` line removed) ran unpacked in headless
+Chromium 157 through playwright-core 1.65.1, in a fresh profile, with x.com
+mapped to a closed port. It was given state through 0.8.0's own code: labels
+on, two `slop` labels and one `not_slop` label saved by its worker's
+`saveLabel` (which added the accounts to Also hide and Always show), muting on
+as an account, and a mute record with two `muted` entries and one `already`,
+written with its `recordOutcome`. The browser was then closed, the profile's
+Service Worker cache deleted, the folder's files replaced by the 0.10.0
+release branch's (code committed as 4b8bb88), and the browser started again.
+
+- The extension kept its id. The three labels, the label count, Also hide,
+  Always show, the muting switch and account, and the mute record all read
+  back exactly as before.
+- Recommended was on and fetched 1,350 accounts: clankwall 786, levelsio 565
+  and the readers' list 0. levelsio's own list stayed off.
+- The granted permissions were the same before and after: `alarms`,
+  `storage`, clankwall and the x.com hosts.
+- The only hosts asked were clankwall, levelsio and the readers' list, with
+  GETs. There were no exceptions or console errors, and no x.com visit in the
+  half minute watched.
+- The popup read "Muting as @…", "Today (UTC): 0 of 25 mutes" and "On · 3
+  saved". The settings page had sharing off and offered "Also share the 3
+  labels already saved", unticked.
+
+The same run with `muteEnabled` set but no muting account, which 0.8.0 reads
+as muting off, also kept everything; its popup showed muting off.
+
+The same day, on the same code, the run under
+[Sharing labels](#sharing-labels-in-chromium-against-a-local-server) passed all
+16 checks again against `wrangler dev` with a local D1 database, and
+`scripts/store-screenshots.mjs` made the store images again (1,350 accounts on
+2 lists), which were looked at by eye.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -793,4 +830,6 @@ shrink guard refusing an update of All flags or an added list over the network
 x.com, and a refresh of it after the first fetch. For Recommended: any of it in
 Brave or on real x.com, a real store update (the update above was made by hand
 in a scratch profile), a refresh after the first fetch, and its per-file
-guards over the network (the unit tests cover them).
+guards over the network (the unit tests cover them). For the update from 0.8.0:
+the store's own update (files were swapped in one folder), muting's first visit
+after it, and the userscript with the new lists in a userscript manager.
