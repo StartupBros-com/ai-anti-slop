@@ -3,9 +3,9 @@
 AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to posts.
-This policy covers the extension and the userscript, version 0.9.0 and the
-changes after it on the main branch, which add the choice of lists, the
-Recommended list and sharing labels. Last updated 2026-11-21.
+This policy covers the extension and the userscript, version 0.10.0, which adds
+the choice of lists, the Recommended list and sharing labels. Where an earlier
+version differs, it says so. Last updated 2026-11-21.
 
 ## In short
 
@@ -173,7 +173,7 @@ no remotely hosted code.
 
 ## Sharing labels
 
-Sharing is in the extension only, in the changes after 0.9.0; the userscript
+Sharing is in the extension only, from 0.10.0; the userscript
 has no labels. It is off unless you turn it on under **Share your labels** on
 the settings page, which lists what is sent before the button. The popup says
 whether it is on.
