@@ -702,7 +702,7 @@
       h(
         'ul',
         { class: 'facts' },
-        h('li', {}, "For each label: Slop or Not slop, the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent."),
+        h('li', {}, "For each label: that it is slop (or not slop, for a label saved before version 0.9.0), the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent."),
         h('li', {}, 'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.'),
       ),
       h('h3', {}, 'What is never sent'),

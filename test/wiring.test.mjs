@@ -4334,7 +4334,7 @@ test('sharing: the settings page says what is sent before it is on, then turns i
   const all = (sel) => [...s.document.querySelectorAll(sel)].map((e) => e.textContent);
   assert.deepEqual(all('#shareBody h3'), ['What is sent', 'What is never sent', 'Where it goes']);
   assert.deepEqual(all('#shareBody .facts li'), [
-    "For each label: Slop or Not slop, the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent.",
+    "For each label: that it is slop (or not slop, for a label saved before version 0.9.0), the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent.",
     'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.',
     "The post's words, your X account, other pages you visit, your lists and your settings.",
     'To ai-anti-slop.startupbros.com, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.',
