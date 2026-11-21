@@ -6,6 +6,9 @@
 // lib's addListPatch, removeListPatch and listOnPatch; the background
 // downloads what is switched on and deletes a removed list's record.
 //
+// Share your labels: off until the user reads what is sent and turns it
+// on; the background sends, this page shows how it went (drawShare).
+//
 // Back up and share: export a settings file or Also hide as a list; import
 // reads one file the user picks, shows what it would change, and writes only
 // after Confirm. Every import write goes through lib.importPlan, which
@@ -277,7 +280,7 @@
       // A list made of several sources links each source's page.
       const pages = sub.sources
         ? sub.sources.map((src) =>
-            h('p', {}, h('a', { href: src.about, target: '_blank', rel: 'noopener' }, `${src.name}'s page, where you can ask for a removal`, icon('ext', 13))),
+            h('p', {}, h('a', { href: src.about, target: '_blank', rel: 'noopener' }, src.aboutText || `${src.name}'s page, where you can ask for a removal`, icon('ext', 13))),
           )
         : [h('p', {}, h('a', { href: sub.about, target: '_blank', rel: 'noopener' }, 'Its page, where you can ask for a removal', h('span', { class: 'vh' }, ` (${sub.name})`), icon('ext', 13)))];
       const d = h(
@@ -680,9 +683,150 @@
     $('file').focus();
   });
 
+  // ------------------------------------------------------------------ sharing
+  //
+  // Off until the user has read what is sent and turns it on here. On, off
+  // and Delete what I shared are messages to the background (xsh:share-start,
+  // xsh:share-stop, xsh:share-forget), which keeps the key and the queue;
+  // this page only reads xsh:share to say how sending went.
+  let shareBusy = false;
+  let forgetArmed = false;
+  let shareSeq = 0;
+  let shareFocus = false; // after an action: move focus to the button that took the clicked one's place
+
+  const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
+  function shareFacts(host) {
+    return [
+      h('h3', {}, 'What is sent'),
+      h(
+        'ul',
+        { class: 'facts' },
+        h('li', {}, "For each label: Slop or Not slop, the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent."),
+        h('li', {}, 'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.'),
+      ),
+      h('h3', {}, 'What is never sent'),
+      h('ul', { class: 'facts' }, h('li', {}, "The post's words, your X account, other pages you visit, your lists and your settings.")),
+      h('h3', {}, 'Where it goes'),
+      h(
+        'ul',
+        { class: 'facts' },
+        h('li', {}, `To ${host}, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.`),
+        h('li', {}, 'Clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.'),
+      ),
+    ];
+  }
+
+  async function drawShare() {
+    const mine = ++shareSeq;
+    const o = await chrome.storage.local.get([K.settings, K.share, K.labelCount]);
+    if (mine !== shareSeq) return;
+    const on = L.shareOn(o[K.settings] || {});
+    const st = L.shareState(o[K.share]);
+    const saved = Number.isInteger(o[K.labelCount]) && o[K.labelCount] > 0 ? o[K.labelCount] : 0;
+    const host = new URL(L.DEFAULTS.crowdBase).host;
+    const busy = shareBusy ? 'true' : null;
+    const nodes = [];
+    const forget = () =>
+      h(
+        'button',
+        { type: 'button', id: 'shareForget', class: forgetArmed ? 'armed' : null, 'aria-disabled': busy, onclick: onForget },
+        forgetArmed ? 'Click again to delete what you shared' : 'Delete what I shared',
+      );
+    if (on) {
+      const parts = [plural(st.sent, 'report sent', 'reports sent')];
+      if (st.queue.length) parts.push(`${num(st.queue.length)} waiting`);
+      if (st.lastSentAt) parts.push(`last sent ${ago(st.lastSentAt)}`);
+      nodes.push(h('p', { class: 'shareState' }, h('strong', {}, 'Sharing is on.'), ` ${parts.join(' · ')}.`));
+      if (st.lastError) {
+        const when = st.retryAt && st.retryAt > Date.now() ? ` after ${clockTime(st.retryAt)}` : '';
+        nodes.push(h('p', { class: 'shareErr' }, `The last send did not go through: ${st.lastError}. It tries again by itself${when}.`));
+      }
+      const more = h('details', { class: 'more' }, h('summary', {}, 'What is sent, and where', icon('chev', 14, 'chev')), ...shareFacts(host));
+      nodes.push(more);
+      nodes.push(h('div', { class: 'pv-actions' }, h('button', { type: 'button', id: 'shareOff', 'aria-disabled': busy, onclick: onStop }, 'Turn off sharing'), forget()));
+    } else {
+      nodes.push(...shareFacts(host));
+      if (saved) {
+        nodes.push(
+          h('label', { class: 'backfill' }, h('input', { type: 'checkbox', id: 'shareBackfill' }), h('span', {}, `Also share the ${plural(saved, 'label', 'labels')} already saved`)),
+        );
+      }
+      const row = [h('button', { type: 'button', id: 'shareOn', class: 'primary', 'aria-disabled': busy, onclick: onStart }, 'Turn on sharing')];
+      if (st.key && st.sent) row.push(forget());
+      nodes.push(h('div', { class: 'pv-actions' }, ...row));
+      if (st.key && st.sent) nodes.push(h('p', { class: 'hint' }, `${plural(st.sent, 'report', 'reports')} sent from this browser stay on the server until you delete them.`));
+    }
+    nodes.push(h('p', { class: 'shareLink' }, h('a', { href: `${L.DEFAULTS.crowdBase}/`, target: '_blank', rel: 'noopener' }, "The readers' list and how it is made", icon('ext', 13))));
+    const box = $('shareBackfill');
+    const ticked = !!(box && box.checked);
+    swap($('shareBody'), nodes);
+    // A redraw keeps the tick; a new box starts unticked.
+    if ($('shareBackfill')) $('shareBackfill').checked = ticked;
+    // A button that went away with focus (on became off) hands it to the one in its place.
+    if (document.activeElement === document.body || !document.activeElement) {
+      const next = $(on ? 'shareOff' : 'shareOn');
+      if (shareFocus && next) next.focus({ preventScroll: true });
+    }
+    shareFocus = false;
+  }
+
+  async function shareAction(msg, say) {
+    if (shareBusy) return;
+    shareBusy = true;
+    forgetArmed = false;
+    await drawShare();
+    let r;
+    try {
+      r = await chrome.runtime.sendMessage(msg);
+    } catch (e) {
+      r = { ok: false, reason: String((e && e.message) || e) };
+    }
+    shareBusy = false;
+    note($('shareMsg'), say(r || { ok: false, reason: 'no answer from the extension' }), !(r && r.ok));
+    shareFocus = true;
+    await drawShare();
+  }
+
+  const why = (r) => String(r.reason || 'no reason given').replace(/[\s.]+$/, '');
+
+  function onStart() {
+    const box = $('shareBackfill');
+    shareAction({ type: 'xsh:share-start', backfill: !!(box && box.checked) }, (r) =>
+      r.ok
+        ? `Sharing is on. ${r.queued ? `${plural(r.queued, 'label is', 'labels are')} queued to send.` : 'Labels you make from now on are sent.'}`
+        : `Sharing did not turn on: ${why(r)}.`,
+    );
+  }
+
+  function onStop() {
+    shareAction({ type: 'xsh:share-stop' }, (r) => (r.ok ? 'Sharing is off. Nothing more is sent.' : `Sharing did not turn off: ${why(r)}.`));
+  }
+
+  function onForget() {
+    if (shareBusy) return;
+    if (!forgetArmed) {
+      forgetArmed = true;
+      drawShare();
+      return;
+    }
+    shareAction({ type: 'xsh:share-forget' }, (r) =>
+      r.ok
+        ? `Deleted ${plural(r.removed, 'report', 'reports')} from the server. Sharing is off.`
+        : `Nothing was deleted: ${why(r)}. Sharing is off; try again.`,
+    );
+  }
+
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[K.settings] || Object.keys(changes).some((k) => L.isListKey(k))) draw();
+    if (changes[K.settings] || changes[K.share] || changes[K.labelCount]) drawShare();
   });
   draw();
+  // Opened from the popup's Share your labels: the section is below the
+  // lists, which draw after the page loads, so it is scrolled to once drawn.
+  drawShare().then(() => {
+    const here = globalThis.location;
+    if (here && here.hash === '#share' && typeof $('share').scrollIntoView === 'function') $('share').scrollIntoView();
+  });
 })();

@@ -99,6 +99,17 @@
     // Lists the user may add by address, and the longest address taken.
     customListMax: 5,
     listUrlMax: 500,
+    // Sharing labels (off unless the user turns it on): the server reports
+    // go to, which also publishes the readers' list Recommended reads; the
+    // most reports or retractions in one request (the server's cap); the
+    // most requests one send makes before it waits a minute; the longest
+    // queue kept (labelMax reports plus their retractions); and the wait
+    // after a send that failed.
+    crowdBase: 'https://ai-anti-slop.startupbros.com',
+    shareBatch: 50,
+    shareRequestsPerSend: 10,
+    shareQueueMax: 4000,
+    shareRetryMinutes: 30,
   });
 
   // The xsh: prefix is from before the rename. Changing it would strand every
@@ -109,6 +120,8 @@
     mutes: 'xsh:mutes',
     // How many labels are saved; each label is its own key, LABEL_PREFIX + post id.
     labelCount: 'xsh:labelCount',
+    // Sharing: the install's key, what is waiting to be sent and how sending went (shareState).
+    share: 'xsh:share',
   });
 
   // chrome.storage.session: a Run now in progress, { startedAt, account }.
@@ -189,7 +202,9 @@
 
   // The NDJSON list formats, each with the rows it keeps (null: every row).
   // Any other format is plain text, one handle per line.
-  const NDJSON_FORMATS = Object.freeze({ 'clankwall-ndjson': null, 'levelsio-confirmed': levelsioConfirmed });
+  // crowd-ndjson is the readers' list AI Anti-Slop's server publishes: one
+  // { username, reporters, since } per line, every row listed.
+  const NDJSON_FORMATS = Object.freeze({ 'clankwall-ndjson': null, 'levelsio-confirmed': levelsioConfirmed, 'crowd-ndjson': null });
   const isNdjson = (format) => Object.prototype.hasOwnProperty.call(NDJSON_FORMATS, format);
 
   function acceptUpdate(prevHandles, nextHandles, opts) {
@@ -348,20 +363,31 @@
   // them on or off and add up to customListMax more by address. Muting reads
   // only MUTE_LIST: every other list hides replies and nothing more.
   const BUILTIN_LISTS = Object.freeze([
-    // AI Anti-Slop's own pick, on by default: a rule over two of the lists
-    // below, applied here to their published files as fetched. This project
-    // hosts no list and adds no account. Fetched by the extension alone
-    // (userscript: false): the userscript's @connect names clankwall's host
-    // only. Its record keeps each source's handles (parts) beside the union.
+    // AI Anti-Slop's own pick, on by default: two of the lists below, as
+    // their published files are fetched, plus the readers' list, which AI
+    // Anti-Slop's server builds from the labels its users chose to share
+    // (sharing, below). That server is the only list this project hosts; it
+    // may be empty, so its part is allowed to be (allowEmpty). Fetched by the
+    // extension alone (userscript: false): the userscript's @connect names
+    // clankwall's host only. Its record keeps each source's handles (parts)
+    // beside the union.
     Object.freeze({
       id: 'recommended', name: 'Recommended', format: 'recommended', on: true, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/accounts.ndjson',
       sources: Object.freeze([
         Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', about: 'https://clankwall.vogel.dev/?filter=ai' }),
         Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', about: 'https://blockedforaireply.levels.io/' }),
+        Object.freeze({
+          url: `${DEFAULTS.crowdBase}/v1/list.ndjson`,
+          format: 'crowd-ndjson',
+          name: "the readers' list",
+          about: `${DEFAULTS.crowdBase}/`,
+          aboutText: "The readers' list page, with how it is made and where you can ask for a removal",
+          allowEmpty: true,
+        }),
       ]),
       about: null,
-      note: "AI Anti-Slop's pick from two of the lists below: clankwall's AI flags, plus the accounts @levelsio blocked with a public reply, each linked on levelsio's page. Both sites say their flags are not proof. Hides replies only; muting uses clankwall's AI flags.",
+      note: "AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either. Hides replies only; muting uses clankwall's AI flags.",
     }),
     Object.freeze({
       id: 'clankwall-ai', name: 'clankwall: AI flags', format: 'text', on: true, mute: true,
@@ -1175,7 +1201,9 @@
   //
   // A label is the user's own call on one reply: slop or not slop. Each is
   // stored under its own key (LABEL_PREFIX + the post id) in the extension's
-  // local storage and leaves the browser only in a file the user exports.
+  // local storage. It leaves the browser in a file the user exports and, only
+  // while the user has turned sharing on, as a report (see sharing below),
+  // which never carries the post's words.
 
   // Whether labels are on. They are until the user turns them off: settings
   // that never had the switch (a new install, or one from before labels were
@@ -1293,6 +1321,220 @@
   function labelsJsonl(records) {
     const rows = (records || []).map((r) => JSON.stringify(r));
     return rows.length ? `${rows.join('\n')}\n` : '';
+  }
+
+  // ---------------------------------------------------------------- sharing
+  //
+  // Off unless the user turns it on in settings (settings.sharing === true).
+  // While it is on, each label saved is queued as a report and each label
+  // cleared as a retraction, and the background sends them to crowdBase. A
+  // report holds the label, the account, the post's id, the id of the post
+  // whose page it was on and a hash of the post's words; each request carries
+  // the install's random key. The words, the user's X account, other pages
+  // and settings are never sent.
+
+  function shareOn(settings) {
+    return !!settings && settings.sharing === true;
+  }
+
+  const SHARE_KEY_RE = /^[0-9a-f]{32}$/;
+  const POST_ID_RE = /^\d{1,25}$/;
+  const HASH_RE = /^[0-9a-f]{16}$/;
+  const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  // A new install key: 16 random bytes as 32 lowercase hex characters. It
+  // is not derived from anything about the user or the browser.
+  function newShareKey(cryptoImpl) {
+    const c = cryptoImpl || globalThis.crypto;
+    return hex(c.getRandomValues(new Uint8Array(16)));
+  }
+
+  // The words a hash is made from: case, spacing, links and @handles taken
+  // out, so the same reply posted by two accounts hashes the same.
+  function shareText(text) {
+    return String(text || '')
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, ' ')
+      .replace(/@[a-z0-9_]{1,15}/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // The first 16 hex characters of the SHA-256 of shareText(text), or null
+  // for a post with no words.
+  async function textHash(text, cryptoImpl) {
+    const t = shareText(text);
+    if (!t) return null;
+    const c = cryptoImpl || globalThis.crypto;
+    const d = await c.subtle.digest('SHA-256', new TextEncoder().encode(t));
+    return hex(new Uint8Array(d)).slice(0, 16);
+  }
+
+  // The report a saved label makes, { label, handle, status, thread }, or
+  // null when the record is not a label. The caller adds the hash (textHash
+  // is async).
+  function reportOf(record) {
+    const r = record || {};
+    if (!LABELS.includes(r.label)) return null;
+    const post = statusOf(r.url);
+    const handle = normalizeHandle(r.handle);
+    if (!post || !handle || handle !== post.handle) return null;
+    const page = r.page ? statusOf(r.page) : null;
+    return { label: r.label, handle, status: post.id, thread: page ? page.id : null };
+  }
+
+  const shareItemOk = (i) =>
+    !!i &&
+    typeof i === 'object' &&
+    Number.isInteger(i.seq) &&
+    POST_ID_RE.test(String(i.status)) &&
+    (i.op === 'retract' ||
+      (i.op === 'report' &&
+        LABELS.includes(i.label) &&
+        !!normalizeHandle(i.handle) &&
+        (i.thread === null || POST_ID_RE.test(String(i.thread))) &&
+        (i.hash === null || HASH_RE.test(String(i.hash)))));
+
+  // The stored sharing record, read defensively: { key, queue, seq, sent,
+  // lastSentAt, lastError, retryAt }. key is null until sharing is first
+  // turned on, and again after Delete what I shared.
+  function shareState(raw) {
+    const s = raw && typeof raw === 'object' ? raw : {};
+    const int = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+    return {
+      key: typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null,
+      queue: Array.isArray(s.queue) ? s.queue.filter(shareItemOk) : [],
+      seq: int(s.seq),
+      sent: int(s.sent),
+      lastSentAt: int(s.lastSentAt) || null,
+      lastError: typeof s.lastError === 'string' && s.lastError ? s.lastError : null,
+      retryAt: int(s.retryAt) || null,
+    };
+  }
+
+  // Queue a report ({ label, handle, status, thread, hash }) or a retraction
+  // ({ retract: status }). Either replaces whatever was queued for that post,
+  // so only the last word on a post is sent. Each item gets a number of its
+  // own, so a send that finishes after the item was replaced leaves the new
+  // one queued. Past shareQueueMax the oldest items go.
+  function enqueueShare(state, item) {
+    const st = shareState(state);
+    const it = item || {};
+    const seq = st.seq + 1;
+    let next;
+    if (it.retract != null) next = { op: 'retract', status: String(it.retract), seq };
+    else {
+      next = {
+        op: 'report',
+        label: it.label,
+        handle: normalizeHandle(it.handle),
+        status: String(it.status),
+        thread: it.thread == null ? null : String(it.thread),
+        hash: it.hash == null ? null : String(it.hash),
+        seq,
+      };
+    }
+    if (!shareItemOk(next)) return st;
+    const queue = st.queue.filter((i) => i.status !== next.status);
+    queue.push(next);
+    return Object.assign(st, { seq, queue: queue.slice(-DEFAULTS.shareQueueMax) });
+  }
+
+  // The next request to send, or null for none: up to shareBatch
+  // retractions while any are queued, else up to shareBatch reports.
+  // { path, key, items, body }; body is what is posted, as JSON.
+  function shareBatch(state) {
+    const st = shareState(state);
+    if (!st.key) return null;
+    const n = DEFAULTS.shareBatch;
+    const retracts = st.queue.filter((i) => i.op === 'retract').slice(0, n);
+    if (retracts.length) {
+      return { path: '/v1/retract', key: st.key, items: retracts, body: { v: 1, key: st.key, statuses: retracts.map((i) => i.status) } };
+    }
+    const reports = st.queue.filter((i) => i.op === 'report').slice(0, n);
+    if (!reports.length) return null;
+    return {
+      path: '/v1/reports',
+      key: st.key,
+      items: reports,
+      body: { v: 1, key: st.key, reports: reports.map((i) => ({ label: i.label, handle: i.handle, status: i.status, thread: i.thread, hash: i.hash })) },
+    };
+  }
+
+  // Milliseconds from now to the next UTC midnight, when the server's daily
+  // counts start again.
+  function msToUtcMidnight(now) {
+    const d = new Date(now);
+    return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) - now;
+  }
+
+  // The record after one request. res is { status, body } (status 0: no
+  // answer, with res.error). What the server took, or refused as malformed,
+  // leaves the queue; what it put off stays, and nothing is sent before
+  // retryAt. A request refused whole (400, 413) leaves the queue too: sent
+  // again it would be refused again. A result for another key (the record
+  // was deleted while the request was out) changes nothing.
+  function shareResult(state, batch, res, now) {
+    const st = shareState(state);
+    if (!batch || batch.key !== st.key) return st;
+    const r = res || {};
+    const body = r.body && typeof r.body === 'object' ? r.body : {};
+    const seqs = new Set(batch.items.map((i) => i.seq));
+    const drop = (statuses) => {
+      const out = new Set(statuses);
+      st.queue = st.queue.filter((i) => !(seqs.has(i.seq) && out.has(i.status)));
+    };
+    const why = typeof body.reason === 'string' && body.reason ? body.reason : null;
+    // The server's retryAfter, at most a day and two hours, else until UTC midnight.
+    const wait = (ms) => now + (Number.isFinite(ms) && ms > 0 ? Math.min(ms, 26 * 3600000) : msToUtcMidnight(now));
+    const later = now + DEFAULTS.shareRetryMinutes * 60000;
+    if (!r.status) {
+      st.lastError = `could not reach the server${r.error ? ` (${r.error})` : ''}`;
+      st.retryAt = later;
+    } else if (r.status === 429) {
+      st.lastError = `the server asked to wait${why ? `: ${why}` : ''}`;
+      st.retryAt = wait(Number(body.retryAfter));
+    } else if (r.status >= 500 || (r.status === 200 && body.ok !== true)) {
+      st.lastError = `the server answered ${r.status}${why ? `: ${why}` : ''}`;
+      st.retryAt = later;
+    } else if (r.status !== 200) {
+      drop(batch.items.map((i) => i.status));
+      st.lastError = `the server refused ${batch.items.length} (${r.status}${why ? `: ${why}` : ''})`;
+      st.retryAt = null;
+    } else if (batch.path === '/v1/retract') {
+      drop(batch.items.map((i) => i.status));
+      Object.assign(st, { lastSentAt: now, lastError: null, retryAt: null });
+    } else {
+      const list = (k) => (Array.isArray(body[k]) ? body[k].map(String) : []);
+      const accepted = list('accepted');
+      const deferred = new Set(list('deferred'));
+      // A refused item is named by its status, or by "#<index>" when it had none.
+      const rejected = list('rejected').map((x) => {
+        const i = /^#\d+$/.test(x) ? batch.items[Number(x.slice(1))] : null;
+        return i ? i.status : x;
+      });
+      // An item the answer does not name is not left queued forever.
+      const named = new Set([...accepted, ...rejected, ...deferred]);
+      const unnamed = batch.items.filter((i) => !named.has(i.status)).map((i) => i.status);
+      drop([...accepted, ...rejected, ...unnamed]);
+      st.sent += accepted.length;
+      st.lastSentAt = now;
+      st.lastError = rejected.length ? `the server refused ${rejected.length} as malformed` : null;
+      st.retryAt = deferred.size ? wait(Number(body.retryAfter)) : null;
+    }
+    return st;
+  }
+
+  // Each saved label's report, for the labels already saved when sharing is
+  // turned on with "Also share" ticked. hashOf is textHash.
+  async function backfillReports(records, hashOf) {
+    const out = [];
+    for (const rec of records || []) {
+      const rep = reportOf(rec);
+      if (rep) out.push(Object.assign(rep, { hash: await hashOf(rec.text) }));
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ settings files
@@ -1546,6 +1788,17 @@
     labelPatch,
     labelsFrom,
     labelsJsonl,
+    shareOn,
+    newShareKey,
+    shareText,
+    textHash,
+    reportOf,
+    shareState,
+    enqueueShare,
+    shareBatch,
+    msToUtcMidnight,
+    shareResult,
+    backfillReports,
     SETTINGS_FORMAT,
     SETTINGS_VERSION,
     IMPORT_KEYS,

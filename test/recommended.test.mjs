@@ -1,5 +1,5 @@
-// The Recommended list (#79): its rule over levelsio's NDJSON rows, its two
-// sources each checked on their own, the record's parts, its default, and
+// The Recommended list (#79): its rule over levelsio's NDJSON rows, its three
+// sources each checked on their own (the readers' list, #81, is the third), the record's parts, its default, and
 // labels that name the source holding an account. Handles are invented; the
 // rows have the fields levelsio's accounts.ndjson had on 2026-11-21.
 import test from 'node:test';
@@ -8,6 +8,7 @@ import { lib as L } from './helpers.mjs';
 
 const AI = 'https://clankwall.vogel.dev/api/usernames.txt';
 const LV = 'https://blockedforaireply.levels.io/api/accounts.ndjson';
+const CR = 'https://ai-anti-slop.startupbros.com/v1/list.ndjson';
 const SOURCES = L.BUILTIN_LISTS.find((b) => b.id === 'recommended').sources;
 
 // One levelsio row. Only "confirmed" rows carry evidence there.
@@ -33,8 +34,9 @@ const row = (username, tier, evidence = tier === 'confirmed' ? 1 : 0) =>
 const ok = (body, type = 'text/plain') => ({ ok: true, status: 200, headers: { get: () => type }, text: async () => body });
 const fetchFrom = (bodies, seen = []) => async (url) => {
   seen.push(url);
-  const b = bodies[url];
-  if (b === undefined) return { ok: false, status: 404, headers: { get: () => 'text/plain' }, text: async () => '' };
+  // The readers' list is empty unless a test gives it a body (null: not found).
+  const b = Object.prototype.hasOwnProperty.call(bodies, url) ? bodies[url] : url === CR ? '' : undefined;
+  if (b === undefined || b === null) return { ok: false, status: 404, headers: { get: () => 'text/plain' }, text: async () => '' };
   return typeof b === 'string' ? ok(b, url.endsWith('.ndjson') ? 'application/octet-stream' : 'text/plain') : b;
 };
 const many = (n, p = 'h') => Array.from({ length: n }, (_, i) => `${p}${i}`);
@@ -91,7 +93,7 @@ test('levelsio rows: the NDJSON size cap applies, so a file over 1 MB is read', 
 
 // ---------------------------------------------------------- two sources
 
-test('Recommended: both sources fetched, the union stored with each source\'s part', async () => {
+test('Recommended: every source fetched, the union stored with each source\'s part', async () => {
   const seen = [];
   const r = await L.fetchList({
     url: LV,
@@ -99,13 +101,14 @@ test('Recommended: both sources fetched, the union stored with each source\'s pa
     sources: SOURCES,
     fetchImpl: fetchFrom({ [AI]: 'ai_a\nboth\n', [LV]: [row('both', 'confirmed'), row('lv_a', 'confirmed'), row('lv_old', 'blocked')].join('\n') }, seen),
   });
-  assert.deepEqual(seen.sort(), [AI, LV].sort());
+  assert.deepEqual(seen.sort(), [AI, LV, CR].sort());
   assert.deepEqual(r, {
     ok: true,
     handles: ['ai_a', 'both', 'lv_a'],
     parts: [
       { source: AI, handles: ['ai_a', 'both'] },
       { source: LV, handles: ['both', 'lv_a'] },
+      { source: CR, handles: [] },
     ],
     rejected: 0,
     reason: null,
@@ -122,6 +125,7 @@ test('Recommended: a source that fails keeps its previous part while the other u
     parts: [
       { source: AI, handles: [] },
       { source: LV, handles: ['lv_a'] },
+      { source: CR, handles: [] },
     ],
     rejected: 0,
     reason: 'clankwall.vogel.dev: HTTP 404',
@@ -134,8 +138,8 @@ test('Recommended: a source that fails keeps its previous part while the other u
 });
 
 test('Recommended: with every source refused the update is refused, naming each host', async () => {
-  const r = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({}) });
-  assert.deepEqual(r, { ok: false, reason: 'clankwall.vogel.dev: HTTP 404; blockedforaireply.levels.io: HTTP 404' });
+  const r = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [CR]: null }) });
+  assert.deepEqual(r, { ok: false, reason: 'clankwall.vogel.dev: HTTP 404; blockedforaireply.levels.io: HTTP 404; ai-anti-slop.startupbros.com: HTTP 404' });
 });
 
 test('Recommended: levelsio\'s rows losing the tier field refuse levelsio\'s part, which keeps its previous copy', async () => {
@@ -174,6 +178,27 @@ test('Recommended: a source allowed to be empty is taken empty while its stored 
   assert.equal(strict.reason, 'lists.example: empty list');
 });
 
+test('Recommended: the readers\' list adds its accounts; empty it adds none, and missing it keeps its part while the others update', async () => {
+  const crowd = [
+    JSON.stringify({ username: 'Crowd_A', reporters: 3, since: '2026-11-28' }),
+    JSON.stringify({ username: 'both', reporters: 5, since: '2026-11-29' }),
+    '',
+  ].join('\n');
+  const r = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [AI]: 'ai_a\nboth\n', [LV]: row('lv_a', 'confirmed'), [CR]: crowd }) });
+  assert.deepEqual([r.ok, r.handles, r.parts[2], r.reason], [true, ['ai_a', 'both', 'crowd_a', 'lv_a'], { source: CR, handles: ['both', 'crowd_a'] }, null]);
+  // Not found: Recommended still loads, the part stays and the record names the host.
+  const gone = await L.fetchList({ url: LV, sources: SOURCES, prevParts: [{ source: CR, handles: ['crowd_a'] }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: row('lv_a', 'confirmed'), [CR]: null }) });
+  assert.deepEqual([gone.ok, gone.handles, gone.parts[2].handles, gone.reason], [true, ['ai_a', 'crowd_a', 'lv_a'], ['crowd_a'], 'ai-anti-slop.startupbros.com: HTTP 404']);
+  // A web page where the file should be is refused like any list's.
+  const html = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: row('lv_a', 'confirmed'), [CR]: ok('<html></html>', 'text/html') }) });
+  assert.deepEqual([html.ok, html.parts[2].handles, html.reason], [true, [], 'ai-anti-slop.startupbros.com: unexpected content-type text/html']);
+  // Every account taken off a list of under 20 is taken; from 20, the shrink guard holds.
+  const small = await L.fetchList({ url: LV, sources: SOURCES, prevParts: [{ source: CR, handles: many(19, 'c') }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: row('lv_a', 'confirmed') }) });
+  assert.deepEqual([small.parts[2].handles, small.reason], [[], null]);
+  const big = await L.fetchList({ url: LV, sources: SOURCES, prevParts: [{ source: CR, handles: many(20, 'c') }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: row('lv_a', 'confirmed') }) });
+  assert.deepEqual([big.parts[2].handles, big.reason], [many(20, 'c'), 'ai-anti-slop.startupbros.com: empty list']);
+});
+
 test('Recommended record: a success stores the parts, a failure keeps them and the handles', () => {
   const okResult = { ok: true, handles: ['a', 'b'], parts: [{ source: AI, handles: ['a'] }, { source: LV, handles: ['b'] }] };
   const rec = L.commitRecord(null, okResult, LV, 0, 100);
@@ -198,8 +223,11 @@ test('Recommended is first and on until switched off, the userscript never has i
     [
       [AI, 'text', 'clankwall', 'https://clankwall.vogel.dev/?filter=ai'],
       [LV, 'levelsio-confirmed', 'levelsio', 'https://blockedforaireply.levels.io/'],
+      [CR, 'crowd-ndjson', "the readers' list", 'https://ai-anti-slop.startupbros.com/'],
     ],
   );
+  // Only the readers' list may come back empty: it is empty until reports agree.
+  assert.deepEqual(rec.sources.map((s) => s.allowEmpty === true), [false, false, true]);
   assert.deepEqual(L.enabledLists(null).map((l) => l.id), ['recommended', 'clankwall-ai']);
   assert.deepEqual(L.enabledLists({ lists: { recommended: false } }).map((l) => l.id), ['clankwall-ai']);
   assert.deepEqual(L.enabledLists({ lists: { recommended: true, 'clankwall-ai': false } }).map((l) => l.id), ['recommended']);

@@ -169,6 +169,19 @@
   #preview details summary:hover { color: var(--fg); }
   #preview details p { margin-top: 4px; }
   .pv-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  /* ---- sharing */
+  #shareBody h3 { margin-top: 16px; font-size: 13px; font-weight: 600; }
+  .facts { margin-top: 6px; display: grid; gap: 6px; max-width: 60ch; }
+  .facts li { position: relative; padding-left: 14px; font-size: 13px; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+  .facts li::before { content: ''; position: absolute; left: 3px; top: 0.62em; width: 4px; height: 4px; border-radius: 50%; background: currentColor; }
+  .shareState { margin-top: 12px; font-size: 14px; text-wrap: pretty; }
+  .shareState strong { font-weight: 650; }
+  .shareErr { margin-top: 6px; font-size: 13px; color: var(--bad); overflow-wrap: anywhere; text-wrap: pretty; }
+  .backfill { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; font-size: 13px; cursor: pointer; }
+  .backfill input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--fg); flex: none; }
+  .shareLink { margin-top: 14px; font-size: 13px; }
+  .shareLink a { display: inline-flex; align-items: center; gap: 4px; }
+  button.armed { border-color: var(--bad); color: var(--bad); }
 
   footer { margin-top: 40px; font-size: 13px; color: var(--muted); text-wrap: pretty; }
 
@@ -212,6 +225,13 @@
   <div role="status"><p id="listMsg" class="msg" hidden></p></div>
 </section>
 
+<section id="share" aria-labelledby="shareH">
+  <h2 id="shareH">Share your labels</h2>
+  <p class="lede">Your Slop and Not slop labels can help build the readers' list, one of Recommended's sources. An account goes on it once three or more readers have marked its replies Slop, in two or more threads, and a day has passed. Not slop marks count against it. Off unless you turn it on.</p>
+  <div id="shareBody"></div>
+  <div role="status"><p id="shareMsg" class="msg" hidden></p></div>
+</section>
+
 <section aria-labelledby="filesH">
   <h2 id="filesH">Back up and share</h2>
   <p class="lede">Files you save stay on your computer, and import reads only the file you pick.</p>
@@ -246,7 +266,7 @@
 </section>
 </main>
 
-<footer>No account, no server, no analytics: the extension's own requests only download the lists you switch on. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How AI Anti-Slop works</a></footer>
+<footer>No account and no analytics. The extension's own requests download the lists you switch on and, only while sharing is on, send your labels to AI Anti-Slop's server. <a href="https://github.com/StartupBros-com/ai-anti-slop#readme" target="_blank" rel="noopener">How AI Anti-Slop works</a></footer>
 </div>
 <script src="lib.js"></script>
 <script src="settings.js"></script>

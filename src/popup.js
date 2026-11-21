@@ -141,6 +141,17 @@
     $('deleteLabels').className = deleteArmed ? 'armed' : '';
     setText($('deleteLabels'), deleteArmed ? `Click again to delete ${plural(n, 'label', 'labels')}` : 'Delete all labels');
   }
+  // Sharing is set on the settings page; the popup says whether it is on.
+  function renderShare(s, raw) {
+    const st = L.shareState(raw);
+    if (L.shareOn(s)) {
+      setText($('shareLine'), `Sharing is on: ${plural(st.sent, 'report', 'reports')} sent${st.queue.length ? `, ${st.queue.length} waiting` : ''}.`);
+      setText($('shareOpen'), 'Sharing settings');
+    } else {
+      setText($('shareLine'), "Sharing is off. Shared labels help build the readers' list, one of Recommended's sources.");
+      setText($('shareOpen'), 'Share your labels');
+    }
+  }
   function labelsNote(text) {
     setHidden($('labelsMsg'), !text);
     setText($('labelsMsg'), text || '');
@@ -224,10 +235,11 @@
 
   async function render() {
     await renderMutingPart();
-    const o = await chrome.storage.local.get([K.list, K.settings, K.labelCount]);
+    const o = await chrome.storage.local.get([K.list, K.settings, K.labelCount, K.share]);
     const s = o[K.settings] || {};
     const n = o[K.labelCount];
     renderLabels(s, Number.isInteger(n) && n > 0 ? n : 0);
+    renderShare(s, o[K.share]);
     const handles = await renderLists(s, o[K.list]);
     $('paused').checked = !!s.paused;
     if (document.activeElement !== $('allow')) $('allow').value = s.allowlist || '';
@@ -421,7 +433,7 @@
       });
   }
   chrome.storage.onChanged.addListener((changes, area) => {
-    const local = area === 'local' && (changes[K.mutes] || changes[K.settings] || Object.keys(changes).some(L.isListKey));
+    const local = area === 'local' && (changes[K.mutes] || changes[K.settings] || changes[K.share] || Object.keys(changes).some(L.isListKey));
     if (local || (area === 'session' && changes[L.RUN_KEY])) redraw();
   });
 
@@ -480,6 +492,8 @@
   $('files').addEventListener('click', () => chrome.runtime.openOptionsPage());
   // Choosing lists lives there too.
   $('chooseLists').addEventListener('click', () => chrome.runtime.openOptionsPage());
+  // So does sharing, opened at its section.
+  $('shareOpen').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html#share') }));
   // aria-disabled, not disabled, while it refreshes: a disabled button drops
   // keyboard focus. aria-disabled does not stop clicks, so the flag does.
   // The button is an icon, so its name changes, never its text.
