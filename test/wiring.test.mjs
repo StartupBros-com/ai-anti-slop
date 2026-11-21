@@ -4550,7 +4550,8 @@ test('popup: Report a problem links to the issue chooser with the version and br
   const href = a.getAttribute('href');
   assert.equal(href, `${CHOOSER}?version=${VERSION}&browser=Brave%20158%20on%20Windows`);
   assert.ok(!href.includes('startupbros') && !href.includes(SHARE_KEY), 'no Muting as account and no sharing code');
-  assert.equal(a.textContent, 'Report a problem or suggest something');
+  assert.equal(a.textContent, 'Report a problem');
+  assert.match(a.getAttribute('title'), /GitHub account/);
   assert.equal(a.getAttribute('target'), '_blank');
   assert.equal(a.getAttribute('rel'), 'noopener');
   const q = loadPopup({});
