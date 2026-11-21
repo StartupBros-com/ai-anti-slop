@@ -14,7 +14,7 @@
   ],
 
   "triggers": {
-    "crons": ["17 */3 * * *"]
+    "crons": ["17 */6 * * *"]
   },
 
   // Off: Workers Logs would keep each request's metadata, and the privacy

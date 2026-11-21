@@ -77,18 +77,21 @@ test('5. an install first seen 6 days ago does not count; at 7 days it does', as
   assert.deepEqual(await listed(w, T0 + DAY), ['aging']);
 });
 
-test('6. not slop applies at once: 3 slop and 1 not slop lists; a second not slop delists next build', async () => {
+test('6. not slop counts like slop: 3 slop and 1 not slop lists; a second not slop delists once it is past the 24 h wait', async () => {
   const w = world();
   await slopFrom(w, 'mixed', [1, 2, 3], { when: OLD, nets: 2 });
   await w.report(4, [{ label: 'not_slop', handle: 'mixed', status: '9004', thread: '9' }], { now: OLD, ip: '10.9.9.9' });
   await w.buildAt();
   assert.deepEqual(await listed(w), ['mixed']);
-  // A fresh not_slop report from an aged install counts with no 24 h wait.
+  // A fresh not_slop report from an aged install does not count until it is ADD_WAIT_HOURS old.
   await w.report(5, [{ label: 'not_slop', handle: 'mixed', status: '9005', thread: '9' }], { now: OLD, ip: '10.9.9.8' });
   const later = T0 + HOUR;
   await w.report(5, [{ label: 'not_slop', handle: 'mixed', status: '9005', thread: '9' }], { now: later, ip: '10.9.9.8' });
   await w.buildAt(later);
-  assert.deepEqual(await listed(w, later), []);
+  assert.deepEqual(await listed(w, later), ['mixed']);
+  const waited = later + RULES.ADD_WAIT_HOURS * HOUR;
+  await w.buildAt(waited);
+  assert.deepEqual(await listed(w, waited), []);
   assert.equal(RULES.NOT_SLOP_WEIGHT, 3);
 });
 
@@ -150,7 +153,7 @@ test('10. empty build and no build both serve 200, empty, ndjson content type', 
     assert.equal(r.status, 200, step);
     assert.equal(r.text, '', step);
     assert.match(r.res.headers.get('content-type'), /^application\/x-ndjson/);
-    assert.equal(r.res.headers.get('cache-control'), 'public, max-age=600');
+    assert.equal(r.res.headers.get('cache-control'), step === 'before' ? 'no-store' : 'public, max-age=600');
   }
 });
 
@@ -331,11 +334,13 @@ test('pages, status and candidates', async () => {
   assert.equal(home.status, 200);
   assert.match(home.res.headers.get('content-type'), /text\/html/);
   assert.match(home.text, /action="\/v1\/removal"/);
+  assert.match(home.text, /rebuilt every six hours/);
+  assert.ok(home.text.includes('<li>Each install is at least 7 days old, and each report, Slop or Not slop, is at least 24 hours old.</li>'));
   assert.equal(home.text.includes('http://') || /src=["']https?:/.test(home.text), false);
   await slopFrom(w, 'cand', [1, 2], { when: OLD, nets: 2 });
   await w.buildAt();
   const s = await w.req('GET', '/v1/status');
-  assert.deepEqual(s.json, { ok: true, listed: 0, reports: 2, reporters: 2, builtAt: T0 });
+  assert.deepEqual(s.json, { ok: true, listed: 0, reporters: 2, builtAt: T0 });
   const c = (await w.admin('GET', '/v1/admin/candidates?limit=5')).json.candidates;
   assert.equal(c.length, 1);
   assert.equal(c[0].handle, 'cand');

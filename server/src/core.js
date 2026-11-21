@@ -13,6 +13,7 @@ export const RULES = Object.freeze({
   BATCH_MAX: 50,
   BODY_MAX: 32768,
   REPORTS_PER_INSTALL_DAY: 100,
+  REPORTS_PER_DAY: 6000,
   NEW_INSTALLS_PER_NET_DAY: 10,
   REMOVALS_PER_NET_DAY: 5,
 });
@@ -153,12 +154,20 @@ function parseJson(text) {
   }
 }
 
-async function counterValue(db, kind, subject, day) {
-  const row = await db.prepare('SELECT n FROM counters WHERE kind = ? AND subject = ? AND day = ?').bind(kind, subject, day).first();
-  return row ? Number(row.n) : 0;
+// Rate limits bump first and decide from the returned value, so parallel requests
+// cannot all read the same old count. Whatever was bumped but not accepted is
+// subtracted back with unbump; counters end exact, and while requests overlap
+// they err toward deferring.
+async function bump(db, kind, subject, day, by) {
+  const row = await db
+    .prepare('INSERT INTO counters (kind, subject, day, n) VALUES (?, ?, ?, ?) ON CONFLICT(kind, subject, day) DO UPDATE SET n = n + excluded.n RETURNING n')
+    .bind(kind, subject, day, by)
+    .first();
+  return Number(row.n);
 }
 
-const bumpSql = 'INSERT INTO counters (kind, subject, day, n) VALUES (?, ?, ?, ?) ON CONFLICT(kind, subject, day) DO UPDATE SET n = n + excluded.n';
+const unbump = (db, kind, subject, day, by) =>
+  db.prepare('UPDATE counters SET n = n - ? WHERE kind = ? AND subject = ? AND day = ?').bind(by, kind, subject, day);
 
 // ---------- build ----------
 
@@ -170,11 +179,17 @@ export async function build(db, env, now) {
   const dayCut = dayOf(now - 3 * DAY);
 
   const stmts = [
-    db.prepare('DELETE FROM reports WHERE at < ?').bind(expCut),
+    // The label list lets this use reports_label_at; reports has no index on at alone.
+    db.prepare("DELETE FROM reports WHERE label IN ('slop', 'not_slop') AND at < ?").bind(expCut),
+    // Retention: installs with nothing left to show, and closed removal requests.
+    db
+      .prepare('DELETE FROM reporters WHERE first_seen < ? AND NOT EXISTS (SELECT 1 FROM reports r WHERE r.reporter = reporters.id)')
+      .bind(expCut),
+    db.prepare("DELETE FROM removals WHERE status <> 'open' AND at < ?").bind(expCut),
     db.prepare('DELETE FROM counters WHERE day < ?').bind(dayCut),
     db.prepare('DELETE FROM next_listed'),
     // The rule. Slop reports count once aged installs have waited out ADD_WAIT_HOURS;
-    // Not slop reports from aged installs count at once.
+    // Not slop reports (the veto) count under the same conditions: aged install, past the wait, inside the window.
     db
       .prepare(
         `INSERT INTO next_listed (handle, reporters, since)
@@ -184,8 +199,9 @@ export async function build(db, env, now) {
              COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN reporter END) AS slop,
              COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN COALESCE(thread, status) END) AS threads,
              COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN net END) AS nets,
-             COUNT(DISTINCT CASE WHEN label = 'not_slop' THEN reporter END) AS notslop
-           FROM reports
+             COUNT(DISTINCT CASE WHEN label = 'not_slop' AND at <= ? THEN reporter END) AS notslop
+           -- NOT INDEXED: one plain pass over the table (an index scan costs a table lookup per row too).
+           FROM reports NOT INDEXED
            WHERE at >= ? AND reporter IN (SELECT id FROM reporters WHERE first_seen <= ?)
            GROUP BY handle
          ) g
@@ -193,13 +209,13 @@ export async function build(db, env, now) {
            AND g.slop >= ${RULES.NOT_SLOP_WEIGHT} * g.notslop
            AND g.handle NOT IN (SELECT handle FROM overrides WHERE action = 'delist')`,
       )
-      .bind(now, addCut, addCut, addCut, expCut, ageCut),
+      .bind(now, addCut, addCut, addCut, addCut, expCut, ageCut),
     // Admin "list" overrides always add.
     db
       .prepare(
         `INSERT OR IGNORE INTO next_listed (handle, reporters, since)
          SELECT o.handle,
-           (SELECT COUNT(DISTINCT r.reporter) FROM reports r WHERE r.handle = o.handle AND r.label = 'slop' AND r.at >= ?),
+           (SELECT COUNT(DISTINCT r.reporter) FROM reports r INDEXED BY reports_handle WHERE r.handle = o.handle AND r.label = 'slop' AND r.at >= ?),
            COALESCE((SELECT l.since FROM listed l WHERE l.handle = o.handle), ?)
          FROM overrides o WHERE o.action = 'list'`,
       )
@@ -215,8 +231,14 @@ export async function build(db, env, now) {
             OR EXISTS (SELECT 1 FROM listed WHERE handle NOT IN (SELECT handle FROM next_listed))`,
       )
       .bind(now),
-    db.prepare('DELETE FROM listed'),
-    db.prepare('INSERT INTO listed (handle, reporters, since) SELECT handle, reporters, since FROM next_listed'),
+    // Diff-only: write just the rows that changed. An existing row keeps its since
+    // (next_listed took it from listed), so only reporters can differ.
+    db.prepare('DELETE FROM listed WHERE handle NOT IN (SELECT handle FROM next_listed)'),
+    db.prepare(
+      `UPDATE listed SET reporters = (SELECT n.reporters FROM next_listed n WHERE n.handle = listed.handle)
+       WHERE reporters <> (SELECT n.reporters FROM next_listed n WHERE n.handle = listed.handle)`,
+    ),
+    db.prepare('INSERT INTO listed (handle, reporters, since) SELECT handle, reporters, since FROM next_listed WHERE handle NOT IN (SELECT handle FROM listed)'),
     db.prepare('DELETE FROM next_listed'),
     db.prepare(
       `INSERT OR REPLACE INTO meta (k, v)
@@ -226,7 +248,7 @@ export async function build(db, env, now) {
     ),
     db.prepare(
       `INSERT OR REPLACE INTO meta (k, v)
-       SELECT 'stats', json_object('listed', (SELECT COUNT(*) FROM listed), 'reports', (SELECT COUNT(*) FROM reports), 'reporters', (SELECT COUNT(*) FROM reporters))`,
+       SELECT 'stats', json_object('listed', (SELECT COUNT(*) FROM listed), 'reporters', (SELECT COUNT(*) FROM reporters))`,
     ),
     db.prepare("INSERT OR REPLACE INTO meta (k, v) VALUES ('builtAt', ?)").bind(String(now)),
   ];
@@ -261,6 +283,10 @@ async function getList(db, request, ctx) {
     if (hit) return hit;
   }
   const m = await getMeta(db, ['body', 'builtAt']);
+  if (!m.builtAt) {
+    // Before the first build the empty list is a placeholder: never cache it.
+    return finish(new Response('', { status: 200, headers: { 'content-type': 'application/x-ndjson; charset=utf-8', 'cache-control': 'no-store' } }));
+  }
   const headers = {
     'content-type': 'application/x-ndjson; charset=utf-8',
     'cache-control': 'public, max-age=600',
@@ -288,10 +314,10 @@ async function getStatus(db) {
   let stats = m.stats ? JSON.parse(m.stats) : null;
   if (!stats) {
     // Before the first build the tables are tiny, so a live count is cheap.
-    const r = await db.prepare('SELECT (SELECT COUNT(*) FROM reports) AS reports, (SELECT COUNT(*) FROM reporters) AS reporters').first();
-    stats = { listed: 0, reports: Number(r.reports), reporters: Number(r.reporters) };
+    const r = await db.prepare('SELECT COUNT(*) AS reporters FROM reporters').first();
+    stats = { listed: 0, reporters: Number(r.reporters) };
   }
-  return json(200, { ok: true, listed: stats.listed, reports: stats.reports, reporters: stats.reporters, builtAt: m.builtAt ? Number(m.builtAt) : null }, { 'cache-control': 'public, max-age=60' });
+  return json(200, { ok: true, listed: stats.listed, reporters: stats.reporters, builtAt: m.builtAt ? Number(m.builtAt) : null }, { 'cache-control': 'public, max-age=60' });
 }
 
 function homePage() {
@@ -319,10 +345,10 @@ button{font:inherit;margin-top:1rem;padding:.4rem 1rem}
 <ul>
 <li>At least ${R.MIN_REPORTERS} different installs reported it as Slop.</li>
 <li>Those reports are about at least ${R.MIN_THREADS} different threads and come from at least ${R.MIN_NETS} different networks.</li>
-<li>Each install is at least ${R.AGE_DAYS} days old, and each Slop report is at least ${R.ADD_WAIT_HOURS} hours old.</li>
+<li>Each install is at least ${R.AGE_DAYS} days old, and each report, Slop or Not slop, is at least ${R.ADD_WAIT_HOURS} hours old.</li>
 <li>The Slop reporters are at least ${R.NOT_SLOP_WEIGHT} times as many as the installs that reported the account as Not slop.</li>
 </ul>
-<p>Reports older than ${R.EXPIRY_DAYS} days are deleted, so an account drops off when readers stop reporting it. The list is rebuilt every three hours.</p>
+<p>Reports older than ${R.EXPIRY_DAYS} days are deleted, so an account drops off when readers stop reporting it. The list is rebuilt every six hours.</p>
 <h2>Data</h2>
 <ul>
 <li><a href="/v1/list.ndjson">/v1/list.ndjson</a>: the current list, one JSON object per line.</li>
@@ -394,18 +420,26 @@ async function postReports(db, env, request, body, now) {
   const stmts = [];
   const known = await db.prepare('SELECT 1 AS x FROM reporters WHERE id = ?').bind(reporter).first();
   if (!known) {
-    const n = await counterValue(db, 'new_install', net, day);
-    if (n >= RULES.NEW_INSTALLS_PER_NET_DAY) {
-      const retryAfter = msToMidnight(now);
-      return fail(429, 'too many new installs from this network today', { retryAfter });
+    if ((await bump(db, 'new_install', net, day, 1)) > RULES.NEW_INSTALLS_PER_NET_DAY) {
+      await unbump(db, 'new_install', net, day, 1).run();
+      return fail(429, 'too many new installs from this network today', { retryAfter: msToMidnight(now) });
     }
     stmts.push(db.prepare('INSERT OR IGNORE INTO reporters (id, first_seen) VALUES (?, ?)').bind(reporter, hourFloor(now)));
-    stmts.push(db.prepare(bumpSql).bind('new_install', net, day, 1));
   }
-  const used = known ? await counterValue(db, 'report', reporter, day) : 0;
-  const room = Math.max(0, RULES.REPORTS_PER_INSTALL_DAY - used);
-  const accepted = valid.slice(0, room);
-  const deferred = valid.slice(room);
+  // Per install: bump by everything offered, then see how much of it fit.
+  const offered = valid.length;
+  const before = (await bump(db, 'report', reporter, day, offered)) - offered;
+  const underInstall = Math.min(offered, Math.max(0, RULES.REPORTS_PER_INSTALL_DAY - before));
+  // Global: only what passed the install cap is offered to the daily total.
+  let fit = 0;
+  if (underInstall > 0) {
+    const beforeAll = (await bump(db, 'report_all', '*', day, underInstall)) - underInstall;
+    fit = Math.min(underInstall, Math.max(0, RULES.REPORTS_PER_DAY - beforeAll));
+    if (underInstall > fit) stmts.push(unbump(db, 'report_all', '*', day, underInstall - fit));
+  }
+  if (offered > fit) stmts.push(unbump(db, 'report', reporter, day, offered - fit));
+  const accepted = valid.slice(0, fit);
+  const deferred = valid.slice(fit);
   const at = hourFloor(now);
   for (const r of accepted) {
     stmts.push(
@@ -418,7 +452,6 @@ async function postReports(db, env, request, body, now) {
         .bind(reporter, r.status, r.handle, r.thread, r.hash, r.label, net, at),
     );
   }
-  if (accepted.length) stmts.push(db.prepare(bumpSql).bind('report', reporter, day, accepted.length));
   if (stmts.length) await db.batch(stmts);
   const out = { ok: true, accepted: accepted.map((r) => r.status), rejected, deferred: deferred.map((r) => r.status) };
   if (deferred.length) out.retryAfter = msToMidnight(now);
@@ -471,12 +504,12 @@ async function postRemoval(db, env, request, raw, now) {
 
   const { net } = await identity(env, request, null);
   const day = dayOf(now);
-  if ((await counterValue(db, 'removal', net, day)) >= RULES.REMOVALS_PER_NET_DAY) {
+  if ((await bump(db, 'removal', net, day, 1)) > RULES.REMOVALS_PER_NET_DAY) {
+    await unbump(db, 'removal', net, day, 1).run();
     return fail(429, 'too many removal requests from this network today', { retryAfter: msToMidnight(now) });
   }
   const res = await db.batch([
     db.prepare('INSERT INTO removals (handle, reason, contact, net, at) VALUES (?, ?, ?, ?, ?)').bind(handle.toLowerCase(), reason, contact, net, hourFloor(now)),
-    db.prepare(bumpSql).bind('removal', net, day, 1),
   ]);
   if (form) return html(200, thanksPage());
   return json(200, { ok: true, id: Number(res[0].meta.last_row_id) });
@@ -496,7 +529,7 @@ async function adminCandidates(db, url, now) {
       `SELECT r.handle AS handle,
          COUNT(DISTINCT CASE WHEN r.label = 'slop' AND r.at <= ? AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ?) THEN r.reporter END) AS slop_reporters,
          COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN r.reporter END) AS slop_reporters_all,
-         COUNT(DISTINCT CASE WHEN r.label = 'not_slop' AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ?) THEN r.reporter END) AS not_slop_reporters,
+         COUNT(DISTINCT CASE WHEN r.label = 'not_slop' AND r.at <= ? AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ?) THEN r.reporter END) AS not_slop_reporters,
          COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN COALESCE(r.thread, r.status) END) AS threads,
          COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN r.net END) AS nets,
          MAX(CASE WHEN r.label = 'slop' THEN r.at END) AS newest,
@@ -509,7 +542,7 @@ async function adminCandidates(db, url, now) {
        ORDER BY slop_reporters DESC, slop_reporters_all DESC, r.handle
        LIMIT ?`,
     )
-    .bind(addCut, ageCut, ageCut, expCut, limit)
+    .bind(addCut, ageCut, addCut, ageCut, expCut, limit)
     .all();
   return json(200, {
     ok: true,
@@ -539,6 +572,8 @@ async function adminRoute(db, env, request, url, path, now) {
   if (m !== 'POST') return null;
   if (path === '/v1/admin/rebuild') {
     const stats = await build(db, env, now);
+    const cache = getCache();
+    if (cache) await cache.delete(listCacheKey(request.url));
     return json(200, { ok: true, ...stats });
   }
   if (path === '/v1/admin/removal' || path === '/v1/admin/override') {
