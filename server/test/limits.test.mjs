@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { world, slopFrom, keyOf, RULES, T0, HOUR, DAY } from './helpers.mjs';
+import { world, slopFrom, keyOf, RULES, build, T0, HOUR, DAY } from './helpers.mjs';
 
 const item = (status) => ({ label: 'slop', handle: 'someone', status: String(status), thread: '1' });
 const counter = (w, kind, subject) => {
@@ -232,4 +232,20 @@ test('admin candidates: not_slop_reporters counts aged installs past the wait, a
   await ns(21, T0 - 2 * DAY, '10.9.3.5'); // install registered inside the age window: does not count
   const get = async () => (await w.admin('GET', '/v1/admin/candidates')).json.candidates.find((c) => c.handle === 'target');
   assert.equal((await get()).not_slop_reporters, 1);
+});
+
+test('build: the rule query reads reports in handle order, with no sort for the grouping', async () => {
+  // A plain scan plus a GROUP BY sort read about two rows per report on D1; the index read one.
+  const w = world();
+  const seen = [];
+  const rec = (sql) => {
+    const s = { sql, args: [], bind(...a) { s.args = a; return s; }, first: async () => null, all: async () => ({ results: [] }), run: async () => ({}) };
+    return s;
+  };
+  await build({ prepare: rec, batch: async (l) => { seen.push(...l); return l.map(() => ({})); } }, w.env, T0);
+  const rule = seen.find((s) => s.sql.includes('INSERT INTO next_listed (handle, reporters, since)\n'));
+  assert.ok(rule, 'the rule statement');
+  const plan = w.db.raw.prepare('EXPLAIN QUERY PLAN ' + rule.sql).all(...rule.args).map((p) => p.detail);
+  assert.ok(plan.includes('SCAN reports USING INDEX reports_handle'), plan.join(' | '));
+  assert.equal(plan.some((d) => d.includes('TEMP B-TREE FOR GROUP BY')), false, plan.join(' | '));
 });

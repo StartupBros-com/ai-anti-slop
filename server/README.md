@@ -57,7 +57,7 @@ Admin endpoints need `Authorization: Bearer <ADMIN_TOKEN>`. The token is compare
 
 ## How the build works
 
-A Cron Trigger runs `17 */6 * * *`, and the admin endpoints run the same code. `build()` in `src/core.js` sends one `db.batch` so it is atomic: delete expired reports, prune old reporter rows and closed removal requests, delete counters older than 3 days, fill `next_listed` from the rule and the overrides (keeping `since` for accounts already listed), insert a `changes` row only when something was added or removed, write to `listed` only the rows that differ from `next_listed` (deletes, `reporters` updates and inserts), empty `next_listed`, and write the NDJSON body, the stats and the build time to `meta`. The rule query reads `reports` once as a plain table scan (`NOT INDEXED`); an index scan would cost a table lookup per row as well. All counting is done in SQL, because a Worker on the free plan has 10 ms of CPU per call and D1 query time does not count against it.
+A Cron Trigger runs `17 */6 * * *`, and the admin endpoints run the same code. `build()` in `src/core.js` sends one `db.batch` so it is atomic: delete expired reports, prune old reporter rows and closed removal requests, delete counters older than 3 days, fill `next_listed` from the rule and the overrides (keeping `since` for accounts already listed), insert a `changes` row only when something was added or removed, write to `listed` only the rows that differ from `next_listed` (deletes, `reporters` updates and inserts), empty `next_listed`, and write the NDJSON body, the stats and the build time to `meta`. The rule query reads `reports` through `reports_handle`, so its rows come in handle order and the grouping needs no sort. D1 counts the index rows it reads, about one per report; a plain table scan plus the sort read about two per report (measured below). All counting is done in SQL, because a Worker on the free plan has 10 ms of CPU per call and D1 query time does not count against it.
 
 The cached list file can lag a cron build by up to 10 minutes. An admin override or rebuild also clears the cache entry in the colo that served it, so it shows at once there.
 
@@ -108,16 +108,26 @@ rebuild
 
 ## Free plan arithmetic
 
-Limits on the free plans: Workers allow 100,000 requests a day and 10 ms of CPU per call (cron included); D1 allows 5,000,000 rows read and 100,000 rows written a day, and 5 GB stored.
+Limits on the free plans: Workers allow 100,000 requests a day and 10 ms of CPU per call (cron included); D1 allows 5,000,000 rows read and 100,000 rows written a day, 500 MB per database (5 GB per account), 30 seconds per query, and 50 queries per call, where a `db.batch` counts as one. The row limits are per Cloudflare account, so other D1 databases on the same account use them up too. Since 2026-09-01, an account past either daily row limit gets an error on every D1 query until midnight UTC. Here that means reports answer 500 and the extension keeps them for a retry 30 minutes later, and a list download that misses the cache answers 500 and the extension keeps its last copy of the readers' list.
 
-How rows are counted below: D1 bills every row a statement scans as read, and every table row and index entry it changes as written. A report insert or delete changes 4 rows (the table row, its primary key entry, `reports_label_at` and `reports_handle`). A counter insert is 2 rows and a counter update 1. `next_listed` is `WITHOUT ROWID`, so a staged row is 1. The plans behind these numbers are SQLite's own `EXPLAIN QUERY PLAN`, run against the migration under `node:sqlite`, and the same statements ran under `wrangler dev`. D1's metrics on the deployed database have not been seen yet, so check them after the first week.
+**Measured, not estimated.** On 2026-11-21 a local D1 database (wrangler 4.158.0, workerd's SQLite) was filled to the most the code allows: `REPORTS_PER_DAY` accepts 6,000 reports a day, so 90 days hold 540,000. The seed had 1,050 installs, 5% Not slop reports, 20% of reports on 500 accounts and the rest on 216,000 accounts with about 2 each, which listed 1,355 accounts. Every statement of `build()` and of the requests ran through the real D1 binding (wrangler's `getPlatformProxy`), which returns D1's own `rows_read` and `rows_written`. Cloudflare's metrics on the deployed database have not been seen yet, so compare them after the first week.
 
-The worst case the code allows: `REPORTS_PER_DAY` accepts at most 6,000 reports a day from all installs together, so 90 days hold at most 540,000 reports. Assumed with it: 1,000 installs, every one sharing, about 5 report requests each a day, and 500 listed accounts with 2% of them changing per build.
+| | Rows read | Rows written | Time |
+|---|---|---|---|
+| A build, first (nothing listed yet) | 559,463 | 12,018 | 0.9 s |
+| A build, steady (6 hours later) | 556,943 | 4,201 | 0.7 s |
+| A report request, new install, 5 reports | 3 | 28 | |
+| A report request, known install, 5 reports | 5 | 22 | |
+| `GET /v1/list.ndjson` not in the cache, or `GET /v1/status` | 4 | 0 | |
 
-- **Requests:** about 5,000 report requests, 4,000 list downloads (each install every 6 hours; the cached answer still runs the Worker), a few hundred other calls and 4 cron runs. About 10,000 a day, a tenth of the limit.
-- **CPU:** a request does two HMACs, a few small queries and a JSON parse; the counting is in SQL, whose time is D1's, not the Worker's. Not measured on the deployed Worker.
-- **Rows read:** a build scans `reports` once (540,000), `reporters` twice (2,000), the expiring reports through the index (12,000), the counters (about 4,400) and the listed accounts a few times over (about 6,000): about 566,000. Four builds a day are about 2,300,000 with the requests, under half the limit.
-- **Rows written:** 24,000 for the day's report inserts and 24,000 for the day's expiry deletes, about 11,000 for the per-install and global counters, about 2,000 for the counter purge, 4,000 for staging `next_listed` (1,000 rows a build) and under 200 for `listed`, `meta` and `changes`. About 65,000 a day, two thirds of the limit.
-- **Storage:** a report is roughly 250 bytes with its three index entries, so 540,000 are about 135 MB, far under 5 GB.
+Where the steady build's writes go: 1,482 for the reports past 90 days (one per deleted report), 2,711 for staging and emptying `next_listed` (two per listed account, as it is `WITHOUT ROWID`), and 8 for `meta` and `changes`. A report insert is 4 rows written (the row and its three index entries); a counter is 2 when it is new and 1 after.
 
-Rows written move first. Each extra 1,000 reports a day adds about 9,000 written (insert, expiry and counter), so the free plan holds the cap up to about 9,000; each extra 1,000 listed accounts adds about 8,000 written a day (two rows per build, four builds). Move to the $5 Workers Paid plan when the D1 metrics show rows written near 80,000 a day, when the `report_all` counter reaches 6,000 on most days (reports then wait for the next UTC day), or when the list passes about 3,000 accounts. Before paying, a lower `EXPIRY_DAYS` cuts reads and the steady-state expiry deletes in proportion.
+A day at that ceiling, with 1,000 installs sharing:
+
+- **Rows read:** four builds are about 2,230,000; requests add tens of thousands. That is under half of 5,000,000. An admin override or rebuild runs a whole build, about 557,000 more, so about four of them fit in a day at the ceiling.
+- **Rows written:** 24,000 for the day's 6,000 reports, 2,400 to 12,000 for counters (2 per request, so more when installs send fewer reports at a time), 16,800 for four builds, and a few hundred for new installs: about 43,000 to 53,000, half of 100,000.
+- **Requests:** at most 6,000 report requests, about 4,000 list downloads (each install every 6 hours; a cached answer still runs the Worker), a few hundred other calls and 4 cron runs: under 11,000 of 100,000. CPU per call was not measured; the counting is in SQL, whose time is D1's, not the Worker's.
+- **Storage:** the database file was 103 MB at 532,836 reports, about 194 bytes each, against the 500 MB cap.
+- **Query time:** the longest statement, the rule, took 0.7 to 0.9 s on this machine, against the 30 s limit.
+
+Rows written move first as the list grows: each 1,000 more listed accounts adds about 8,000 written a day (two rows per build, four builds), so the free plan holds the cap with up to about 6,000 listed accounts. Move to the $5 Workers Paid plan when D1's metrics show rows written near 80,000 or rows read near 4,000,000 a day, when the `report_all` counter reaches 6,000 on most days (reports then wait for the next UTC day), or when the list passes about 5,000 accounts. Before paying, a lower `EXPIRY_DAYS` cuts the reads and the stored reports in proportion.

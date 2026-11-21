@@ -200,8 +200,9 @@ export async function build(db, env, now) {
              COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN COALESCE(thread, status) END) AS threads,
              COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN net END) AS nets,
              COUNT(DISTINCT CASE WHEN label = 'not_slop' AND at <= ? THEN reporter END) AS notslop
-           -- NOT INDEXED: one plain pass over the table (an index scan costs a table lookup per row too).
-           FROM reports NOT INDEXED
+           -- reports_handle gives the rows in handle order, so GROUP BY needs no sort. On local
+           -- D1 at 532,836 reports this read 533,887 rows; a plain scan plus the sort read 1,039,932.
+           FROM reports INDEXED BY reports_handle
            WHERE at >= ? AND reporter IN (SELECT id FROM reporters WHERE first_seen <= ?)
            GROUP BY handle
          ) g
