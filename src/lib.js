@@ -294,12 +294,16 @@
     const base = prev || { handles: [], fetchedAt: 0, source: url };
     if (result.ok) {
       // A list of several sources may succeed with some refused (reason
-      // names them): those kept their previous parts, and the record says why.
+      // names them): those kept their previous parts, and the record says why
+      // and is marked partial, since the rest did update.
       const rec = { handles: result.handles, fetchedAt: now, source: url, lastAttemptAt: now, lastError: result.reason || null };
       if (result.parts) rec.parts = result.parts;
+      if (result.reason) rec.partial = true;
       return rec;
     }
-    return Object.assign({}, base, { lastAttemptAt: now, lastError: result.reason });
+    const failed = Object.assign({}, base, { lastAttemptAt: now, lastError: result.reason });
+    delete failed.partial;
+    return failed;
   }
 
   // Commit a refresh against the record stored right now, not the one read
@@ -1447,8 +1451,9 @@
   // The record after one request. res is { status, body } (status 0: no
   // answer, with res.error). What the server took, or refused as malformed,
   // leaves the queue; what it put off stays, and nothing is sent before
-  // retryAt. A request refused whole (400, 413) leaves the queue too: sent
-  // again it would be refused again. A result for another key (the record
+  // retryAt. A request refused whole as malformed (400) or too large (413)
+  // leaves the queue too: sent again it would be refused again. Any other
+  // answer that is not 200 keeps it. A result for another key (the record
   // was deleted while the request was out) changes nothing.
   function shareResult(state, batch, res, now) {
     const st = shareState(state);
@@ -1470,7 +1475,9 @@
     } else if (r.status === 429) {
       st.lastError = `the server asked to wait${why ? `: ${why}` : ''}`;
       st.retryAt = wait(Number(body.retryAfter));
-    } else if (r.status >= 500 || (r.status === 200 && body.ok !== true)) {
+    } else if ((r.status !== 200 && r.status !== 400 && r.status !== 413) || (r.status === 200 && body.ok !== true)) {
+      // 5xx, any other refusal (403, 404, 408, ...) that a proxy or a server
+      // mid-deploy may give, or a 200 that is not ok: kept, and tried later.
       st.lastError = `the server answered ${r.status}${why ? `: ${why}` : ''}`;
       st.retryAt = later;
     } else if (r.status !== 200) {

@@ -207,7 +207,11 @@ test('Recommended record: a success stores the parts, a failure keeps them and t
   assert.deepEqual(failed, { ...rec, lastAttemptAt: 200, lastError: 'blockedforaireply.levels.io: HTTP 503' });
   // An update with a source refused is stored, and the record says why.
   const partial = L.commitRecord(rec, { ...okResult, reason: 'clankwall.vogel.dev: HTTP 404' }, LV, 1, 300);
-  assert.deepEqual([partial.fetchedAt, partial.lastError, partial.seq], [300, 'clankwall.vogel.dev: HTTP 404', 2]);
+  assert.deepEqual([partial.fetchedAt, partial.lastError, partial.seq, partial.partial], [300, 'clankwall.vogel.dev: HTTP 404', 2, true]);
+  // A full update after it is no longer partial, and neither is a failure that follows a partial one.
+  assert.equal('partial' in L.commitRecord(partial, okResult, LV, 2, 400), false);
+  const after = L.commitRecord(partial, { ok: false, reason: 'blockedforaireply.levels.io: HTTP 503' }, LV, 2, 400);
+  assert.deepEqual([after.fetchedAt, after.lastError, 'partial' in after], [300, 'blockedforaireply.levels.io: HTTP 503', false]);
   // A one-source list's record has no parts.
   assert.equal('parts' in L.nextRecord(null, { ok: true, handles: ['a'] }, AI, 1), false);
 });

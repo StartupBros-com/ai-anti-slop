@@ -126,7 +126,8 @@
   function stateOf(sub, rec) {
     if (trying && sub.on) return 'trying';
     if (!sub.on) return 'off';
-    if (rec && rec.lastError) return rec.fetchedAt ? 'stale' : 'failed';
+    // partial: a list of several sources updated with one or more refused.
+    if (rec && rec.lastError) return rec.partial && rec.fetchedAt ? 'partial' : rec.fetchedAt ? 'stale' : 'failed';
     if (rec && rec.fetchedAt) return 'ok';
     return 'waiting';
   }
@@ -142,6 +143,8 @@
         return 'Download failed';
       case 'stale':
         return `${plural(count, 'account', 'accounts')} · last download failed`;
+      case 'partial':
+        return `${plural(count, 'account', 'accounts')} · updated ${ago(rec.fetchedAt)} · a source failed`;
       case 'waiting':
         return 'Not downloaded yet';
       default:
@@ -156,6 +159,13 @@
   function failHelp(sub, rec, count) {
     const reason = rec && rec.lastError ? String(rec.lastError) : '';
     if (!reason) return null;
+    if (rec.partial && rec.fetchedAt) {
+      return {
+        what: 'Not every one of its sources could be downloaded. The rest updated.',
+        next: 'A source that failed keeps its last good copy until a download of it works. It tries again at its next refresh, or press Try again.',
+        reason,
+      };
+    }
     const stale = !!rec.fetchedAt;
     const own = !sub.builtin;
     const later = stale ? 'It tries again at its next refresh' : 'It tries again within 6 hours';
@@ -236,7 +246,7 @@
     });
     const stat = h('p', { class: `stat${state === 'failed' || state === 'stale' ? ' bad' : ''}`, id: statId });
     if (state === 'trying') stat.append(icon('refresh', 14, 'spin'));
-    if (state === 'failed' || state === 'stale') stat.append(icon('alert', 14));
+    if (state === 'failed' || state === 'stale' || state === 'partial') stat.append(icon('alert', 14));
     stat.append(statusText(state, count, rec));
     const lock = sub.locked ? h('p', { class: 'stat', id: `lock-${sub.id}` }, icon('lock', 13), 'Stays on while muting is on') : null;
     const main = h(
@@ -425,7 +435,7 @@
     const key = L.listKey(id);
     const attempt = async () => {
       const rec = (await chrome.storage.local.get(key))[key];
-      return rec ? { at: rec.lastAttemptAt, error: rec.lastError } : null;
+      return rec ? { at: rec.lastAttemptAt, error: rec.lastError, partial: !!rec.partial } : null;
     };
     let r;
     let before = null;
@@ -443,7 +453,11 @@
     else if (after && after.at && (!before || after.at !== before.at)) {
       note(
         $('listMsg'),
-        after.error ? 'It failed again. The note under the list says what to try.' : 'This list downloaded. Another list that is on failed; the note under it says what to try.',
+        after.error
+          ? after.partial
+            ? 'It updated, but a source failed again. The note under the list names it.'
+            : 'It failed again. The note under the list says what to try.'
+          : 'This list downloaded. Another list that is on failed; the note under it says what to try.',
         true,
       );
     } else note($('listMsg'), `The download did not finish: ${why(r.reason || 'no reason given')}.`, true);
@@ -712,7 +726,7 @@
         'ul',
         { class: 'facts' },
         h('li', {}, `To ${host}, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.`),
-        h('li', {}, 'Clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.'),
+        h('li', {}, 'While sharing is on, clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.'),
       ),
     ];
   }

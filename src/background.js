@@ -503,11 +503,17 @@ function shareSoon(at) {
   chrome.alarms.create(SHARE_ALARM, { when: Math.max(Date.now() + 30000, at || 0) });
 }
 
-// Called inside serial(): queue the items, and come back to send them.
+// Called inside serial(): queue the items, and come back to send them. A
+// send already set for no later than this one would be is kept, so labels
+// made less than 30 seconds apart do not keep putting the send off.
 async function queueShare(items) {
   let st = await shareRec();
   for (const it of items) st = L.enqueueShare(st, it);
   await chrome.storage.local.set({ [K.share]: st });
+  const set = await chrome.alarms.get(SHARE_ALARM);
+  const now = Date.now();
+  const want = Math.max(now + 30000, st.retryAt || 0);
+  if (set && set.scheduledTime > now && set.scheduledTime <= want) return;
   shareSoon(st.retryAt);
 }
 
@@ -586,6 +592,9 @@ async function sendLoop() {
 // Called inside serial(). Turn sharing on, with a new key if this install
 // has none, and queue a report for every label already saved when asked.
 async function startShare(backfill) {
+  // A delete still out drops the key when it ends, which would leave sharing
+  // on with no key (and could send reports the delete misses).
+  if (forgetting) return { ok: false, reason: 'Delete what I shared is still running; try again when it ends' };
   const got = await chrome.storage.local.get([K.settings, K.share]);
   let st = L.shareState(got[K.share]);
   if (!st.key) st.key = L.newShareKey();
@@ -619,7 +628,19 @@ async function stopShare() {
 // send already out is waited for, so the delete covers it; then the server
 // deletes every report made with this install's key. Only once it says so is
 // the key dropped (the next time sharing is turned on gets a new one).
+// Sharing cannot be turned on while it runs.
+let forgetting = false;
 async function forgetShare() {
+  if (forgetting) return { ok: false, reason: 'Delete what I shared is already running' };
+  forgetting = true;
+  try {
+    return await forgetOnce();
+  } finally {
+    forgetting = false;
+  }
+}
+
+async function forgetOnce() {
   const key = await serial(async () => {
     await stopShare();
     return (await shareRec()).key;

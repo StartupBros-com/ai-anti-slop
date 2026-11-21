@@ -228,7 +228,11 @@
     setHidden($('err'), !bad);
     setText(
       $('err'),
-      bad ? `${on[i].name}: last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}.${bad.fetchedAt ? ' Still using the previous list.' : ''}` : '',
+      !bad
+        ? ''
+        : bad.partial && bad.fetchedAt
+          ? `${on[i].name}: part of the last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}. The rest updated.`
+          : `${on[i].name}: last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}.${bad.fetchedAt ? ' Still using the previous list.' : ''}`,
     );
     return handles;
   }

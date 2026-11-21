@@ -165,7 +165,14 @@ test('an answer to a retraction, a 429, a 5xx, a refusal and no answer at all', 
   // Refused whole: sent again it would be refused again, so it goes.
   const bad = L.shareResult(st, b, { status: 400, body: { ok: false, reason: 'bad key' } }, NOW);
   assert.deepEqual([bad.queue, bad.lastError, bad.retryAt], [[], 'the server refused 1 (400: bad key)', null]);
-  const off = L.shareResult(st, b, { status: 0, error: 'Failed to fetch' }, NOW);
+  const big = L.shareResult(st, b, { status: 413, body: { ok: false, reason: 'body too large' } }, NOW);
+  assert.deepEqual([big.queue, big.lastError, big.retryAt], [[], 'the server refused 1 (413: body too large)', null]);
+  // Any other refusal may come from a proxy or a server mid-deploy: kept, and tried later.
+  for (const status of [403, 404, 405, 408, 409, 410]) {
+    const kept = L.shareResult(st, b, { status, body: null }, NOW);
+    assert.deepEqual([kept.queue.length, kept.lastError, kept.retryAt], [1, `the server answered ${status}`, NOW + 30 * 60000], String(status));
+  }
+  const off =L.shareResult(st, b, { status: 0, error: 'Failed to fetch' }, NOW);
   assert.deepEqual([off.queue.length, off.lastError, off.retryAt], [1, 'could not reach the server (Failed to fetch)', NOW + 30 * 60000]);
 });
 
