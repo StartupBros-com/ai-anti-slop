@@ -845,6 +845,11 @@ The privacy policy, with what each storage key holds, is
   post's text. Removing the extension deletes them, but not reports already
   shared; **Delete what I shared** does that. Sharing's own record (its random
   code and the reports waiting to go) is `xsh:share`.
+- **Report a problem or suggest something**, in the popup and on the settings
+  page, opens GitHub's new-issue page in a new tab when you click it, with the
+  extension's version and your browser's name, major version and system in its
+  address. The extension sends no request of its own for it; a report goes to
+  GitHub only if you submit it there.
 - Nothing else is collected or sent. There is no analytics.
 - The AI flags list's address is a setting (`feedUrl` in `xsh:settings`)
   with no UI. To use another list, add it on the settings page instead. A

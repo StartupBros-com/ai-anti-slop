@@ -83,7 +83,7 @@ MUTING (optional, off until you turn it on)
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
-- No account, no analytics. The extension's own code downloads the lists you have switched on, clankwall's, levelsio's, the readers' list and any you add, without cookies. Only if you turn on sharing does it send anything else: your labels' reports, without the post's words, to AI Anti-Slop's server. Everything else it keeps stays in your browser's extension storage.
+- No account, no analytics. The extension's own code downloads the lists you have switched on, clankwall's, levelsio's, the readers' list and any you add, without cookies. Only if you turn on sharing does it send anything else: your labels' reports, without the post's words, to AI Anti-Slop's server. Everything else it keeps stays in your browser's extension storage. Report a problem, in the popup and settings, opens GitHub with the extension's version and your browser's name in the address, and only when you click it.
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
