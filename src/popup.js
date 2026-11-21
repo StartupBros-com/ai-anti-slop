@@ -498,6 +498,12 @@
   $('chooseLists').addEventListener('click', () => chrome.runtime.openOptionsPage());
   // So does sharing, opened at its section.
   $('shareOpen').addEventListener('click', () => chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html#share') }));
+  // Report a problem or suggest something: GitHub's issue chooser with this
+  // version and browser filled in (lib's feedbackUrl). The page's own link,
+  // without them, stays if either cannot be read.
+  try {
+    $('feedback').setAttribute('href', L.feedbackUrl(chrome.runtime.getManifest().version, L.browserName(globalThis.navigator)));
+  } catch {}
   // aria-disabled, not disabled, while it refreshes: a disabled button drops
   // keyboard focus. aria-disabled does not stop clicks, so the flag does.
   // The button is an icon, so its name changes, never its text.

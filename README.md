@@ -30,6 +30,10 @@ Muting is automation of the X website, which X's rules say "may result in the
 permanent suspension of your account". Read [Muting](#muting) before you turn
 it on.
 
+AI Anti-Slop is open source. To report a problem or suggest something,
+[open an issue](https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose);
+to help build it, see [Contributing](#contributing).
+
 The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
@@ -841,6 +845,11 @@ The privacy policy, with what each storage key holds, is
   post's text. Removing the extension deletes them, but not reports already
   shared; **Delete what I shared** does that. Sharing's own record (its random
   code and the reports waiting to go) is `xsh:share`.
+- **Report a problem or suggest something**, in the popup and on the settings
+  page, opens GitHub's new-issue page in a new tab when you click it, with the
+  extension's version and your browser's name, major version and system in its
+  address. The extension sends no request of its own for it; a report goes to
+  GitHub only if you submit it there.
 - Nothing else is collected or sent. There is no analytics.
 - The AI flags list's address is a setting (`feedUrl` in `xsh:settings`)
   with no UI. To use another list, add it on the settings page instead. A
@@ -1113,9 +1122,17 @@ what has not been tested.
 
 ## Contributing
 
-Issues and pull requests are welcome. For anything non-trivial, open an issue
-first so we can agree on the approach before you spend time on it. Report a
-security problem privately instead; [SECURITY.md](SECURITY.md) says how.
+Reports, ideas and pull requests are welcome.
+[Report a problem or suggest something](https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose)
+on GitHub, which needs a GitHub account. The popup and the settings page link
+there too, with your version and browser filled in (0.9.0 and earlier do not
+have the link). An account that shouldn't be on a list is a request for
+whoever runs that list; see [Whose list is it?](#whose-list-is-it).
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers setting up, the checks CI runs and
+what a pull request needs. For anything non-trivial, open an issue first so we
+can agree on the approach before you spend time on it. Report a security
+problem privately instead; [SECURITY.md](SECURITY.md) says how.
 
 ## License
 

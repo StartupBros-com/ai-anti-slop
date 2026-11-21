@@ -1,0 +1,54 @@
+# The extension's popup and settings page link to the issue chooser with
+# ?version=…&browser=…, which GitHub hands to this form's fields of those ids.
+# Installs keep that link, so keep the ids (test/feedback.test.mjs checks them).
+name: Report a problem
+description: Something in AI Anti-Slop doesn't work, or works differently from what the README says.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting it. Issues are public, so leave out anything you want to keep private.
+
+        If an account is on a list and shouldn't be, ask whoever runs that list; the links are on the previous page. For a security problem, use **Report a vulnerability** on the Security tab instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to see it again
+      description: If you can make it happen again, how. A link to the x.com page helps.
+      placeholder: |
+        1. Open …
+        2. Click …
+  - type: input
+    id: version
+    attributes:
+      label: AI Anti-Slop version
+      description: Filled in if you came from the extension's link. Otherwise it is on your browser's extensions page, or after @version in the userscript.
+      placeholder: "0.9.0"
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and system
+      description: Filled in if you came from the extension's link.
+      placeholder: Chrome 142 on Windows
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options:
+        - Chrome Web Store
+        - Unpacked from GitHub
+        - Userscript
+        - Not sure
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots, or a message the popup or settings page showed.

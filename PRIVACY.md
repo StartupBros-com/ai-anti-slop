@@ -158,6 +158,15 @@ Nothing is uploaded or fetched.
 **Links in the popup** (X's muted-words settings, an account's profile, this
 project's page) open only when you click them.
 
+**Report a problem or suggest something**, in the popup and on the settings
+page, opens GitHub's new-issue page in a new tab when you click it. Its address
+holds the extension's version and your browser's name, major version and
+system, such as `Brave 158 on Windows`, so the click sends GitHub those two
+along with whatever your browser sends with any visit to GitHub. They fill two
+fields of the **Report a problem** form, which you can change or clear. Nothing
+else from the extension is in the address, and a report reaches GitHub only if
+you submit it there. Version 0.9.0 and earlier have no such link.
+
 Nothing else is collected or sent. There is no analytics, no crash reporting and
 no remotely hosted code.
 
@@ -309,4 +318,4 @@ including the Limited Use requirements.
 
 This policy lives in the project's repository, and every change to it is in the
 repository's history. Questions and requests go to
-[GitHub issues](https://github.com/StartupBros-com/ai-anti-slop/issues).
+[GitHub issues](https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose).

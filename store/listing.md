@@ -24,7 +24,8 @@ submitted version: the readers' list in the first paragraph, the sharing
 line under LABELS, the PRIVACY section, the single purpose, the storage
 justification, the readers' list under Remote code, the data-usage reasons
 and the certification line were written for the first submit that carries
-it. Field names and rules are from Google's developer documentation
+it. So was the Report a problem line at the end of the description, which
+came after sharing. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.
@@ -82,10 +83,11 @@ MUTING (optional, off until you turn it on)
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
-- No account, no analytics. The extension's own code downloads the lists you have switched on, clankwall's, levelsio's, the readers' list and any you add, without cookies. Only if you turn on sharing does it send anything else: your labels' reports, without the post's words, to AI Anti-Slop's server. Everything else it keeps stays in your browser's extension storage.
+- No account, no analytics. The extension's own code downloads the lists you have switched on, clankwall's, levelsio's, the readers' list and any you add, without cookies. Only if you turn on sharing does it send anything else: your labels' reports, without the post's words, to AI Anti-Slop's server. Everything else it keeps stays in your browser's extension storage. Report a problem, in the popup and settings, opens GitHub with the extension's version and your browser's name in the address, and only when you click it.
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
+Report a problem or suggest something (with a GitHub account): https://github.com/StartupBros-com/ai-anti-slop/issues/new/choose
 
 AI Anti-Slop is not affiliated with, endorsed by or sponsored by X Corp. It does not run or maintain the clankwall or levelsio lists.
 ```
