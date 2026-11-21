@@ -65,7 +65,9 @@ async function runRefresh(sub) {
   const record = exists ? L.commitRecord(latest, result, sub.url, startSeq, Date.now()) : null;
   if (record) await chrome.storage.local.set({ [key]: record });
   const kept = record || latest;
-  return { ok: result.ok, reason: result.reason || null, count: kept ? kept.handles.length : 0, handles: kept ? kept.handles : [] };
+  // A list of several sources can update with one of them refused (reason
+  // set): the update is stored, but the answer is not ok.
+  return { ok: result.ok && !result.reason, reason: result.reason || null, count: kept ? kept.handles.length : 0, handles: kept ? kept.handles : [] };
 }
 
 // Refresh every list that is on, in parallel. Answers { ok, reason, count }:

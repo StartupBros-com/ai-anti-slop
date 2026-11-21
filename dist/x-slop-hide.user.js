@@ -195,8 +195,14 @@
   function acceptUpdate(prevHandles, nextHandles, opts) {
     const ratio = (opts && opts.minShrinkRatio) || DEFAULTS.minShrinkRatio;
     const floor = (opts && opts.shrinkGuardFloor) || DEFAULTS.shrinkGuardFloor;
-    if (!nextHandles || nextHandles.length === 0) return { ok: false, reason: 'empty list' };
     const prevCount = prevHandles ? prevHandles.length : 0;
+    // A source that may be empty (opts.allowEmpty: the readers' list, empty
+    // until reports agree) is taken empty only while its stored copy is too
+    // small for the shrink guard: an empty answer never wipes a list of size.
+    if (!nextHandles || nextHandles.length === 0) {
+      if (opts && opts.allowEmpty && prevCount < floor) return { ok: true, reason: null };
+      return { ok: false, reason: 'empty list' };
+    }
     if (prevCount >= floor && nextHandles.length < prevCount * ratio) {
       return { ok: false, reason: `list shrank from ${prevCount} to ${nextHandles.length}` };
     }
@@ -255,30 +261,41 @@
   // Fetch a list made of several feeds (Recommended). Each source is fetched
   // and checked as a list of its own, against its own part of the stored
   // record (args.prevParts): a source that comes back empty or shrunk is
-  // refused even when the others would keep the union's count up. Any refusal
-  // refuses the whole update and names the source's host, so the stored
-  // record keeps every part as it was. On success the handles are the union,
-  // and parts holds { source, handles } for each source, in order.
+  // refused even when the others would keep the union's count up. A refused
+  // source keeps its previous part (none: no handles) while the others
+  // update, and the result's reason names each refused source's host. Only
+  // when every source is refused is the update refused. On success the
+  // handles are the union, and parts holds { source, handles } for each
+  // source, in order.
   async function fetchSources(args) {
     const prev = Array.isArray(args.prevParts) ? args.prevParts : [];
+    const was = args.sources.map((src) => prev.find((p) => p && p.source === src.url) || null);
     const results = await Promise.all(
-      args.sources.map((src) => {
-        const was = prev.find((p) => p && p.source === src.url);
-        return fetchList({ url: src.url, format: src.format, fetchImpl: args.fetchImpl, prevHandles: was && was.handles, timeoutMs: args.timeoutMs });
-      }),
+      args.sources.map((src, i) =>
+        fetchList({
+          url: src.url,
+          format: src.format,
+          fetchImpl: args.fetchImpl,
+          prevHandles: was[i] && was[i].handles,
+          timeoutMs: args.timeoutMs,
+          allowEmpty: src.allowEmpty === true,
+        }),
+      ),
     );
-    const bad = results.findIndex((r) => !r.ok);
-    if (bad >= 0) {
-      let host = args.sources[bad].url;
+    const hostOf = (u) => {
       try {
-        host = new URL(host).host;
+        return new URL(u).host;
       } catch (e) {
-        // keep the address as it is
+        return u;
       }
-      return { ok: false, reason: `${host}: ${results[bad].reason}` };
-    }
-    const parts = results.map((r, i) => ({ source: args.sources[i].url, handles: r.handles }));
-    return { ok: true, handles: unionHandles(parts), parts, rejected: 0 };
+    };
+    const failures = results.map((r, i) => (r.ok ? null : `${hostOf(args.sources[i].url)}: ${r.reason}`)).filter(Boolean);
+    if (failures.length === results.length) return { ok: false, reason: failures.join('; ') };
+    const parts = results.map((r, i) => ({
+      source: args.sources[i].url,
+      handles: r.ok ? r.handles : (was[i] && Array.isArray(was[i].handles) ? was[i].handles : []),
+    }));
+    return { ok: true, handles: unionHandles(parts), parts, rejected: 0, reason: failures.length ? failures.join('; ') : null };
   }
 
   // Merge a fetch result into the stored record. A failed fetch keeps the
@@ -286,7 +303,9 @@
   function nextRecord(prev, result, url, now) {
     const base = prev || { handles: [], fetchedAt: 0, source: url };
     if (result.ok) {
-      const rec = { handles: result.handles, fetchedAt: now, source: url, lastAttemptAt: now, lastError: null };
+      // A list of several sources may succeed with some refused (reason
+      // names them): those kept their previous parts, and the record says why.
+      const rec = { handles: result.handles, fetchedAt: now, source: url, lastAttemptAt: now, lastError: result.reason || null };
       if (result.parts) rec.parts = result.parts;
       return rec;
     }

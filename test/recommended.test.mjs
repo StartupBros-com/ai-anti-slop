@@ -108,22 +108,42 @@ test('Recommended: both sources fetched, the union stored with each source\'s pa
       { source: LV, handles: ['both', 'lv_a'] },
     ],
     rejected: 0,
+    reason: null,
   });
 });
 
-test('Recommended: a source that fails refuses the whole update and is named by its host', async () => {
+test('Recommended: a source that fails keeps its previous part while the other updates, and is named by its host', async () => {
   const lv = [row('lv_a', 'confirmed')].join('\n');
+  // No part stored for clankwall yet: its part is empty, levelsio's updates.
   const down = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [LV]: lv }) });
-  assert.deepEqual(down, { ok: false, reason: 'clankwall.vogel.dev: HTTP 404' });
+  assert.deepEqual(down, {
+    ok: true,
+    handles: ['lv_a'],
+    parts: [
+      { source: AI, handles: [] },
+      { source: LV, handles: ['lv_a'] },
+    ],
+    rejected: 0,
+    reason: 'clankwall.vogel.dev: HTTP 404',
+  });
+  // With a part stored, the refused source keeps it.
+  const kept = await L.fetchList({ url: LV, sources: SOURCES, prevParts: [{ source: AI, handles: ['ai_old'] }], fetchImpl: fetchFrom({ [LV]: lv }) });
+  assert.deepEqual([kept.ok, kept.handles, kept.parts[0], kept.reason], [true, ['ai_old', 'lv_a'], { source: AI, handles: ['ai_old'] }, 'clankwall.vogel.dev: HTTP 404']);
   const html = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: ok('<html></html>', 'text/html') }) });
-  assert.deepEqual(html, { ok: false, reason: 'blockedforaireply.levels.io: unexpected content-type text/html' });
+  assert.deepEqual([html.ok, html.handles, html.reason], [true, ['ai_a'], 'blockedforaireply.levels.io: unexpected content-type text/html']);
 });
 
-test('Recommended: levelsio\'s rows losing the tier field refuse the update, though clankwall\'s part alone is not empty', async () => {
+test('Recommended: with every source refused the update is refused, naming each host', async () => {
+  const r = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({}) });
+  assert.deepEqual(r, { ok: false, reason: 'clankwall.vogel.dev: HTTP 404; blockedforaireply.levels.io: HTTP 404' });
+});
+
+test('Recommended: levelsio\'s rows losing the tier field refuse levelsio\'s part, which keeps its previous copy', async () => {
   // Every row still parses, but none says "confirmed": the filter keeps nothing.
   const renamed = [1, 2, 3].map((i) => JSON.stringify({ username: `lv_${i}`, tier: 'confirmed', evidence: [{}] })).join('\n');
-  const r = await L.fetchList({ url: LV, sources: SOURCES, fetchImpl: fetchFrom({ [AI]: many(40).join('\n'), [LV]: renamed }) });
-  assert.deepEqual(r, { ok: false, reason: 'blockedforaireply.levels.io: empty list' });
+  const prevParts = [{ source: LV, handles: ['lv_x', 'lv_y'] }];
+  const r = await L.fetchList({ url: LV, sources: SOURCES, prevParts, fetchImpl: fetchFrom({ [AI]: many(40).join('\n'), [LV]: renamed }) });
+  assert.deepEqual([r.ok, r.handles.length, r.parts[0].handles, r.parts[1].handles, r.reason], [true, 42, [...many(40)].sort(), ['lv_x', 'lv_y'], 'blockedforaireply.levels.io: empty list']);
 });
 
 test('Recommended: each source is held to the shrink guard against its own part, not the union', async () => {
@@ -134,11 +154,24 @@ test('Recommended: each source is held to the shrink guard against its own part,
   // levelsio's part drops from 40 to 10; the union (50 of 80) would pass the half rule.
   const lv = many(10, 'l').map((h) => row(h, 'confirmed')).join('\n');
   const r = await L.fetchList({ url: LV, sources: SOURCES, prevHandles: [...many(40, 'a'), ...many(40, 'l')], prevParts, fetchImpl: fetchFrom({ [AI]: many(40, 'a').join('\n'), [LV]: lv }) });
-  assert.deepEqual(r, { ok: false, reason: 'blockedforaireply.levels.io: list shrank from 40 to 10' });
+  assert.deepEqual([r.ok, r.parts[1].handles, r.handles.length, r.reason], [true, many(40, 'l'), 80, 'blockedforaireply.levels.io: list shrank from 40 to 10']);
   // The same drop with no part stored for that source is a first fetch, and passes.
   const first = await L.fetchList({ url: LV, sources: SOURCES, prevParts: [prevParts[0]], fetchImpl: fetchFrom({ [AI]: many(40, 'a').join('\n'), [LV]: lv }) });
-  assert.equal(first.ok, true);
-  assert.equal(first.handles.length, 50);
+  assert.deepEqual([first.ok, first.handles.length, first.reason], [true, 50, null]);
+});
+
+test('Recommended: a source allowed to be empty is taken empty while its stored part is under the shrink floor, never once it is that size', async () => {
+  const OPT = 'https://lists.example/readers.txt';
+  const sources = [SOURCES[0], { url: OPT, format: 'text', allowEmpty: true }];
+  const first = await L.fetchList({ url: LV, sources, fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [OPT]: '' }) });
+  assert.deepEqual([first.ok, first.parts[1], first.reason], [true, { source: OPT, handles: [] }, null]);
+  const small = await L.fetchList({ url: LV, sources, prevParts: [{ source: OPT, handles: many(19, 'r') }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [OPT]: '' }) });
+  assert.deepEqual([small.parts[1].handles, small.reason], [[], null]);
+  const big = await L.fetchList({ url: LV, sources, prevParts: [{ source: OPT, handles: many(20, 'r') }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [OPT]: '' }) });
+  assert.deepEqual([big.parts[1].handles, big.reason], [many(20, 'r'), 'lists.example: empty list']);
+  // A source not allowed to be empty is refused empty even with nothing stored.
+  const strict = await L.fetchList({ url: LV, sources: [SOURCES[0], { url: OPT, format: 'text' }], fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [OPT]: '' }) });
+  assert.equal(strict.reason, 'lists.example: empty list');
 });
 
 test('Recommended record: a success stores the parts, a failure keeps them and the handles', () => {
@@ -147,6 +180,9 @@ test('Recommended record: a success stores the parts, a failure keeps them and t
   assert.deepEqual(rec, { handles: ['a', 'b'], fetchedAt: 100, source: LV, lastAttemptAt: 100, lastError: null, parts: okResult.parts, seq: 1 });
   const failed = L.commitRecord(rec, { ok: false, reason: 'blockedforaireply.levels.io: HTTP 503' }, LV, 1, 200);
   assert.deepEqual(failed, { ...rec, lastAttemptAt: 200, lastError: 'blockedforaireply.levels.io: HTTP 503' });
+  // An update with a source refused is stored, and the record says why.
+  const partial = L.commitRecord(rec, { ...okResult, reason: 'clankwall.vogel.dev: HTTP 404' }, LV, 1, 300);
+  assert.deepEqual([partial.fetchedAt, partial.lastError, partial.seq], [300, 'clankwall.vogel.dev: HTTP 404', 2]);
   // A one-source list's record has no parts.
   assert.equal('parts' in L.nextRecord(null, { ok: true, handles: ['a'] }, AI, 1), false);
 });

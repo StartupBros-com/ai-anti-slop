@@ -3934,7 +3934,7 @@ const lvBody = (names, extra = []) => [...names.map((n) => lvRow(n)), ...extra.m
 const recRecord = (aiPart, lvPart, extra = {}) =>
   record([...new Set([...aiPart, ...lvPart])].sort(), LV_ND, { parts: [{ source: AI_URL, handles: aiPart }, { source: LV_ND, handles: lvPart }], ...extra });
 
-test('Recommended: on by default, so install fetches its two files and stores each part; a part that halves keeps the old record', async () => {
+test('Recommended: on by default, so install fetches its two files and stores each part; a part that halves keeps its old copy', async () => {
   const lv = Array.from({ length: 24 }, (_, i) => `lv${String(i).padStart(2, '0')}`);
   let body = lvBody(lv, ['old_block']);
   const bg = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : url === LV_ND ? body : 'nope'));
@@ -3957,8 +3957,9 @@ test('Recommended: on by default, so install fetches its two files and stores ea
     reason: 'Recommended: blockedforaireply.levels.io: list shrank from 24 to 4',
     count: 26,
   });
+  // The update is stored (clankwall's part read again), with levelsio's part as it was.
   const kept = bg.chrome.store[REC_KEY];
-  assert.deepEqual([kept.handles, kept.parts, kept.seq], [rec.handles, rec.parts, 1]);
+  assert.deepEqual([kept.handles, kept.parts, kept.seq], [rec.handles, rec.parts, 2]);
   assert.equal(kept.lastError, 'blockedforaireply.levels.io: list shrank from 24 to 4');
   // Switched off, it is not fetched.
   const off = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : body));

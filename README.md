@@ -718,10 +718,10 @@ stored list (once that list has 20 or more), the previous list stays in place
 and the popup shows why. A broken or truncated feed cannot empty your filter.
 Recommended's two files are each checked this way, against that file's own
 part of the stored copy, so levelsio's rows losing the field that marks them
-confirmed counts as an empty file even while clankwall's part is fine. If
-either file fails, all of Recommended keeps its previous copy, so while
-levelsio's file fails, an account clankwall drops stays hidden through
-Recommended until both files are read again.
+confirmed counts as an empty file even while clankwall's part is fine. A
+file that fails keeps its own previous part while the other files update,
+and the popup names the file's host. Only when every file fails does all of
+Recommended keep its previous copy.
 
 ## Permissions and privacy
 
