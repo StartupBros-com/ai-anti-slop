@@ -1,0 +1,35 @@
+{
+  "name": "ai-anti-slop",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "ai-anti-slop",
+      // Placeholder. `wrangler d1 create ai-anti-slop` prints the real id; it is filled at deploy.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "triggers": {
+    "crons": ["17 */3 * * *"]
+  },
+
+  // Off: Workers Logs would keep each request's metadata, and the privacy
+  // policy says the server keeps only a keyed hash of the network prefix.
+  "observability": { "enabled": false },
+
+  "routes": [
+    // The hostname waits on the operator's OK. It becomes permanent once an
+    // extension release names it, so do not deploy this route before that OK.
+    { "pattern": "ai-anti-slop.startupbros.com", "custom_domain": true }
+  ]
+
+  // Secrets are never written here. Set them with `wrangler secret put`:
+  //   HMAC_SECRET  key for the install and network hashes. Losing or changing it
+  //                makes every stored reporter and network id unmatchable.
+  //   ADMIN_TOKEN  bearer token for /v1/admin/*. Unset means those paths return 404.
+  // For local runs both go in server/.dev.vars, which is git-ignored.
+}

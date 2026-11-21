@@ -1,0 +1,8 @@
+{
+  "name": "ai-anti-slop-server",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "4.158.0"
+  }
+}

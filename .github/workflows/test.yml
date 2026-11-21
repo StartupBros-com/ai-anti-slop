@@ -45,3 +45,8 @@ jobs:
 
       - name: Tests
         run: node --test 'test/*.test.mjs'
+
+      # The readers' list server (server/), against node:sqlite in place of
+      # D1; it needs nothing from server/node_modules.
+      - name: Server tests
+        run: node --test 'server/test/*.test.mjs'
