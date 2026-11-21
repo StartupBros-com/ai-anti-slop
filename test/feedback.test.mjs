@@ -82,9 +82,14 @@ test('the Report a problem form has a field for each parameter the link sends', 
 });
 
 test('the popup and settings page link to the chooser even before their scripts run', () => {
-  for (const page of ['src/popup.html', 'src/settings.html']) {
+  // The popup's footer is one line, so its link is short and its title says it opens GitHub.
+  const links = {
+    'src/popup.html': `<a id="feedback" href="${CHOOSER}" target="_blank" rel="noopener" title="Opens GitHub's issue page. Posting needs a free GitHub account.">Report a problem</a>`,
+    'src/settings.html': `<a id="feedback" href="${CHOOSER}" target="_blank" rel="noopener">Report a problem or suggest something</a>`,
+  };
+  for (const [page, link] of Object.entries(links)) {
     const html = src(page);
-    assert.ok(html.includes(`<a id="feedback" href="${CHOOSER}" target="_blank" rel="noopener">Report a problem or suggest something</a>`), page);
+    assert.ok(html.includes(link), page);
     assert.match(html, /open source/, `${page} says it is open source`);
   }
 });

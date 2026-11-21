@@ -158,8 +158,9 @@ Nothing is uploaded or fetched.
 **Links in the popup** (X's muted-words settings, an account's profile, this
 project's page) open only when you click them.
 
-**Report a problem or suggest something**, in the popup and on the settings
-page, opens GitHub's new-issue page in a new tab when you click it. Its address
+**Report a problem**, in the popup, and **Report a problem or suggest
+something**, on the settings page, open GitHub's new-issue page in a new tab
+when you click one. Its address
 holds the extension's version and your browser's name, major version and
 system, such as `Brave 158 on Windows`, so the click sends GitHub those two
 along with whatever your browser sends with any visit to GitHub. They fill two
