@@ -4035,3 +4035,36 @@ test('Recommended: in the default state the popup counts both lists', async () =
   assert.equal(text('listAge'), 'From 2 lists, oldest updated just now');
   assert.equal(p.document.getElementById('err').hidden, true);
 });
+
+test('Recommended, muting: with it on by default, an account only in levelsio\'s part is never noted, visited or waited on, and one muted before is unmuted', async () => {
+  const extra = { [REC_KEY]: recRecord(['aionly', 'both'], ['lvonly']) };
+  // lists {}: Recommended on by default, All flags off.
+  const bg = await twoListBackground({ lists: {}, extra });
+  await send(bg, { type: 'xsh:sighting', handle: 'lvonly' }, 7);
+  assert.equal(bg.chrome.store['xsh:mutes'], undefined, 'nothing written to the mute record');
+  const urls = [];
+  for (let i = 0; i < 3; i++) {
+    await alarm(bg);
+    const tab = lastTab(bg);
+    urls.push(tab.url);
+    if (tab.url.endsWith('/muted/all')) break;
+    await answer(bg, { status: 'muted' });
+    due(bg);
+  }
+  assert.deepEqual(urls, ['https://x.com/aionly', 'https://x.com/both', 'https://x.com/settings/muted/all']);
+  assert.equal(bg.chrome.store['xsh:mutes'].handles.lvonly, undefined);
+  // Run now waits on the same number with Recommended on as with it off.
+  const on = await twoListBackground({ lists: {}, extra, timers: fakeTimers() });
+  const off = await twoListBackground({ lists: { recommended: false }, extra, timers: fakeTimers() });
+  assert.deepEqual(await runOn(on), { ok: true, waiting: 2 });
+  assert.deepEqual(await runOn(off), { ok: true, waiting: 2 });
+  await settle();
+  assert.equal(lastTab(on).url, 'https://x.com/aionly');
+  // An account it muted that is only in levelsio's part is unmuted.
+  const was = await twoListBackground({ lists: {}, extra: { ...extra, 'xsh:mutes': { ...lib.emptyMutes(), handles: { lvonly: mutedAs(ME) } } } });
+  await alarm(was);
+  const tab = lastTab(was);
+  assert.equal(tab.url, 'https://x.com/lvonly');
+  const job = await send(was, { type: 'xsh:job' }, tab.id);
+  assert.deepEqual([job.kind, job.handle], ['unmute', 'lvonly']);
+});

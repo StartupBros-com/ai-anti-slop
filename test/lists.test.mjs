@@ -459,6 +459,29 @@ test('content: with levelsio\'s list on, a reply by an account only on it is hid
   assert.deepEqual(['1', '2', '3'].map(off.hidden), [false, false, false]);
 });
 
+test('content: by default a reply by an account only on Recommended is hidden; with Recommended off it is shown; a record that arrives later is read', async () => {
+  const REC = 'xsh:list:recommended';
+  const LV_ND = 'https://blockedforaireply.levels.io/api/accounts.ndjson';
+  const rec = { ...record(['aionly', 'lvonly'], LV_ND), parts: [{ source: AI, handles: ['aionly'] }, { source: LV_ND, handles: ['lvonly'] }] };
+  const stores = (settings) => ({ ...twoStores(settings), [REC]: rec });
+  const cells = () => [post({ author: 'lvonly', status: '1' }), post({ author: 'aionly', status: '2' }), post({ author: 'spamonly', status: '3' }), post({ author: 'human1', status: '4' })];
+  const on = runContent(page(cells()), { chrome: contentChrome(stores({})) });
+  for (let i = 0; i < 8; i++) await tick();
+  assert.deepEqual(['1', '2', '3', '4'].map(on.hidden), [true, true, false, false]);
+  const off = runContent(page(cells()), { chrome: contentChrome(stores({ lists: { recommended: false } })) });
+  for (let i = 0; i < 8; i++) await tick();
+  assert.deepEqual(['1', '2', '3', '4'].map(off.hidden), [false, true, false, false]);
+  const store = twoStores({});
+  const chrome = contentChrome(store);
+  const late = runContent(page([post({ author: 'lvonly', status: '1' })]), { chrome });
+  for (let i = 0; i < 8; i++) await tick();
+  assert.equal(late.hidden('1'), false, 'not fetched yet');
+  store[REC] = rec;
+  chrome.fire({ [REC]: {} });
+  for (let i = 0; i < 8; i++) await tick();
+  assert.equal(late.hidden('1'), true, 'Recommended fetched');
+});
+
 test('content: an Always-show entry beats every list', async () => {
   const t = runContent(page([post({ author: 'spamonly', status: '1' })]), {
     chrome: contentChrome(twoStores({ lists: ALL_ON, allowlist: 'spamonly' })),

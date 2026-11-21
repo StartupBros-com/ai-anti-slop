@@ -719,7 +719,9 @@ and the popup shows why. A broken or truncated feed cannot empty your filter.
 Recommended's two files are each checked this way, against that file's own
 part of the stored copy, so levelsio's rows losing the field that marks them
 confirmed counts as an empty file even while clankwall's part is fine. If
-either file fails, all of Recommended keeps its previous copy.
+either file fails, all of Recommended keeps its previous copy, so while
+levelsio's file fails, an account clankwall drops stays hidden through
+Recommended until both files are read again.
 
 ## Permissions and privacy
 
@@ -820,12 +822,16 @@ An account refused at its menu is tried again on a later day, and if X still
 shows it the same menu, it stops that day too. Adding it to Always show ends
 that.
 
-### The popup says "Last refresh failed (…): …. Still using the previous list."
+### The popup says "…: last refresh failed (…): …. Still using the previous list."
 
-The list you already had is still in use. With more than one list on, the line
-starts with the list's name, and only that list kept its previous copy. The
+The list you already had is still in use. With more than one list on (as
+from install, with Recommended and AI flags), the line starts with the list's
+name, such as "Recommended: last refresh failed", and only that list kept its
+previous copy; with one list on it starts "Last refresh failed". The
 settings page shows each list's own error. If no list was ever fetched, the line
-ends after the reason and the popup shows 0 accounts on the list. The text
+ends after the reason and the popup shows 0 accounts. For Recommended, the
+reason starts with the host of the file that failed, such as
+`blockedforaireply.levels.io: HTTP 503`. The text
 after the colon says why the update was refused:
 
 | Reason | Meaning |
