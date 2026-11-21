@@ -4153,7 +4153,7 @@ test('sharing (planted negative): while it is off nothing is posted, not for a l
     await settleLong();
     assert.deepEqual(bg.requests.filter(isPost), [], JSON.stringify(settings));
     // The one address of AI Anti-Slop's server it asks for is the readers' list, downloaded with no body.
-    for (const r of bg.requests.filter((q) => q.url.startsWith(CROWD))) {
+    for (const r of bg.requests.filter((q) => new URL(q.url).origin === CROWD)) {
       assert.deepEqual([r.url, r.init.method, r.init.body, r.init.credentials], [`${CROWD}/v1/list.ndjson`, undefined, undefined, 'omit']);
     }
     // What was waiting is dropped, not sent, and no send is set up.
