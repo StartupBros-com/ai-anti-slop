@@ -274,12 +274,18 @@
       );
     }
     if (sub.builtin) {
+      // A list made of several sources links each source's page.
+      const pages = sub.sources
+        ? sub.sources.map((src) =>
+            h('p', {}, h('a', { href: src.about, target: '_blank', rel: 'noopener' }, `${src.name}'s page, where you can ask for a removal`, icon('ext', 13))),
+          )
+        : [h('p', {}, h('a', { href: sub.about, target: '_blank', rel: 'noopener' }, 'Its page, where you can ask for a removal', h('span', { class: 'vh' }, ` (${sub.name})`), icon('ext', 13)))];
       const d = h(
         'details',
         { class: 'more', open: openAbout.has(sub.id) },
         h('summary', { id: `about-${sub.id}` }, `About ${sub.name}`, icon('chev', 14, 'chev')),
         sub.note ? h('p', {}, sub.note) : null,
-        h('p', {}, h('a', { href: sub.about, target: '_blank', rel: 'noopener' }, 'Its page, where you can ask for a removal', h('span', { class: 'vh' }, ` (${sub.name})`), icon('ext', 13))),
+        ...pages,
       );
       d.addEventListener('toggle', () => (d.hasAttribute('open') ? openAbout.add(sub.id) : openAbout.delete(sub.id)));
       li.append(d);

@@ -22,8 +22,9 @@ that build and package them. For example:
 - a page, a list update (from clankwall, levelsio or a list you added) or another
   extension getting AI Anti-Slop to run code, read its stored data, or change
   its settings;
-- an account muted because it is on All flags, levelsio's list or a list you
-  added (muting uses clankwall's AI flags list alone);
+- an account muted because it is on All flags, levelsio's list, the part of
+  Recommended taken from levelsio's file, or a list you added (muting uses
+  clankwall's AI flags list alone);
 - muting an account the settings did not allow, or muting from an account other
   than the one the popup names after "Muting as";
 - your labels or the mute record leaving the browser.
@@ -34,7 +35,9 @@ that build and package them. For example:
   run by clankwall ([clankwall.vogel.dev](https://clankwall.vogel.dev)); report
   a wrong entry there. levelsio's list is run by @levelsio
   ([blockedforaireply.levels.io](https://blockedforaireply.levels.io/)); report
-  a wrong entry there. A list you add is run by whoever publishes it.
+  a wrong entry there. Recommended takes its accounts from those two lists, so
+  a wrong entry on it is reported to whichever of them holds the account. A
+  list you add is run by whoever publishes it.
 - What X does to an account that mutes in bulk. The README's
   [Muting](README.md#muting) section describes that risk, and muting is off
   until you turn it on.

@@ -4,8 +4,8 @@ AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to posts.
 This policy covers the extension and the userscript, version 0.9.0 and the
-changes after it on the main branch, which add the choice of lists. Last
-updated 2026-11-19.
+changes after it on the main branch, which add the choice of lists and the
+Recommended list. Last updated 2026-11-21.
 
 ## In short
 
@@ -13,8 +13,10 @@ updated 2026-11-19.
   developers receive none of the data described here.
 - The extension's own code makes one kind of network request: it downloads the
   lists you have switched on, without cookies. These are clankwall's lists from
-  `clankwall.vogel.dev`, levelsio's list from `blockedforaireply.levels.io`,
-  and any list you add yourself from the address you give.
+  `clankwall.vogel.dev`, levelsio's lists from `blockedforaireply.levels.io`,
+  the Recommended list (on unless you switch it off), which is made from one
+  file at each of those two hosts, and any list you add yourself from the
+  address you give.
 - Everything it keeps is in your browser profile's extension storage, on your
   computer.
 - If you turn muting on (it is off by default), the extension opens x.com pages
@@ -48,8 +50,8 @@ Sync does not copy it to other devices.
 | Storage key | What it holds | When |
 |---|---|---|
 | `xsh:list` | clankwall's AI flags list: its handles, when it was fetched and last tried, the address it was fetched from, and the last error, if any. | Once that list has been fetched. It is on unless you switch it off. |
-| `xsh:list:<id>` | The same for each other list: clankwall's All flags list (`xsh:list:clankwall-all`), levelsio's list (`xsh:list:levelsio`) and each list you add. | Once that list has been switched on and fetched. A list you remove has its key removed. |
-| `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, which of clankwall's lists are switched on, the address of each list you add and whether it is on, and an optional address for the AI flags list (no page has a setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
+| `xsh:list:<id>` | The same for each other list: the Recommended list (`xsh:list:recommended`, which also keeps the handles from each of its two files apart, under the file's address), clankwall's All flags list (`xsh:list:clankwall-all`), levelsio's list (`xsh:list:levelsio`) and each list you add. | Once that list has been switched on and fetched. The Recommended list is on unless you switch it off. A list you remove has its key removed. |
+| `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, which built-in lists are switched on, the address of each list you add and whether it is on, and an optional address for the AI flags list (no page has a setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
 | `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post. Labels are on unless you turn them off; nothing is saved until you click. |
@@ -77,6 +79,14 @@ a list, and when you switch one on that has no stored copy or one 6 hours old
 or more, unless its last try failed less than 30 minutes ago. A list that is
 off is not downloaded.
 
+- The Recommended list is on unless you switch it off (0.9.0 and earlier do
+  not have it). Each download fetches two files:
+  `https://clankwall.vogel.dev/api/usernames.txt` and
+  `https://blockedforaireply.levels.io/api/accounts.ndjson` (about 1 MB on
+  2026-11-21). From each row of levelsio's file it reads the handle, the
+  `levelsio` field and whether the row lists any evidence, and keeps only the
+  handles of accounts marked `confirmed` with evidence. Nothing else in the
+  file is kept.
 - clankwall's AI flags list, `https://clankwall.vogel.dev/api/usernames.txt`,
   is on unless you switch it off, and stays on while muting is on.
 - clankwall's All flags list, `https://clankwall.vogel.dev/api/accounts.ndjson`,
@@ -92,9 +102,10 @@ standard request headers. Adding a list sends nothing anywhere until that
 download.
 
 If an address for the AI flags list was set by hand in `xsh:settings`, that
-list is downloaded from that address instead, the same way. clankwall is run by
-a third party, not by AI Anti-Slop's developers; see its site for how it
-handles requests. So is any list you add, and the extension cannot know what
+list is downloaded from that address instead, the same way; the Recommended
+list still fetches clankwall's own address. clankwall and levelsio's site are
+run by third parties, not by AI Anti-Slop's developers; see each site for how
+it handles requests. So is any list you add, and the extension cannot know what
 its host does with a request.
 
 The userscript downloads clankwall's lists the same way through your userscript

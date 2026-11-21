@@ -639,6 +639,29 @@ So the extension reads levelsio's list with no new permission: the list's
 server sends `access-control-allow-origin: *`. The userscript cannot read it, and
 the unit tests check that it never asks to.
 
+## The Recommended list in Chromium
+
+On 2026-11-21 the unpacked extension from the working tree of the branch for
+issue #79 (manifest 0.9.0) ran in headless Chromium 157.0.8103.50 through
+Playwright, in two fresh profiles. Both files came from the real network.
+x.com was mapped to a closed port, so nothing loaded it.
+
+| Step | Result |
+|---|---|
+| Install | Recommended on and fetched within 1.5 s: 1,306 accounts, stored as clankwall's part (786) and levelsio's (521), no error. AI flags fetched too, 786 accounts |
+| Requests outside the extension | `https://clankwall.vogel.dev/api/usernames.txt` twice (once for AI flags, once for Recommended) and `https://blockedforaireply.levels.io/api/accounts.ndjson` once, nothing else |
+| Settings page | Recommended first of the four built-in rows, switched on, "1,306 accounts · updated just now", its note, and two links: clankwall's page (`https://clankwall.vogel.dev/?filter=ai`) and levelsio's (`https://blockedforaireply.levels.io/`). Summary "Hiding replies from 1,306 accounts on 2 lists." |
+| Popup | "1306 accounts on 2 lists", no error |
+| Permissions, before and after | `host_permissions` still `https://clankwall.vogel.dev/*` alone; `chrome.permissions.getAll()` the same before and after |
+| Update | A profile installed from main at 6f0785e (786 accounts, `lists` unset) was closed, its folder replaced by the branch with the version raised to 0.9.1 and the profile's `Service Worker` folder deleted, then started again. Recommended was on without being switched on and fetched in about 1 s: 1,306 accounts in the same two parts. AI flags was fetched again (`seq` 2), and the popup read "1306 accounts on 2 lists" |
+
+The `Service Worker` folder was deleted because, with the extension's folder
+replaced in place, Chrome kept running main's scripts from it: the worker
+reported version 0.9.1 but listed main's three built-in lists. A store update
+installs into a new folder. A direct download of both files right after, run
+through the branch's code in Node, gave the same 1,306, 786 and 521, with 1
+account in both files. levelsio's file was 965,689 bytes.
+
 ## An x.com tab left open across a reload, in Chromium
 
 On 2026-11-19, headless Chromium 157.0.8103.50 loaded the extension built from
@@ -715,4 +738,7 @@ flagged / AI flags only** menu item in a userscript manager, the refresh alarm
 firing on its own after 6 hours (it was re-created to fire early), and the
 shrink guard refusing an update of All flags or an added list over the network
 (the unit tests cover it). For levelsio's list: any of it in Brave or on real
-x.com, and a refresh of it after the first fetch.
+x.com, and a refresh of it after the first fetch. For Recommended: any of it in
+Brave or on real x.com, a real store update (the update above was made by hand
+in a scratch profile), a refresh after the first fetch, and its per-file
+guards over the network (the unit tests cover them).

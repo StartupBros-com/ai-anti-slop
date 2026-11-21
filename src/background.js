@@ -2,8 +2,8 @@
 // chrome.storage.local, and, when the user has turned muting on, mutes listed
 // accounts one at a time in background tabs it opens and closes itself, and
 // unmutes accounts it muted once muting no longer picks them. Its
-// only network requests are the addresses of the lists that are on; muting
-// goes through X's own page and reads only the AI list.
+// only network requests are the addresses of the lists that are on (two for
+// Recommended); muting goes through X's own page and reads only the AI list.
 importScripts('lib.js');
 
 const L = self.XSlopHide;
@@ -50,7 +50,14 @@ async function runRefresh(sub) {
   const key = L.listKey(sub.id);
   const prev = await recordOf(sub.id);
   const startSeq = (prev && prev.seq) || 0;
-  const result = await L.fetchList({ url: sub.url, format: sub.format, fetchImpl: fetch, prevHandles: prev && prev.handles });
+  const result = await L.fetchList({
+    url: sub.url,
+    format: sub.format,
+    sources: sub.sources,
+    fetchImpl: fetch,
+    prevHandles: prev && prev.handles,
+    prevParts: prev && prev.parts,
+  });
   const latest = await recordOf(sub.id);
   // An added list removed while its fetch was out leaves no record behind,
   // and neither does a fetch of an address the list no longer has.
@@ -612,12 +619,15 @@ async function saveLabel(msg) {
   const list = got[K.list];
   const ctx = { handles: list && list.handles, source: list && list.source, settings: s };
   // With another list on too, the label says which lists hold the account.
+  // A list made of several sources (Recommended) comes as one entry per
+  // source, so the label's host is the one whose file holds the account.
   const on = L.enabledLists(s);
   if (on.some((l) => l.id !== L.MUTE_LIST)) {
     const recs = await chrome.storage.local.get(on.map((l) => L.listKey(l.id)));
-    ctx.lists = on.map((l) => {
+    ctx.lists = on.flatMap((l) => {
       const rec = recs[L.listKey(l.id)];
-      return { id: l.id, url: (rec && rec.source) || l.url, handles: (rec && rec.handles) || [] };
+      if (rec && Array.isArray(rec.parts)) return rec.parts.map((p) => ({ id: l.id, url: p.source, handles: p.handles || [] }));
+      return [{ id: l.id, url: (rec && rec.source) || l.url, handles: (rec && rec.handles) || [] }];
     });
   }
   const r = L.labelRecord(msg, ctx, Date.now());

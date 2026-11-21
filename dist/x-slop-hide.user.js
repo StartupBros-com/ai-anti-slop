@@ -92,8 +92,9 @@
     // this many saved, each keeping at most this many characters of reply text.
     labelMax: 2000,
     labelTextMax: 1000,
-    // Lists. clankwall's NDJSON export carries a line of JSON for every
-    // account it flagged, so its size cap is larger than a plain list's.
+    // Lists. clankwall's and levelsio's NDJSON exports carry a line of JSON
+    // for every account (levelsio's with its evidence, about 1 MB on
+    // 2026-11-21), so their size cap is larger than a plain list's.
     ndjsonMaxBytes: 8000000,
     // Lists the user may add by address, and the longest address taken.
     customListMax: 5,
@@ -145,32 +146,51 @@
     return { handles: [...seen].sort(), rejected, error: null };
   }
 
-  // clankwall's accounts.ndjson: one JSON object per line, whose `username` is
-  // the handle. Blank lines are skipped; a line that is not JSON, or has no
-  // username that is a handle, counts as rejected. Same limit and return shape
-  // as parseList.
+  // An NDJSON export (clankwall's, levelsio's): one JSON object per line,
+  // whose `username` is the handle. Blank lines are skipped; a line that is
+  // not JSON, or has no username that is a handle, counts as rejected. With
+  // opts.keep, a row it returns false for is left out and not counted as
+  // rejected: a filter that keeps a few rows of many is not a broken feed.
+  // Same limit and return shape as parseList.
   function parseNdjsonUsernames(text, opts) {
     const maxHandles = (opts && opts.maxHandles) || DEFAULTS.maxHandles;
+    const keep = opts && typeof opts.keep === 'function' ? opts.keep : null;
     const seen = new Set();
     let rejected = 0;
     for (const line of String(text).split(/\r?\n/)) {
       const t = line.trim();
       if (!t) continue;
       let h = null;
+      let row = null;
       try {
         const o = JSON.parse(t);
-        if (o && typeof o === 'object' && typeof o.username === 'string') h = normalizeHandle(o.username);
+        if (o && typeof o === 'object' && typeof o.username === 'string') {
+          h = normalizeHandle(o.username);
+          row = o;
+        }
       } catch (e) {
         // not JSON: rejected below
       }
-      if (h) seen.add(h);
-      else rejected++;
+      if (!h) rejected++;
+      else if (!keep || keep(row)) seen.add(h);
       if (seen.size > maxHandles) {
         return { handles: [], rejected, error: 'too many handles' };
       }
     }
     return { handles: [...seen].sort(), rejected, error: null };
   }
+
+  // The rows of levelsio's accounts.ndjson that Recommended takes: the
+  // "confirmed" tier (blocked with a public reply) with at least one evidence
+  // item, the link to that reply. The file's other tiers carry no evidence.
+  function levelsioConfirmed(row) {
+    return row.levelsio === 'confirmed' && Array.isArray(row.evidence) && row.evidence.length > 0;
+  }
+
+  // The NDJSON list formats, each with the rows it keeps (null: every row).
+  // Any other format is plain text, one handle per line.
+  const NDJSON_FORMATS = Object.freeze({ 'clankwall-ndjson': null, 'levelsio-confirmed': levelsioConfirmed });
+  const isNdjson = (format) => Object.prototype.hasOwnProperty.call(NDJSON_FORMATS, format);
 
   function acceptUpdate(prevHandles, nextHandles, opts) {
     const ratio = (opts && opts.minShrinkRatio) || DEFAULTS.minShrinkRatio;
@@ -191,12 +211,14 @@
 
   // Fetch and validate a feed. fetchImpl is the platform fetch (or a GM
   // wrapper). Never throws: returns { ok, handles, rejected } or { ok:false, reason }.
-  // args.format is 'text' (one handle per line, the default) or
-  // 'clankwall-ndjson'; the size cap defaults to match.
+  // args.format is 'text' (one handle per line, the default) or one of
+  // NDJSON_FORMATS; the size cap defaults to match. With args.sources, the
+  // list is made of several feeds (fetchSources).
   async function fetchList(args) {
+    if (Array.isArray(args.sources)) return fetchSources(args);
     const url = args.url || DEFAULTS.feedUrl;
     const fetchImpl = args.fetchImpl;
-    const ndjson = args.format === 'clankwall-ndjson';
+    const ndjson = isNdjson(args.format);
     const maxBytes = args.maxBytes || (ndjson ? DEFAULTS.ndjsonMaxBytes : DEFAULTS.maxBytes);
     let res;
     try {
@@ -218,7 +240,9 @@
       return { ok: false, reason: `read error: ${(e && e.message) || e}` };
     }
     if (text.length > maxBytes) return { ok: false, reason: `feed larger than ${maxBytes} bytes` };
-    const parsed = (ndjson ? parseNdjsonUsernames : parseList)(text, { maxHandles: args.maxHandles });
+    const parsed = ndjson
+      ? parseNdjsonUsernames(text, { maxHandles: args.maxHandles, keep: NDJSON_FORMATS[args.format] })
+      : parseList(text, { maxHandles: args.maxHandles });
     if (parsed.error) return { ok: false, reason: parsed.error };
     if (parsed.rejected > parsed.handles.length) {
       return { ok: false, reason: `feed is mostly not handles (${parsed.rejected} invalid lines)` };
@@ -228,12 +252,43 @@
     return { ok: true, handles: parsed.handles, rejected: parsed.rejected };
   }
 
+  // Fetch a list made of several feeds (Recommended). Each source is fetched
+  // and checked as a list of its own, against its own part of the stored
+  // record (args.prevParts): a source that comes back empty or shrunk is
+  // refused even when the others would keep the union's count up. Any refusal
+  // refuses the whole update and names the source's host, so the stored
+  // record keeps every part as it was. On success the handles are the union,
+  // and parts holds { source, handles } for each source, in order.
+  async function fetchSources(args) {
+    const prev = Array.isArray(args.prevParts) ? args.prevParts : [];
+    const results = await Promise.all(
+      args.sources.map((src) => {
+        const was = prev.find((p) => p && p.source === src.url);
+        return fetchList({ url: src.url, format: src.format, fetchImpl: args.fetchImpl, prevHandles: was && was.handles, timeoutMs: args.timeoutMs });
+      }),
+    );
+    const bad = results.findIndex((r) => !r.ok);
+    if (bad >= 0) {
+      let host = args.sources[bad].url;
+      try {
+        host = new URL(host).host;
+      } catch (e) {
+        // keep the address as it is
+      }
+      return { ok: false, reason: `${host}: ${results[bad].reason}` };
+    }
+    const parts = results.map((r, i) => ({ source: args.sources[i].url, handles: r.handles }));
+    return { ok: true, handles: unionHandles(parts), parts, rejected: 0 };
+  }
+
   // Merge a fetch result into the stored record. A failed fetch keeps the
-  // previous handles and fetchedAt and records why it failed.
+  // previous handles (and parts) and fetchedAt and records why it failed.
   function nextRecord(prev, result, url, now) {
     const base = prev || { handles: [], fetchedAt: 0, source: url };
     if (result.ok) {
-      return { handles: result.handles, fetchedAt: now, source: url, lastAttemptAt: now, lastError: null };
+      const rec = { handles: result.handles, fetchedAt: now, source: url, lastAttemptAt: now, lastError: null };
+      if (result.parts) rec.parts = result.parts;
+      return rec;
     }
     return Object.assign({}, base, { lastAttemptAt: now, lastError: result.reason });
   }
@@ -274,10 +329,25 @@
   // them on or off and add up to customListMax more by address. Muting reads
   // only MUTE_LIST: every other list hides replies and nothing more.
   const BUILTIN_LISTS = Object.freeze([
+    // AI Anti-Slop's own pick, on by default: a rule over two of the lists
+    // below, applied here to their published files as fetched. This project
+    // hosts no list and adds no account. Fetched by the extension alone
+    // (userscript: false): the userscript's @connect names clankwall's host
+    // only. Its record keeps each source's handles (parts) beside the union.
+    Object.freeze({
+      id: 'recommended', name: 'Recommended', format: 'recommended', on: true, mute: false, userscript: false,
+      url: 'https://blockedforaireply.levels.io/api/accounts.ndjson',
+      sources: Object.freeze([
+        Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', about: 'https://clankwall.vogel.dev/?filter=ai' }),
+        Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', about: 'https://blockedforaireply.levels.io/' }),
+      ]),
+      about: null,
+      note: "AI Anti-Slop's pick from two of the lists below: clankwall's AI flags, plus the accounts @levelsio blocked with a public reply, each linked on levelsio's page. Both sites say their flags are not proof. Hides replies only; muting uses clankwall's AI flags.",
+    }),
     Object.freeze({
       id: 'clankwall-ai', name: 'clankwall: AI flags', format: 'text', on: true, mute: true,
       about: 'https://clankwall.vogel.dev/?filter=ai',
-      note: 'Accounts whose replies clankwall scored as AI. Muting uses this list.',
+      note: 'Accounts whose replies clankwall scored as AI. Muting uses this list. Recommended includes it, so while Recommended is on, switching this off hides no fewer replies.',
     }),
     Object.freeze({
       id: 'clankwall-all', name: 'clankwall: All flags', format: 'clankwall-ndjson', on: false, mute: false,
@@ -291,7 +361,7 @@
       id: 'levelsio', name: 'levelsio: Blocked for AI reply', format: 'text', on: false, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/usernames.txt',
       about: 'https://blockedforaireply.levels.io/',
-      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Hides replies only.',
+      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Recommended includes the ones blocked with a public reply. Hides replies only.',
     }),
   ]);
   const MUTE_LIST = 'clankwall-ai';
@@ -356,8 +426,10 @@
   }
 
   // Every list, built-ins first and then the user's own in stored order, as
-  // { id, name, url, format, on, builtin, mute, locked, about, note }. The AI
-  // list is on, and locked on, while muting is on, because muting reads it.
+  // { id, name, url, format, sources, on, builtin, mute, locked, about, note }.
+  // A built-in is on by its own default (`on`) until the user switches it;
+  // the AI list is also on, and locked on, while muting is on, because
+  // muting reads it.
   function subscriptions(settings) {
     const s = settings || {};
     const chosen = s.lists && typeof s.lists === 'object' && !Array.isArray(s.lists) ? s.lists : {};
@@ -369,10 +441,10 @@
         locked = !!s.muteEnabled;
         on = locked || chosen[b.id] !== false;
       } else {
-        on = chosen[b.id] === true;
+        on = b.on ? chosen[b.id] !== false : chosen[b.id] === true;
       }
       const url = b.id === MUTE_LIST ? s.feedUrl || DEFAULTS.feedUrl : b.url;
-      out.push({ id: b.id, name: b.name, url, format: b.format, on, builtin: true, mute: b.mute, locked, about: b.about, note: b.note });
+      out.push({ id: b.id, name: b.name, url, format: b.format, sources: b.sources || null, on, builtin: true, mute: b.mute, locked, about: b.about, note: b.note });
     }
     for (const c of customListsOf(s)) {
       const u = new URL(c.url);
@@ -382,6 +454,7 @@
         name: u.host + u.pathname + u.search,
         url: c.url,
         format: 'text',
+        sources: null,
         on: c.on,
         builtin: false,
         mute: false,
@@ -1168,7 +1241,8 @@
         paused: false,
       }),
     };
-    if (held) record.lists = held.map((l) => l.id);
+    // One list can come as several entries, one per source (Recommended).
+    if (held) record.lists = [...new Set(held.map((l) => l.id))];
     return { ok: true, id: post.id, handle, label, record };
   }
 
@@ -1394,6 +1468,7 @@
     listChanges,
     unionHandles,
     parseNdjsonUsernames,
+    levelsioConfirmed,
     normalizeHandle,
     parseList,
     acceptUpdate,
@@ -1475,8 +1550,8 @@
   const subscribers = [];
 
   // The handles of clankwall's lists that are on, as one list. The userscript
-  // reads neither levelsio's list nor an added one: its @connect names
-  // clankwall only.
+  // reads neither Recommended, levelsio's list nor an added one: its @connect
+  // names clankwall only.
   const read = () => {
     const settings = GM_getValue(K.settings, {});
     const recs = L.enabledLists(settings, { userscript: true }).map((l) => GM_getValue(L.listKey(l.id), null));
