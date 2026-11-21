@@ -110,7 +110,7 @@ rebuild
 
 Limits on the free plans: Workers allow 100,000 requests a day and 10 ms of CPU per call (cron included); D1 allows 5,000,000 rows read and 100,000 rows written a day, 500 MB per database (5 GB per account), 30 seconds per query, and 50 queries per call, where a `db.batch` counts as one. The row limits are per Cloudflare account, so other D1 databases on the same account use them up too. Since 2026-09-01, an account past either daily row limit gets an error on every D1 query until midnight UTC. Here that means reports answer 500 and the extension keeps them for a retry 30 minutes later, and a list download that misses the cache answers 500 and the extension keeps its last copy of the readers' list.
 
-**Measured, not estimated.** On 2026-11-21 a local D1 database (wrangler 4.158.0, workerd's SQLite) was filled to the most the code allows: `REPORTS_PER_DAY` accepts 6,000 reports a day, so 90 days hold 540,000. The seed had 1,050 installs, 5% Not slop reports, 20% of reports on 500 accounts and the rest on 216,000 accounts with about 2 each, which listed 1,355 accounts. Every statement of `build()` and of the requests ran through the real D1 binding (wrangler's `getPlatformProxy`), which returns D1's own `rows_read` and `rows_written`. Rerun from the same seed after every report request began writing its reporter row (a91295a), it gave the same row counts; the times vary from run to run. Cloudflare's metrics on the deployed database have not been seen yet, so compare them after the first week.
+**Measured, not estimated.** On 2026-11-21 a local D1 database (wrangler 4.158.0, workerd's SQLite) was filled to the most the code allows: `REPORTS_PER_DAY` accepts 6,000 reports a day, so 90 days hold 540,000. The seed had 1,050 installs, 5% Not slop reports, 20% of reports on 500 accounts and the rest on 216,000 accounts with about 2 each, and one list and one delist override, which listed 1,356 accounts (1,355 by the rule, one by the list override). Every statement of `build()` and of the requests ran through the real D1 binding (wrangler's `getPlatformProxy`), which returns D1's own `rows_read` and `rows_written`. Rerun from the same seed after every report request began writing its reporter row (a91295a), it gave the same row counts; the times vary from run to run. Cloudflare's metrics on the deployed database have not been seen yet, so compare them after the first week.
 
 | | Rows read | Rows written | Time |
 |---|---|---|---|
@@ -120,7 +120,7 @@ Limits on the free plans: Workers allow 100,000 requests a day and 10 ms of CPU 
 | A report request, known install, 5 reports | 5 | 22 | |
 | `GET /v1/list.ndjson` not in the cache, or `GET /v1/status` | 4 | 0 | |
 
-Where the steady build's writes go: 1,482 for the reports past 90 days (one per deleted report), 2,711 for staging and emptying `next_listed` (two per listed account, as it is `WITHOUT ROWID`), and 8 for `meta` and `changes`. A report insert is 4 rows written (the row and its three index entries); a counter is 2 when it is new and 1 after.
+Where the steady build's writes go: 1,482 for the reports past 90 days (one per deleted report), 2,712 for staging and emptying `next_listed` (two per listed account, as it is `WITHOUT ROWID`), 6 for `meta`, and 1 for a closed removal request past its retention; `changes` gets no row when nothing changed. A report insert is 4 rows written (the row and its three index entries); a counter is 2 when it is new and 1 after.
 
 A day at that ceiling, with 1,000 installs sharing:
 
