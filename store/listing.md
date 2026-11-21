@@ -14,8 +14,9 @@ the store added an `update_url` to `manifest.json` and a
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
 What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.10.0,
-field by field. The store serves 0.8.0; 0.9.0 went to review on 2026-11-19 with
-the v0.9.0-era text, and 0.10.0 is meant to replace it. Sharing labels is new
+field by field. 0.10.0 was submitted on 2026-11-21 with this text, in place of
+0.9.0, whose review (since 2026-11-19) was cancelled; the store still served
+0.8.0 that day. Sharing labels is new
 in 0.10.0, so these were written for the first submit that carries it: the
 readers' list in the first paragraph, the sharing line under LABELS, the
 PRIVACY section, the single purpose, the storage justification, the readers'
@@ -216,6 +217,14 @@ carries the Limited Use statement on the project's own page.
   back on, so the only route was **Cancel review** and a new submit. After
   **Cancel review**, the **Submit for review** button stayed greyed out until
   the page was reloaded.
+- A pending review locks the draft. As the dashboard stood on 2026-11-21, every
+  field, and **Save draft** and **Submit for review**, were greyed out while a
+  review was pending, so a new package or new text first needs **Cancel
+  review** from the same ⋮ menu. It asks to confirm, and the submission goes
+  back to being a draft; the published version stays live. Each screenshot has
+  Remove, Move left and Move right buttons, and each Remove asks to confirm.
+  That submit removed all four and added the new ones one by one, in order,
+  which kept them in that order.
 
 ## Test instructions tab
 
