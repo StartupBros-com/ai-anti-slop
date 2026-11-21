@@ -747,14 +747,22 @@ release branch's (code committed as 4b8bb88), and the browser started again.
 - The granted permissions were the same before and after: `alarms`,
   `storage`, clankwall and the x.com hosts.
 - The only hosts asked were clankwall, levelsio and the readers' list, with
-  GETs. There were no exceptions or console errors, and no x.com visit in the
-  half minute watched.
+  GETs. There were no exceptions or console errors.
 - The popup read "Muting as @…", "Today (UTC): 0 of 25 mutes" and "On · 3
   saved". The settings page had sharing off and offered "Also share the 3
   labels already saved", unticked.
+- In a second run of the same update, watched for 208 s after the restart,
+  muting carried on by itself: its once-a-minute alarm opened one visit tab,
+  which x.com's closed port turned into an error page, the day's record counted
+  1 visit and the 90-second timeout for that tab was set. The three seeded
+  entries were unchanged.
 
 The same run with `muteEnabled` set but no muting account, which 0.8.0 reads
-as muting off, also kept everything; its popup showed muting off.
+as muting off, also kept everything; its popup showed muting off. So did a
+profile 0.8.0 had only installed, with nothing changed: no settings, and the
+AI list as its only key. After the update it had Recommended (1,366 accounts)
+and the AI list on, the other lists off, and the same permissions, with no
+errors.
 
 The same day, on the same code, the run under
 [Sharing labels](#sharing-labels-in-chromium-against-a-local-server) passed all
@@ -831,5 +839,6 @@ x.com, and a refresh of it after the first fetch. For Recommended: any of it in
 Brave or on real x.com, a real store update (the update above was made by hand
 in a scratch profile), a refresh after the first fetch, and its per-file
 guards over the network (the unit tests cover them). For the update from 0.8.0:
-the store's own update (files were swapped in one folder), muting's first visit
-after it, and the userscript with the new lists in a userscript manager.
+the store's own update (files were swapped in one folder), a visit after it
+reaching x.com (the one above could not), and the userscript with the new lists
+in a userscript manager.
