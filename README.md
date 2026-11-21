@@ -294,10 +294,10 @@ seconds after.
 - **The readers' list** is the part of Recommended that AI Anti-Slop's server
   builds from the labels readers chose to [share](#sharing-labels). An account
   is on it once three or more installs, on two or more networks, have labelled
-  its posts slop in two or more threads, counting only reports a day old or
-  more from installs that have been sharing for a week or more, and at least
-  three times as many installs labelled it slop as not slop. It is empty until
-  that first happens. It is not a list of its own on the settings page, so
+  its posts slop in two or more threads, and at least three times as many
+  installs labelled it slop as not slop, counting only reports a day old or
+  more from installs whose first report reached the server a week or more
+  before. It is empty until that first happens. It is not a list of its own on the settings page, so
   switching Recommended off stops its download too.
 - **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
   2026-11-19. Muting uses it alone, so it stays switched on while muting is
@@ -739,7 +739,7 @@ flags, nor among levelsio's confirmed accounts, nor on the readers' list.
 The removal routes for the first two are those sites' own, below.
 
 The readers' list is this project's. Its server builds it from shared labels
-by the rule under [Lists](#lists), every three hours, and drops an account
+by the rule under [Lists](#lists), every six hours, and drops an account
 once too few of its reports are left: a report is deleted after 90 days.
 Its maintainers can also add an account or take one off by hand, and each
 build that adds or removes an account is published at
@@ -944,9 +944,11 @@ reads (see [Limits](#limits)). Please open an issue.
   reply by any other account stays, however it was written, unless it tags
   such a bot and you turned on hiding posts that tag one.
 - The list is someone else's judgement, and the readers' list is the
-  judgement of whoever shares. Its rule needs agreement from several installs
-  on several networks, but it cannot tell several installs one person runs on
-  several networks from several people. If a feed goes away, the last good
+  judgement of whoever shares. Reports are not checked against anything. Its
+  rule needs agreement from several installs on several networks, but it
+  cannot tell several installs one person runs on several networks from
+  several people: three installs on two networks, a week old, can put any
+  account on it. If a feed goes away, the last good
   list stays in use.
 - Hiding only works in a browser where it is installed, so it never covers the
   X app (the mutes do), and it has been tested only in desktop Chromium.

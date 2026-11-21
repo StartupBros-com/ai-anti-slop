@@ -221,9 +221,13 @@ see Cloudflare's privacy policy for what it does with them. The Worker keeps:
   (HMAC) of your browser's code and a keyed hash of the first part of your IP
   address (the first three numbers of an IPv4 address, the first three groups
   of an IPv6 one), so that one network cannot count as many readers;
-- the hour it first heard from your browser's code, under the same keyed hash;
-- per keyed hash, how many reports arrived each UTC day, deleted after three
-  days.
+- the hour it first heard from your browser's code, under the same keyed hash,
+  deleted once none of its reports are left and that hour is more than 90 days
+  ago;
+- per keyed hash of your browser's code, how many reports arrived each UTC
+  day; per keyed hash of your network, how many new browser codes and removal
+  requests arrived each UTC day; and how many reports all browsers sent each
+  UTC day. These counts are deleted after three days.
 
 It never stores the code itself, your IP address, your browser's headers or a
 request's body as sent. Its request logs (Workers Logs) are off. A report is
@@ -233,12 +237,14 @@ deleted 90 days after it arrives.
 `https://ai-anti-slop.startupbros.com/v1/list.ndjson`: each listed account's
 handle, how many browsers reported it and the day it was first listed; at
 `/v1/changes`, which accounts each rebuild added or removed; and at
-`/v1/status`, the totals of listed accounts, stored reports and browsers that
-sent them, with the time of the last build. An account is
-listed once three or more browsers on two or more networks have reported it as
-slop in two or more threads, counting only reports a day old or more from
-browsers the server first heard from a week or more before, and at least three
-times as many browsers reported it as slop as reported it as not slop. The page at
+`/v1/status`, the number of listed accounts and of browser codes it keeps,
+with the time of the last build. An account is listed once three or more
+browsers on two or more networks have reported it as slop in two or more
+threads, and at least three times as many browsers reported it as slop as
+reported it as not slop, counting, for slop and not slop alike, only reports a
+day old or more from browsers the server first heard from a week or more
+before. Reports are not checked against anything, so a list entry means
+browsers agreed, not that the account posts AI replies. The page at
 `https://ai-anti-slop.startupbros.com/` states the rule. No report, code or
 network appears in anything published. AI Anti-Slop's operator can read, with
 a token, the accounts near the bar with their counts, and can add an account to
@@ -248,7 +254,9 @@ public either way.
 **Removal requests.** The readers' list page has a form for asking that an
 account be taken off. A request keeps the handle, the reason and contact you
 type (both optional), the hour and a keyed hash of your network, for the
-operator to read. It is sent from that web page, never by the extension.
+operator to read. Once the operator has closed it, it is deleted 90 days after
+it arrived; until then it is kept. It is sent from that web page, never by the
+extension.
 
 **Turning it off and deleting.** **Turn off sharing** stops sending and drops
 what is waiting; what was sent stays on the server until it is 90 days old or
