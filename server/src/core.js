@@ -418,42 +418,66 @@ async function postReports(db, env, request, body, now) {
 
   const { net, reporter } = await identity(env, request, body.key);
   const day = dayOf(now);
-  const stmts = [];
   const known = await db.prepare('SELECT 1 AS x FROM reporters WHERE id = ?').bind(reporter).first();
   if (!known) {
     if ((await bump(db, 'new_install', net, day, 1)) > RULES.NEW_INSTALLS_PER_NET_DAY) {
       await unbump(db, 'new_install', net, day, 1).run();
       return fail(429, 'too many new installs from this network today', { retryAfter: msToMidnight(now) });
     }
-    stmts.push(db.prepare('INSERT OR IGNORE INTO reporters (id, first_seen) VALUES (?, ?)').bind(reporter, hourFloor(now)));
   }
-  // Per install: bump by everything offered, then see how much of it fit.
-  const offered = valid.length;
-  const before = (await bump(db, 'report', reporter, day, offered)) - offered;
-  const underInstall = Math.min(offered, Math.max(0, RULES.REPORTS_PER_INSTALL_DAY - before));
-  // Global: only what passed the install cap is offered to the daily total.
-  let fit = 0;
-  if (underInstall > 0) {
-    const beforeAll = (await bump(db, 'report_all', '*', day, underInstall)) - underInstall;
-    fit = Math.min(underInstall, Math.max(0, RULES.REPORTS_PER_DAY - beforeAll));
-    if (underInstall > fit) stmts.push(unbump(db, 'report_all', '*', day, underInstall - fit));
+  // The bumps below each commit on their own, before the batch that stores the
+  // reports. `held` is what they took; if anything after them fails, it is
+  // given back before the error goes on (a 500, which the extension retries),
+  // so a failed request does not use up the install's or the day's quota.
+  // This is compensation, not one transaction: if giving back fails too, what
+  // was taken stays on that day's counters until they end at UTC midnight.
+  const held = known ? [] : [['new_install', net, 1]];
+  let accepted;
+  let deferred;
+  try {
+    // The reporter row goes in the same batch as its reports, also for an
+    // install seen above: a build running since that check can have removed
+    // an old reporter whose reports had all expired, and a report whose
+    // reporter is missing is never counted. A reporter removed that way comes
+    // back as new (its age starts again) without counting as a new install.
+    const stmts = [db.prepare('INSERT OR IGNORE INTO reporters (id, first_seen) VALUES (?, ?)').bind(reporter, hourFloor(now))];
+    // Per install: bump by everything offered, then see how much of it fit.
+    const offered = valid.length;
+    const before = (await bump(db, 'report', reporter, day, offered)) - offered;
+    held.push(['report', reporter, offered]);
+    const underInstall = Math.min(offered, Math.max(0, RULES.REPORTS_PER_INSTALL_DAY - before));
+    // Global: only what passed the install cap is offered to the daily total.
+    let fit = 0;
+    if (underInstall > 0) {
+      const beforeAll = (await bump(db, 'report_all', '*', day, underInstall)) - underInstall;
+      held.push(['report_all', '*', underInstall]);
+      fit = Math.min(underInstall, Math.max(0, RULES.REPORTS_PER_DAY - beforeAll));
+      if (underInstall > fit) stmts.push(unbump(db, 'report_all', '*', day, underInstall - fit));
+    }
+    if (offered > fit) stmts.push(unbump(db, 'report', reporter, day, offered - fit));
+    accepted = valid.slice(0, fit);
+    deferred = valid.slice(fit);
+    const at = hourFloor(now);
+    for (const r of accepted) {
+      stmts.push(
+        db
+          .prepare(
+            `INSERT INTO reports (reporter, status, handle, thread, hash, label, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(reporter, status) DO UPDATE SET label = excluded.label, handle = excluded.handle, thread = excluded.thread,
+               hash = excluded.hash, net = excluded.net, at = excluded.at`,
+          )
+          .bind(reporter, r.status, r.handle, r.thread, r.hash, r.label, net, at),
+      );
+    }
+    await db.batch(stmts);
+  } catch (err) {
+    try {
+      await db.batch(held.map(([kind, subject, by]) => unbump(db, kind, subject, day, by)));
+    } catch (e) {
+      console.error('could not give back a failed request\'s quota', e && e.name);
+    }
+    throw err;
   }
-  if (offered > fit) stmts.push(unbump(db, 'report', reporter, day, offered - fit));
-  const accepted = valid.slice(0, fit);
-  const deferred = valid.slice(fit);
-  const at = hourFloor(now);
-  for (const r of accepted) {
-    stmts.push(
-      db
-        .prepare(
-          `INSERT INTO reports (reporter, status, handle, thread, hash, label, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(reporter, status) DO UPDATE SET label = excluded.label, handle = excluded.handle, thread = excluded.thread,
-             hash = excluded.hash, net = excluded.net, at = excluded.at`,
-        )
-        .bind(reporter, r.status, r.handle, r.thread, r.hash, r.label, net, at),
-    );
-  }
-  if (stmts.length) await db.batch(stmts);
   const out = { ok: true, accepted: accepted.map((r) => r.status), rejected, deferred: deferred.map((r) => r.status) };
   if (deferred.length) out.retryAfter = msToMidnight(now);
   return json(200, out);

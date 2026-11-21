@@ -142,9 +142,9 @@
     setText($('deleteLabels'), deleteArmed ? `Click again to delete ${plural(n, 'label', 'labels')}` : 'Delete all labels');
   }
   // Sharing is set on the settings page; the popup says whether it is on.
-  function renderShare(s, raw) {
+  function renderShare(raw) {
     const st = L.shareState(raw);
-    if (L.shareOn(s)) {
+    if (L.shareOn(st)) {
       setText($('shareLine'), `Sharing is on: ${plural(st.sent, 'report', 'reports')} sent${st.queue.length ? `, ${st.queue.length} waiting` : ''}.`);
       setText($('shareOpen'), 'Sharing settings');
     } else {
@@ -243,7 +243,7 @@
     const s = o[K.settings] || {};
     const n = o[K.labelCount];
     renderLabels(s, Number.isInteger(n) && n > 0 ? n : 0);
-    renderShare(s, o[K.share]);
+    renderShare(o[K.share]);
     const handles = await renderLists(s, o[K.list]);
     $('paused').checked = !!s.paused;
     if (document.activeElement !== $('allow')) $('allow').value = s.allowlist || '';

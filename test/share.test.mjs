@@ -12,11 +12,16 @@ const sha16 = (s) => createHash('sha256').update(s, 'utf8').digest('hex').slice(
 const label = (o = {}) => ({ at: 1, label: 'slop', handle: 'reply_a', url: 'https://x.com/reply_a/status/2', text: 'hello', page: 'https://x.com/op/status/1', ...o });
 const report = (status, o = {}) => ({ label: 'slop', handle: 'reply_a', status, thread: '1', hash: null, ...o });
 
-test('sharing is on only when settings.sharing is true', () => {
-  for (const v of [undefined, null, false, 'true', 1, {}]) assert.equal(L.shareOn({ sharing: v }), false, String(v));
+test("sharing is on only when the sharing record's on is true; a sharing field in settings is not the switch", () => {
+  for (const v of [undefined, null, false, 'true', 1, {}]) assert.equal(L.shareOn({ on: v }), false, String(v));
   assert.equal(L.shareOn(null), false);
   assert.equal(L.shareOn({}), false);
-  assert.equal(L.shareOn({ sharing: true }), true);
+  assert.equal(L.shareOn('on'), false);
+  assert.equal(L.shareOn({ on: true }), true);
+  assert.equal(L.shareOn({ sharing: true }), false);
+  // Read through shareState, only true itself is kept.
+  for (const v of [undefined, null, false, 'true', 1, {}]) assert.equal(L.shareState({ key: KEY, on: v }).on, false, String(v));
+  assert.equal(L.shareOn(L.shareState({ key: KEY, on: true })), true);
 });
 
 test('the install key is 16 random bytes as 32 lowercase hex characters, new each time', () => {
@@ -53,8 +58,9 @@ test('a label makes a report of its label, account, post id and the id of the po
 });
 
 test('the stored record is read defensively: a bad key, a bad item or a bad number is dropped', () => {
-  assert.deepEqual(L.shareState(null), { key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null });
+  assert.deepEqual(L.shareState(null), { on: false, key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null });
   const st = L.shareState({
+    on: 'true',
     key: KEY.toUpperCase(),
     queue: [
       { op: 'report', label: 'slop', handle: 'a', status: '1', thread: null, hash: null, seq: 1 },
@@ -71,6 +77,7 @@ test('the stored record is read defensively: a bad key, a bad item or a bad numb
     retryAt: 1.5,
   });
   assert.deepEqual(st, {
+    on: false,
     key: null,
     queue: [
       { op: 'report', label: 'slop', handle: 'a', status: '1', thread: null, hash: null, seq: 1 },

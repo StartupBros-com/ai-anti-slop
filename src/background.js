@@ -488,7 +488,7 @@ async function tickWith(xOpen) {
 
 // ------------------------------------------------------------------ sharing
 //
-// Only while settings.sharing is true (L.shareOn). saveLabel and clearLabels
+// Only while the sharing record's on is true (L.shareOn). saveLabel and clearLabels
 // queue reports and retractions inside serial(); sendShare posts them outside
 // it, so a slow server never holds up a label, and stores each answer inside
 // it again. Turning sharing off empties the queue, and sendShare reads the
@@ -519,9 +519,8 @@ async function queueShare(items) {
 
 // A queue left by a worker that stopped before it sent.
 async function ensureShareAlarm() {
-  const got = await chrome.storage.local.get([K.settings, K.share]);
-  const st = L.shareState(got[K.share]);
-  if (L.shareOn(got[K.settings] || {}) && st.queue.length && !(await chrome.alarms.get(SHARE_ALARM))) shareSoon(st.retryAt);
+  const st = await shareRec();
+  if (L.shareOn(st) && st.queue.length && !(await chrome.alarms.get(SHARE_ALARM))) shareSoon(st.retryAt);
 }
 
 // POST a JSON body as text/plain, which needs no CORS preflight, without
@@ -562,9 +561,8 @@ function sendShare() {
 async function sendLoop() {
   for (let n = 0; n < L.DEFAULTS.shareRequestsPerSend; n++) {
     const plan = await serial(async () => {
-      const got = await chrome.storage.local.get([K.settings, K.share]);
-      const st = L.shareState(got[K.share]);
-      if (!L.shareOn(got[K.settings] || {})) {
+      const st = await shareRec();
+      if (!L.shareOn(st)) {
         if (st.queue.length || st.retryAt) await chrome.storage.local.set({ [K.share]: Object.assign(st, { queue: [], retryAt: null }) });
         return null;
       }
@@ -576,10 +574,9 @@ async function sendLoop() {
     if (plan.wait) return shareSoon(plan.wait);
     const res = await postShare(plan.batch.path, plan.batch.body);
     const st = await serial(async () => {
-      const got = await chrome.storage.local.get([K.settings, K.share]);
-      const next = L.shareResult(L.shareState(got[K.share]), plan.batch, res, Date.now());
+      const next = L.shareResult(await shareRec(), plan.batch, res, Date.now());
       // Turned off while the request was out: what it sent stays counted, the rest goes.
-      if (!L.shareOn(got[K.settings] || {})) Object.assign(next, { queue: [], retryAt: null });
+      if (!L.shareOn(next)) Object.assign(next, { queue: [], retryAt: null });
       await chrome.storage.local.set({ [K.share]: next });
       return next;
     });
@@ -595,8 +592,7 @@ async function startShare(backfill) {
   // A delete still out drops the key when it ends, which would leave sharing
   // on with no key (and could send reports the delete misses).
   if (forgetting) return { ok: false, reason: 'Delete what I shared is still running; try again when it ends' };
-  const got = await chrome.storage.local.get([K.settings, K.share]);
-  let st = L.shareState(got[K.share]);
+  let st = await shareRec();
   if (!st.key) st.key = L.newShareKey();
   let queued = 0;
   if (backfill) {
@@ -604,7 +600,8 @@ async function startShare(backfill) {
     for (const r of reports) st = L.enqueueShare(st, r);
     queued = reports.length;
   }
-  await chrome.storage.local.set({ [K.share]: st, [K.settings]: Object.assign({}, got[K.settings] || {}, { sharing: true }) });
+  st.on = true;
+  await chrome.storage.local.set({ [K.share]: st });
   // The caller sends at once; the alarm is there if this worker stops first.
   if (st.queue.length) shareSoon(st.retryAt);
   return { ok: true, queued };
@@ -614,12 +611,8 @@ async function startShare(backfill) {
 // was sent stays on the server until Delete what I shared, and the key stays
 // so that delete can name it.
 async function stopShare() {
-  const got = await chrome.storage.local.get([K.settings, K.share]);
-  const st = L.shareState(got[K.share]);
-  await chrome.storage.local.set({
-    [K.share]: Object.assign(st, { queue: [], retryAt: null }),
-    [K.settings]: Object.assign({}, got[K.settings] || {}, { sharing: false }),
-  });
+  const st = await shareRec();
+  await chrome.storage.local.set({ [K.share]: Object.assign(st, { on: false, queue: [], retryAt: null }) });
   await chrome.alarms.clear(SHARE_ALARM);
   return { ok: true };
 }
@@ -811,8 +804,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function saveLabel(msg) {
   const id = msg && typeof msg.url === 'string' ? (L.statusOf(msg.url) || {}).id : null;
   const key = id ? L.LABEL_PREFIX + id : null;
-  const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, ...(key ? [key] : [])]);
+  const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, K.share, ...(key ? [key] : [])]);
   const s = got[K.settings] || {};
+  const sharing = L.shareOn(L.shareState(got[K.share]));
   if (!L.labelsOn(s)) return { ok: false, reason: 'labels are off' };
   const list = got[K.list];
   const ctx = { handles: list && list.handles, source: list && list.source, settings: s };
@@ -839,7 +833,7 @@ async function saveLabel(msg) {
       await chrome.storage.local.set({ [K.labelCount]: Math.max(0, n - 1) });
     }
     // A report sent for this post is taken back (the server ignores one it never had).
-    if (L.shareOn(s)) await queueShare([{ retract: r.id }]);
+    if (sharing) await queueShare([{ retract: r.id }]);
     return { ok: true, label: null };
   }
   const max = L.DEFAULTS.labelMax;
@@ -852,7 +846,7 @@ async function saveLabel(msg) {
   const patch = L.labelPatch(s, r.handle, r.label);
   if (patch) writes[K.settings] = Object.assign({}, s, patch);
   await chrome.storage.local.set(writes);
-  if (L.shareOn(s)) {
+  if (sharing) {
     const report = L.reportOf(r.record);
     if (report) await queueShare([Object.assign(report, { hash: await L.textHash(r.record.text) })]);
   }
@@ -865,6 +859,6 @@ async function clearLabels() {
   const all = await chrome.storage.local.get(null);
   const keys = Object.keys(all).filter((k) => k.startsWith(L.LABEL_PREFIX));
   await chrome.storage.local.remove([...keys, K.labelCount]);
-  if (keys.length && L.shareOn(all[K.settings] || {})) await queueShare(keys.map((k) => ({ retract: k.slice(L.LABEL_PREFIX.length) })));
+  if (keys.length && L.shareOn(L.shareState(all[K.share]))) await queueShare(keys.map((k) => ({ retract: k.slice(L.LABEL_PREFIX.length) })));
   return { ok: true, removed: keys.length };
 }

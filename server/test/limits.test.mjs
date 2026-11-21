@@ -249,3 +249,59 @@ test('build: the rule query reads reports in handle order, with no sort for the 
   assert.ok(plan.includes('SCAN reports USING INDEX reports_handle'), plan.join(' | '));
   assert.equal(plan.some((d) => d.includes('TEMP B-TREE FOR GROUP BY')), false, plan.join(' | '));
 });
+
+test('limits: a request whose reports fail to store gives back the quota it took, so a retry is taken in full', async () => {
+  const w = world();
+  const real = w.db.batch.bind(w.db);
+  // The batch that stores reports fails twice, as a transient D1 error would;
+  // the batches that give quota back (a few counter updates) go through.
+  let failures = 2;
+  w.db.batch = async (stmts) => {
+    if (failures > 0 && stmts.length > 3) {
+      failures--;
+      throw new Error('D1_ERROR: simulated');
+    }
+    return real(stmts);
+  };
+  const fifty = (from) => Array.from({ length: 50 }, (_, i) => item(from + i));
+  for (const from of [1, 51]) {
+    const r = await w.report(1, fifty(from));
+    assert.deepEqual([r.status, r.json], [500, { ok: false, reason: 'internal error' }]);
+  }
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), 0);
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM reporters'), 0);
+  assert.equal(w.count('SELECT COALESCE(SUM(n), 0) AS c FROM counters'), 0, 'nothing taken by the failed requests stays taken');
+  // The retries are taken in full, up to the install's daily cap.
+  const a = await w.report(1, fifty(1));
+  const b = await w.report(1, fifty(51));
+  assert.deepEqual([a.json.accepted.length, a.json.deferred.length, b.json.accepted.length, b.json.deferred.length], [50, 0, 50, 0]);
+  const c = await w.report(1, [item(101)]);
+  assert.deepEqual([c.json.accepted, c.json.deferred], [[], ['101']]);
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), RULES.REPORTS_PER_INSTALL_DAY);
+  assert.equal(counter(w, 'report_all', '*'), RULES.REPORTS_PER_INSTALL_DAY);
+  assert.equal(w.count("SELECT n AS c FROM counters WHERE kind = 'new_install'"), 1, 'the install counts once against its network');
+});
+
+test('limits: a build that removes an old reporter between the check and the write leaves its new report counted', async () => {
+  const w = world();
+  assert.equal((await w.report(1, [item(1)], { now: T0 })).status, 200);
+  // 91 days on, its one report has expired, so a build removes it and the reporter.
+  const later = T0 + 91 * DAY;
+  const real = w.db.batch.bind(w.db);
+  let raced = false;
+  w.db.batch = async (stmts) => {
+    if (!raced) {
+      // The request has checked that its reporter exists; a build runs now.
+      raced = true;
+      await build(w.db, w.env, later);
+      assert.equal(w.count('SELECT COUNT(*) AS c FROM reporters'), 0, 'the build removed the reporter');
+    }
+    return real(stmts);
+  };
+  const r = await w.report(1, [item(2)], { now: later });
+  assert.deepEqual([r.status, r.json.accepted], [200, ['2']]);
+  assert.equal(raced, true);
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM reports r WHERE NOT EXISTS (SELECT 1 FROM reporters p WHERE p.id = r.reporter)'), 0, 'no report without its reporter');
+  // It is back as a new reporter: its age starts again.
+  assert.equal(w.count('SELECT first_seen AS c FROM reporters'), later);
+});

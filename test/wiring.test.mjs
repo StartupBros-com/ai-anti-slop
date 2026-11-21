@@ -4138,9 +4138,18 @@ function shareBackground({ settings = { labeling: true }, store = {}, answer = (
 }
 
 test('sharing (planted negative): while it is off nothing is posted, not for a label, a cleared label, Delete all labels, the share alarm, an update or a browser start', async () => {
-  for (const settings of [{ labeling: true }, { labeling: true, sharing: false }, { labeling: true, sharing: 'true' }, { labeling: true, sharing: 1 }]) {
+  // The switch is the sharing record's on: absent, false, not exactly true, or
+  // a sharing field in settings (which is not the switch) all leave it off.
+  const offs = [
+    [{ labeling: true }, {}],
+    [{ labeling: true }, { on: false }],
+    [{ labeling: true }, { on: 'true' }],
+    [{ labeling: true }, { on: 1 }],
+    [{ labeling: true, sharing: true }, {}],
+  ];
+  for (const [settings, on] of offs) {
     // A queue left over from when it was on.
-    const left = { key: SKEY, queue: [{ op: 'report', label: 'slop', handle: 'reply_a', status: '9', thread: null, hash: null, seq: 1 }], seq: 1, sent: 2 };
+    const left = { ...on, key: SKEY, queue: [{ op: 'report', label: 'slop', handle: 'reply_a', status: '9', thread: null, hash: null, seq: 1 }], seq: 1, sent: 2 };
     const bg = shareBackground({ settings, store: { 'xsh:share': left } });
     assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
     await reply(send(bg, { ...LABEL_MSG, label: null }, 7));
@@ -4151,7 +4160,7 @@ test('sharing (planted negative): while it is off nothing is posted, not for a l
     bg.chrome.runtime.onInstalled.fire({ reason: 'update' });
     bg.chrome.runtime.onStartup.fire();
     await settleLong();
-    assert.deepEqual(bg.requests.filter(isPost), [], JSON.stringify(settings));
+    assert.deepEqual(bg.requests.filter(isPost), [], JSON.stringify([settings, on]));
     // The one address of AI Anti-Slop's server it asks for is the readers' list, downloaded with no body.
     for (const r of bg.requests.filter((q) => new URL(q.url).origin === CROWD)) {
       assert.deepEqual([r.url, r.init.method, r.init.body, r.init.credentials], [`${CROWD}/v1/list.ndjson`, undefined, undefined, 'omit']);
@@ -4168,12 +4177,14 @@ test('sharing: turned on from an extension page with the saved labels, it makes 
   await reply(send(bg, OTHER_MSG, 7));
   // A content script cannot turn it on.
   assert.equal(await send(bg, { type: 'xsh:share-start', backfill: true }, 7), undefined);
-  assert.equal(bg.chrome.store['xsh:settings'].sharing, undefined);
+  assert.equal(bg.chrome.store['xsh:share'], undefined);
   assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start', backfill: true })), { ok: true, queued: 2 });
   await settleLong();
   const st = bg.chrome.store['xsh:share'];
   assert.match(st.key, /^[0-9a-f]{32}$/);
-  assert.equal(bg.chrome.store['xsh:settings'].sharing, true);
+  assert.equal(st.on, true);
+  // The switch is not written into settings, which the popup and the settings page write whole.
+  assert.equal('sharing' in bg.chrome.store['xsh:settings'], false);
   const posts = bg.requests.filter(isPost);
   assert.deepEqual(posts.map((r) => r.url), [`${CROWD}/v1/reports`]);
   const init = posts[0].init;
@@ -4198,7 +4209,7 @@ test('sharing: turned on from an extension page with the saved labels, it makes 
 });
 
 test('sharing: while it is on a label is queued and sent at the share alarm; clearing it sends a retraction, and so does Delete all labels', async () => {
-  const bg = shareBackground({ settings: { labeling: true, sharing: true }, store: { 'xsh:share': { key: SKEY } }, answer: takeAll });
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
   await reply(send(bg, LABEL_MSG, 7));
   let st = bg.chrome.store['xsh:share'];
   assert.deepEqual(st.queue.map((i) => [i.op, i.status, i.label]), [['report', '2', 'slop']]);
@@ -4229,8 +4240,7 @@ test('sharing: while it is on a label is queued and sent at the share alarm; cle
 test('sharing: a 429 or a put-off report waits for the time the server gives, no answer 30 minutes, and nothing is sent before then', async () => {
   let mode = '429';
   const bg = shareBackground({
-    settings: { labeling: true, sharing: true },
-    store: { 'xsh:share': { key: SKEY } },
+    store: { 'xsh:share': { on: true, key: SKEY } },
     answer: (path, body) => {
       if (mode === '429') return json(429, { ok: false, reason: 'too many new installs from this network today', retryAfter: 3600000 });
       if (mode === 'defer') return json(200, { ok: true, accepted: [], rejected: [], deferred: body.reports.map((r) => r.status), retryAfter: 7200000 });
@@ -4270,8 +4280,7 @@ test('sharing: a 429 or a put-off report waits for the time the server gives, no
 test('sharing: Turn off drops what is waiting and sends nothing more; Delete what I shared posts the key to forget and then drops it; a failed delete keeps it', async () => {
   let forgetOk = false;
   const bg = shareBackground({
-    settings: { labeling: true, sharing: true },
-    store: { 'xsh:share': { key: SKEY, sent: 4 } },
+    store: { 'xsh:share': { on: true, key: SKEY, sent: 4 } },
     answer: (path, body) => {
       if (path === '/v1/forget') return forgetOk ? json(200, { ok: true, removed: 4 }) : json(503, { ok: false, reason: 'busy' });
       return takeAll(path, body);
@@ -4281,10 +4290,10 @@ test('sharing: Turn off drops what is waiting and sends nothing more; Delete wha
   // Only an extension page can turn it off or delete.
   assert.equal(await send(bg, { type: 'xsh:share-stop' }, 7), undefined);
   assert.equal(await send(bg, { type: 'xsh:share-forget' }, 7), undefined);
-  assert.equal(bg.chrome.store['xsh:settings'].sharing, true);
+  assert.equal(bg.chrome.store['xsh:share'].on, true);
   assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-stop' })), { ok: true });
   let st = bg.chrome.store['xsh:share'];
-  assert.deepEqual([st.key, st.queue, st.sent, bg.chrome.store['xsh:settings'].sharing], [SKEY, [], 4, false]);
+  assert.deepEqual([st.on, st.key, st.queue, st.sent], [false, SKEY, [], 4]);
   assert.equal('xsh-share' in bg.chrome.alarmTable, false);
   bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
   await settleLong();
@@ -4302,8 +4311,7 @@ test('sharing: Turn off drops what is waiting and sends nothing more; Delete wha
     ],
   );
   st = bg.chrome.store['xsh:share'];
-  assert.deepEqual([st.key, st.sent, st.queue], [null, 0, []]);
-  assert.equal(bg.chrome.store['xsh:settings'].sharing, false);
+  assert.deepEqual([st.on, st.key, st.sent, st.queue], [false, null, 0, []]);
   // Turned on again, it is a new reader with a new key.
   await reply(fromPopup(bg, { type: 'xsh:share-start' }));
   const again = bg.chrome.store['xsh:share'].key;
@@ -4316,8 +4324,7 @@ test('sharing: Delete what I shared with sharing on turns it off first, and wait
   const held = new Promise((r) => (release = r));
   const order = [];
   const bg = shareBackground({
-    settings: { labeling: true, sharing: true },
-    store: { 'xsh:share': { key: SKEY } },
+    store: { 'xsh:share': { on: true, key: SKEY } },
     answer: async (path, body) => {
       order.push(path);
       if (path === '/v1/reports') await held;
@@ -4330,7 +4337,7 @@ test('sharing: Delete what I shared with sharing on turns it off first, and wait
   assert.deepEqual(order, ['/v1/reports']);
   const done = fromPopup(bg, { type: 'xsh:share-forget' });
   await settleLong();
-  assert.equal(bg.chrome.store['xsh:settings'].sharing, false);
+  assert.equal(bg.chrome.store['xsh:share'].on, false);
   assert.deepEqual(order, ['/v1/reports'], 'the delete waits for the report out');
   release();
   assert.deepEqual(await reply(done), { ok: true, removed: 1 });
@@ -4342,8 +4349,7 @@ test('sharing: turning it on while Delete what I shared is out is refused, so it
   let release;
   const held = new Promise((r) => (release = r));
   const bg = shareBackground({
-    settings: { labeling: true, sharing: true },
-    store: { 'xsh:share': { key: SKEY } },
+    store: { 'xsh:share': { on: true, key: SKEY } },
     answer: async (path, body) => {
       if (path === '/v1/forget') {
         await held;
@@ -4363,7 +4369,7 @@ test('sharing: turning it on while Delete what I shared is out is refused, so it
   release();
   assert.deepEqual(await reply(done), { ok: true, removed: 1 });
   const st = bg.chrome.store['xsh:share'];
-  assert.deepEqual([st.key, st.queue, bg.chrome.store['xsh:settings'].sharing], [null, [], false]);
+  assert.deepEqual([st.on, st.key, st.queue], [false, null, []]);
   assert.deepEqual(bg.requests.filter(isPost).map((r) => r.url), [`${CROWD}/v1/forget`]);
   // Once it has ended, turning on works and makes a new key.
   assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
@@ -4372,7 +4378,7 @@ test('sharing: turning it on while Delete what I shared is out is refused, so it
 });
 
 test('sharing: a label made while a send is set for sooner keeps that time, so steady labelling does not put the send off; one set for later is brought forward', async () => {
-  const bg = shareBackground({ settings: { labeling: true, sharing: true }, store: { 'xsh:share': { key: SKEY } }, answer: takeAll });
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
   const soon = Date.now() + 5000;
   bg.chrome.alarms.create('xsh-share', { when: soon });
   await reply(send(bg, LABEL_MSG, 7));
@@ -4393,16 +4399,13 @@ test('sharing: the settings page says what is sent before it is on, then turns i
   s.chrome.runtime.sendMessage = async (msg) => {
     sent.push({ ...msg });
     if (msg.type === 'xsh:share-start') {
-      s.chrome.store['xsh:settings'] = { sharing: true };
-      s.chrome.store['xsh:share'] = { key: SKEY, queue: queued(3), seq: 3 };
+      s.chrome.store['xsh:share'] = { on: true, key: SKEY, queue: queued(3), seq: 3 };
       return { ok: true, queued: 3 };
     }
     if (msg.type === 'xsh:share-stop') {
-      s.chrome.store['xsh:settings'] = { sharing: false };
       s.chrome.store['xsh:share'] = { key: SKEY, sent: 3 };
       return { ok: true };
     }
-    s.chrome.store['xsh:settings'] = { sharing: false };
     s.chrome.store['xsh:share'] = {};
     return { ok: true, removed: 3 };
   };
@@ -4449,8 +4452,8 @@ test('sharing: the settings page says what is sent before it is on, then turns i
 
 test('sharing: a failed send shows on the settings page with when it tries again; a failed delete says nothing was deleted', async () => {
   const s = loadSettings({
-    'xsh:settings': { sharing: true },
-    'xsh:share': { key: SKEY, sent: 5, lastSentAt: Date.now() - 120000, lastError: 'could not reach the server (Failed to fetch)', retryAt: Date.UTC(2099, 0, 1, 15, 4) },
+    'xsh:settings': {},
+    'xsh:share': { on: true, key: SKEY, sent: 5, lastSentAt: Date.now() - 120000, lastError: 'could not reach the server (Failed to fetch)', retryAt: Date.UTC(2099, 0, 1, 15, 4) },
   });
   s.chrome.runtime.sendMessage = async () => ({ ok: false, reason: 'could not reach the server (Failed to fetch)' });
   await settle();
@@ -4474,8 +4477,56 @@ test('sharing: the popup says whether sharing is on, and its button opens the se
   assert.equal(text(off, 'shareOpen'), 'Share your labels');
   off.document.getElementById('shareOpen').dispatchEvent(new off.window.Event('click'));
   assert.deepEqual(created.map((c) => ({ ...c })), [{ url: `chrome-extension://${EXT_ID}/src/settings.html#share` }]);
-  const on = loadPopup({ 'xsh:settings': { sharing: true }, 'xsh:share': { key: SKEY, sent: 1, queue: [{ op: 'retract', status: '4', seq: 1 }], seq: 1 } }, {}, tabs);
+  const on = loadPopup({ 'xsh:settings': {}, 'xsh:share': { on: true, key: SKEY, sent: 1, queue: [{ op: 'retract', status: '4', seq: 1 }], seq: 1 } }, {}, tabs);
   await settle();
   assert.equal(text(on, 'shareLine'), 'Sharing is on: 1 report sent, 1 waiting.');
   assert.equal(text(on, 'shareOpen'), 'Sharing settings');
+  // A sharing field in settings is not the switch.
+  const stale = loadPopup({ 'xsh:settings': { sharing: true }, 'xsh:share': { key: SKEY } }, {}, tabs);
+  await settle();
+  assert.equal(text(stale, 'shareLine'), "Sharing is off. Shared labels help build the readers' list, one of Recommended's sources.");
+});
+
+test('sharing: a popup save of settings it read before Turn off sharing does not turn sharing back on', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  const p = loadPopup(bg.chrome.store);
+  await settle();
+  // From here the popup reads and writes the background's storage, and
+  // sharing is turned off between its save's read and its write.
+  const local = bg.chrome.storage.local;
+  let between = false;
+  p.chrome.storage.local = {
+    ...local,
+    get: async (keys) => {
+      const got = await local.get(keys);
+      if (!between && [].concat(keys).includes('xsh:settings')) {
+        between = true;
+        assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-stop' })), { ok: true });
+      }
+      return got;
+    },
+  };
+  const box = p.document.getElementById('mentions');
+  box.checked = true;
+  box.dispatchEvent(new p.window.Event('change'));
+  await settleLong();
+  assert.equal(between, true);
+  assert.equal(bg.chrome.store['xsh:settings'].hideBotMentions, true, 'the popup save went through');
+  // A label made afterwards is not sent.
+  assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost).map((r) => r.url), []);
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue, []);
+  assert.equal(bg.chrome.store['xsh:share'].on, false);
+});
+
+test('sharing: with sharing off, a key and no send counted, the settings page still offers Delete what I shared', async () => {
+  // A request the server stored can lose its answer, which leaves sent at 0.
+  const s = loadSettings({ 'xsh:settings': {}, 'xsh:share': { key: SKEY } });
+  await settle();
+  assert.ok(s.$('shareOn'));
+  assert.equal(s.$('shareForget').textContent, 'Delete what I shared');
+  assert.equal(s.document.querySelector('#shareBody .hint').textContent, 'Anything sent from this browser stays on the server until you delete it.');
 });

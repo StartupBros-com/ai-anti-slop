@@ -120,7 +120,7 @@
     mutes: 'xsh:mutes',
     // How many labels are saved; each label is its own key, LABEL_PREFIX + post id.
     labelCount: 'xsh:labelCount',
-    // Sharing: the install's key, what is waiting to be sent and how sending went (shareState).
+    // Sharing: whether it is on, the install's key, what is waiting to be sent and how sending went (shareState).
     share: 'xsh:share',
   });
 
@@ -1329,7 +1329,11 @@
 
   // ---------------------------------------------------------------- sharing
   //
-  // Off unless the user turns it on in settings (settings.sharing === true).
+  // Off unless the user turns it on in settings. The switch is the sharing
+  // record's own `on` (state.on === true), not a field of xsh:settings: the
+  // popup and the settings page each write xsh:settings whole, so a save from
+  // a copy read before sharing was turned off would turn it back on. Only the
+  // background writes the sharing record, inside serial().
   // While it is on, each label saved is queued as a report and each label
   // cleared as a retraction, and the background sends them to crowdBase. A
   // report holds the label, the account, the post's id, the id of the post
@@ -1337,8 +1341,8 @@
   // the install's random key. The words, the user's X account, other pages
   // and settings are never sent.
 
-  function shareOn(settings) {
-    return !!settings && settings.sharing === true;
+  function shareOn(state) {
+    return !!state && typeof state === 'object' && state.on === true;
   }
 
   const SHARE_KEY_RE = /^[0-9a-f]{32}$/;
@@ -1400,13 +1404,15 @@
         (i.thread === null || POST_ID_RE.test(String(i.thread))) &&
         (i.hash === null || HASH_RE.test(String(i.hash)))));
 
-  // The stored sharing record, read defensively: { key, queue, seq, sent,
-  // lastSentAt, lastError, retryAt }. key is null until sharing is first
-  // turned on, and again after Delete what I shared.
+  // The stored sharing record, read defensively: { on, key, queue, seq, sent,
+  // lastSentAt, lastError, retryAt }. on is true only while sharing is on.
+  // key is null until sharing is first turned on, and again after Delete what
+  // I shared.
   function shareState(raw) {
     const s = raw && typeof raw === 'object' ? raw : {};
     const int = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
     return {
+      on: s.on === true,
       key: typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null,
       queue: Array.isArray(s.queue) ? s.queue.filter(shareItemOk) : [],
       seq: int(s.seq),

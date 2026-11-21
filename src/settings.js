@@ -733,10 +733,10 @@
 
   async function drawShare() {
     const mine = ++shareSeq;
-    const o = await chrome.storage.local.get([K.settings, K.share, K.labelCount]);
+    const o = await chrome.storage.local.get([K.share, K.labelCount]);
     if (mine !== shareSeq) return;
-    const on = L.shareOn(o[K.settings] || {});
     const st = L.shareState(o[K.share]);
+    const on = L.shareOn(st);
     const saved = Number.isInteger(o[K.labelCount]) && o[K.labelCount] > 0 ? o[K.labelCount] : 0;
     const host = new URL(L.DEFAULTS.crowdBase).host;
     const busy = shareBusy ? 'true' : null;
@@ -767,9 +767,12 @@
         );
       }
       const row = [h('button', { type: 'button', id: 'shareOn', class: 'primary', 'aria-disabled': busy, onclick: onStart }, 'Turn on sharing')];
-      if (st.key && st.sent) row.push(forget());
+      // Shown while this install has a key, not only once a send is counted:
+      // a request the server stored can lose its answer, which leaves sent at 0.
+      if (st.key) row.push(forget());
       nodes.push(h('div', { class: 'pv-actions' }, ...row));
       if (st.key && st.sent) nodes.push(h('p', { class: 'hint' }, `${plural(st.sent, 'report', 'reports')} sent from this browser stay on the server until you delete them.`));
+      else if (st.key) nodes.push(h('p', { class: 'hint' }, 'Anything sent from this browser stays on the server until you delete it.'));
     }
     nodes.push(h('p', { class: 'shareLink' }, h('a', { href: `${L.DEFAULTS.crowdBase}/`, target: '_blank', rel: 'noopener' }, "The readers' list and how it is made", icon('ext', 13))));
     const box = $('shareBackfill');
