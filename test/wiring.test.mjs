@@ -9,6 +9,7 @@ import { src, root, post, page, tick, lib, meLink } from './helpers.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseHTML } from 'linkedom';
+import { createHash } from 'node:crypto';
 
 const many = (n) => Array.from({ length: n }, (_, i) => `h${i}`);
 
@@ -91,8 +92,10 @@ function fakeChrome(store = {}, browser = newBrowser()) {
     storage: { local: area(store, onChanged, 'local'), session: area(session, onChanged, 'session'), onChanged },
     alarms: {
       get: async (name) => alarmTable[name],
+      // Chrome's Alarm carries scheduledTime; when and periodInMinutes are kept as given.
       create: (name, info) => {
-        alarmTable[name] = { name, ...info };
+        const scheduledTime = info.when ?? Date.now() + (info.delayInMinutes ?? info.periodInMinutes ?? 0) * 60000;
+        alarmTable[name] = { name, ...info, scheduledTime };
       },
       clear: async (name) => {
         delete alarmTable[name];
@@ -121,7 +124,8 @@ function loadBackground(responder, store, browser, timers = null) {
     return responder(url);
   };
   const clock = timers || { setTimeout, clearTimeout };
-  const ctx = vm.createContext({ chrome, fetch, AbortSignal, console, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, URL });
+  // A service worker has crypto and TextEncoder; sharing hashes with them.
+  const ctx = vm.createContext({ chrome, fetch, AbortSignal, console, setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, URL, crypto: globalThis.crypto, TextEncoder });
   ctx.self = ctx;
   ctx.importScripts = (p) => {
     assert.equal(p, 'lib.js');
@@ -3927,6 +3931,7 @@ test('settings page: the lists message sits inside a live region that is always 
 // ------------------------------------------------- Recommended (#79)
 
 const LV_ND = 'https://blockedforaireply.levels.io/api/accounts.ndjson';
+const CR_ND = 'https://ai-anti-slop.startupbros.com/v1/list.ndjson';
 const REC_KEY = 'xsh:list:recommended';
 const lvRow = (username, tier = 'confirmed') =>
   JSON.stringify({ username, levelsio: tier, evidence: tier === 'confirmed' ? [{ text: 'AI bot' }] : [] });
@@ -3934,19 +3939,46 @@ const lvBody = (names, extra = []) => [...names.map((n) => lvRow(n)), ...extra.m
 const recRecord = (aiPart, lvPart, extra = {}) =>
   record([...new Set([...aiPart, ...lvPart])].sort(), LV_ND, { parts: [{ source: AI_URL, handles: aiPart }, { source: LV_ND, handles: lvPart }], ...extra });
 
-test('Recommended: on by default, so install fetches its two files and stores each part; a part that halves keeps the old record', async () => {
+test('Recommended: an update with one source refused reads as part of a refresh failing, not as a failed list, in the popup and on the settings page', async () => {
+  const at = Date.now();
+  const store = {
+    'xsh:list': record(['aionly'], AI_URL),
+    [REC_KEY]: recRecord(['aionly'], ['lv_b'], { lastError: 'ai-anti-slop.startupbros.com: network error: Failed to fetch', partial: true }),
+    'xsh:settings': {},
+  };
+  const p = loadPopup(store);
+  await settle();
+  assert.equal(p.document.getElementById('err').textContent, 'Recommended: part of the last refresh failed (just now): ai-anti-slop.startupbros.com: network error: Failed to fetch. The rest updated.');
+  const s = loadSettings(structuredClone(store));
+  await settle();
+  assert.equal(stat(s, 'recommended'), '2 accounts · updated just now · a source failed');
+  assert.equal(s.$('stat-recommended').classList.contains('bad'), false);
+  assert.deepEqual(failNote(s, 'recommended'), {
+    what: 'Not every one of its sources could be downloaded. The rest updated.',
+    text: 'Not every one of its sources could be downloaded. The rest updated. A source that failed keeps its last good copy until a download of it works. It tries again at its next refresh, or press Try again.',
+    reported: 'Reported: ai-anti-slop.startupbros.com: network error: Failed to fetch',
+  });
+  // Every source failing is still a failed refresh.
+  const all = loadPopup({ ...structuredClone(store), [REC_KEY]: recRecord(['aionly'], ['lv_b'], { fetchedAt: at - 3600e3, lastError: 'clankwall.vogel.dev: HTTP 503; blockedforaireply.levels.io: HTTP 503' }) });
+  await settle();
+  assert.equal(all.document.getElementById('err').textContent, 'Recommended: last refresh failed (just now): clankwall.vogel.dev: HTTP 503; blockedforaireply.levels.io: HTTP 503. Still using the previous list.');
+});
+
+test('Recommended: on by default, so install fetches its three files and stores each part; a part that halves keeps its old copy', async () => {
   const lv = Array.from({ length: 24 }, (_, i) => `lv${String(i).padStart(2, '0')}`);
   let body = lvBody(lv, ['old_block']);
-  const bg = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : url === LV_ND ? body : 'nope'));
+  // The readers' list is empty, as it is until reports agree.
+  const bg = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : url === LV_ND ? body : url === CR_ND ? '' : 'nope'));
   bg.chrome.runtime.onInstalled.fire({ reason: 'install' });
   await settle();
   // AI flags is on too, so clankwall's file is fetched once for each list.
-  assert.deepEqual(bg.requests.map((r) => r.url).sort(), [AI_URL, AI_URL, LV_ND].sort());
+  assert.deepEqual(bg.requests.map((r) => r.url).sort(), [AI_URL, AI_URL, LV_ND, CR_ND].sort());
   const rec = bg.chrome.store[REC_KEY];
   assert.deepEqual(rec.handles, ['aionly', 'both', ...lv]);
   assert.deepEqual(rec.parts, [
     { source: AI_URL, handles: ['aionly', 'both'] },
     { source: LV_ND, handles: lv },
+    { source: CR_ND, handles: [] },
   ]);
   assert.deepEqual([rec.source, rec.lastError, rec.seq], [LV_ND, null, 1]);
   assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['aionly', 'both']);
@@ -3957,9 +3989,11 @@ test('Recommended: on by default, so install fetches its two files and stores ea
     reason: 'Recommended: blockedforaireply.levels.io: list shrank from 24 to 4',
     count: 26,
   });
+  // The update is stored (clankwall's part read again), with levelsio's part as it was.
   const kept = bg.chrome.store[REC_KEY];
-  assert.deepEqual([kept.handles, kept.parts, kept.seq], [rec.handles, rec.parts, 1]);
+  assert.deepEqual([kept.handles, kept.parts, kept.seq], [rec.handles, rec.parts, 2]);
   assert.equal(kept.lastError, 'blockedforaireply.levels.io: list shrank from 24 to 4');
+  assert.equal(kept.partial, true);
   // Switched off, it is not fetched.
   const off = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : body));
   off.chrome.store['xsh:settings'] = { lists: { recommended: false } };
@@ -4006,12 +4040,13 @@ test('Recommended: the settings page shows it first and on, with its note and a 
   assert.equal(stat(s, 'recommended'), '5 accounts · updated just now');
   assert.equal(s.$('summary').textContent, 'Hiding replies from 5 accounts on 2 lists.');
   assert.equal(rec.querySelector('details summary').textContent, 'About Recommended');
-  assert.match(rec.textContent, /AI Anti-Slop's pick from two of the lists below: clankwall's AI flags, plus the accounts @levelsio blocked with a public reply, each linked on levelsio's page\. Both sites say their flags are not proof\. Hides replies only; muting uses clankwall's AI flags\./);
+  assert.match(rec.textContent, /AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop\. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either\. Hides replies only; muting uses clankwall's AI flags\./);
   assert.deepEqual(
     [...rec.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent, a.getAttribute('target'), a.getAttribute('rel')]),
     [
       ['https://clankwall.vogel.dev/?filter=ai', "clankwall's page, where you can ask for a removal", '_blank', 'noopener'],
       ['https://blockedforaireply.levels.io/', "levelsio's page, where you can ask for a removal", '_blank', 'noopener'],
+      ['https://ai-anti-slop.startupbros.com/', "The readers' list page, with how it is made and where you can ask for a removal", '_blank', 'noopener'],
     ],
   );
   assert.equal(rec.querySelector('button'), null, 'a built-in list has no Remove');
@@ -4067,4 +4102,431 @@ test('Recommended, muting: with it on by default, an account only in levelsio\'s
   assert.equal(tab.url, 'https://x.com/lvonly');
   const job = await send(was, { type: 'xsh:job' }, tab.id);
   assert.deepEqual([job.kind, job.handle], ['unmute', 'lvonly']);
+});
+
+// --------------------------------------------------- Sharing labels (#81)
+
+const CROWD = 'https://ai-anti-slop.startupbros.com';
+const SKEY = 'fedcba9876543210fedcba9876543210';
+const json = (status, body) => ({ ok: status >= 200 && status < 300, status, headers: { get: () => 'application/json' }, text: async () => JSON.stringify(body) });
+const isPost = (r) => !!(r.init && r.init.method && r.init.method !== 'GET');
+const settleLong = async () => {
+  for (let i = 0; i < 40; i++) await tick();
+};
+const OTHER_MSG = { type: 'xsh:label', label: 'not_slop', handle: 'other', url: '/other/status/3', page: null, text: '' };
+const takeAll = (path, body) =>
+  path === '/v1/reports'
+    ? json(200, { ok: true, accepted: body.reports.map((r) => r.status), rejected: [], deferred: [] })
+    : json(200, { ok: true, removed: path === '/v1/retract' ? body.statuses.length : 0 });
+
+// A background whose AI Anti-Slop server answers answer(path, body) to every
+// POST; every list it downloads is empty.
+function shareBackground({ settings = { labeling: true }, store = {}, answer = () => assert.fail('posted') } = {}) {
+  let bg = null;
+  bg = loadBackground((url) => {
+    const req = bg.requests[bg.requests.length - 1];
+    if (isPost(req)) {
+      assert.ok(url.startsWith(`${CROWD}/v1/`), `posted to ${url}`);
+      return answer(url.slice(CROWD.length), JSON.parse(req.init.body));
+    }
+    return ok('');
+  });
+  bg.chrome.store['xsh:list'] = { handles: [], fetchedAt: Date.now(), source: 's' };
+  bg.chrome.store['xsh:settings'] = settings;
+  Object.assign(bg.chrome.store, structuredClone(store));
+  return bg;
+}
+
+test('sharing (planted negative): while it is off nothing is posted, not for a label, a cleared label, Delete all labels, the share alarm, an update or a browser start', async () => {
+  // The switch is the sharing record's on: absent, false, not exactly true, or
+  // a sharing field in settings (which is not the switch) all leave it off.
+  const offs = [
+    [{ labeling: true }, {}],
+    [{ labeling: true }, { on: false }],
+    [{ labeling: true }, { on: 'true' }],
+    [{ labeling: true }, { on: 1 }],
+    [{ labeling: true, sharing: true }, {}],
+  ];
+  for (const [settings, on] of offs) {
+    // A queue left over from when it was on.
+    const left = { ...on, key: SKEY, queue: [{ op: 'report', label: 'slop', handle: 'reply_a', status: '9', thread: null, hash: null, seq: 1 }], seq: 1, sent: 2 };
+    const bg = shareBackground({ settings, store: { 'xsh:share': left } });
+    assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
+    await reply(send(bg, { ...LABEL_MSG, label: null }, 7));
+    await reply(send(bg, LABEL_MSG, 7));
+    await reply(send(bg, OTHER_MSG, 7));
+    await reply(fromPopup(bg, { type: 'xsh:labels-clear' }));
+    bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+    bg.chrome.runtime.onInstalled.fire({ reason: 'update' });
+    bg.chrome.runtime.onStartup.fire();
+    await settleLong();
+    assert.deepEqual(bg.requests.filter(isPost), [], JSON.stringify([settings, on]));
+    // The one address of AI Anti-Slop's server it asks for is the readers' list, downloaded with no body.
+    for (const r of bg.requests.filter((q) => new URL(q.url).origin === CROWD)) {
+      assert.deepEqual([r.url, r.init.method, r.init.body, r.init.credentials], [`${CROWD}/v1/list.ndjson`, undefined, undefined, 'omit']);
+    }
+    // What was waiting is dropped, not sent, and no send is set up.
+    assert.deepEqual(bg.chrome.store['xsh:share'].queue, []);
+    assert.equal('xsh-share' in bg.chrome.alarmTable, false);
+  }
+});
+
+test('sharing: turned on from an extension page with the saved labels, it makes a key and posts each label as a report, text/plain and without cookies', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  await reply(send(bg, LABEL_MSG, 7));
+  await reply(send(bg, OTHER_MSG, 7));
+  // A content script cannot turn it on.
+  assert.equal(await send(bg, { type: 'xsh:share-start', backfill: true }, 7), undefined);
+  assert.equal(bg.chrome.store['xsh:share'], undefined);
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start', backfill: true })), { ok: true, queued: 2 });
+  await settleLong();
+  const st = bg.chrome.store['xsh:share'];
+  assert.match(st.key, /^[0-9a-f]{32}$/);
+  assert.equal(st.on, true);
+  // The switch is not written into settings, which the popup and the settings page write whole.
+  assert.equal('sharing' in bg.chrome.store['xsh:settings'], false);
+  const posts = bg.requests.filter(isPost);
+  assert.deepEqual(posts.map((r) => r.url), [`${CROWD}/v1/reports`]);
+  const init = posts[0].init;
+  assert.deepEqual([init.method, { ...init.headers }, init.credentials, init.cache], ['POST', { 'content-type': 'text/plain;charset=UTF-8' }, 'omit', 'no-store']);
+  assert.deepEqual(JSON.parse(init.body), {
+    v: 1,
+    key: st.key,
+    reports: [
+      { label: 'slop', handle: 'reply_a', status: '2', thread: '1', hash: createHash('sha256').update('hello').digest('hex').slice(0, 16) },
+      { label: 'not_slop', handle: 'other', status: '3', thread: null, hash: null },
+    ],
+  });
+  // The words of the post are not in what was sent.
+  assert.equal(init.body.includes('hello'), false);
+  assert.deepEqual([st.queue, st.sent, st.lastError, st.retryAt], [[], 2, null, null]);
+  // Without "Also share", the labels already saved stay unsent.
+  const fresh = shareBackground({ answer: takeAll });
+  await reply(send(fresh, LABEL_MSG, 7));
+  assert.deepEqual(await reply(fromPopup(fresh, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  await settleLong();
+  assert.deepEqual(fresh.requests.filter(isPost), []);
+});
+
+test('sharing: while it is on a label is queued and sent at the share alarm; clearing it sends a retraction, and so does Delete all labels', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, LABEL_MSG, 7));
+  let st = bg.chrome.store['xsh:share'];
+  assert.deepEqual(st.queue.map((i) => [i.op, i.status, i.label]), [['report', '2', 'slop']]);
+  assert.ok(bg.chrome.alarmTable['xsh-share'].when >= Date.now() + 29000, 'sent at the alarm, which gathers labels made close together');
+  assert.deepEqual(bg.requests.filter(isPost), []);
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost).map((r) => r.url), [`${CROWD}/v1/reports`]);
+  await reply(send(bg, { ...LABEL_MSG, label: null }, 7));
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  let last = bg.requests.filter(isPost).at(-1);
+  assert.deepEqual([last.url, JSON.parse(last.init.body)], [`${CROWD}/v1/retract`, { v: 1, key: SKEY, statuses: ['2'] }]);
+  // Two labels made, then Delete all labels before they went: only the retractions go.
+  await reply(send(bg, LABEL_MSG, 7));
+  await reply(send(bg, OTHER_MSG, 7));
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:labels-clear' })), { ok: true, removed: 2 });
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  const posts = bg.requests.filter(isPost);
+  assert.equal(posts.length, 3);
+  last = posts.at(-1);
+  assert.deepEqual([last.url, JSON.parse(last.init.body).statuses.sort()], [`${CROWD}/v1/retract`, ['2', '3']]);
+  st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.queue, st.sent], [[], 1]);
+});
+
+test('sharing: a 429 or a put-off report waits for the time the server gives, no answer 30 minutes, and nothing is sent before then', async () => {
+  let mode = '429';
+  const bg = shareBackground({
+    store: { 'xsh:share': { on: true, key: SKEY } },
+    answer: (path, body) => {
+      if (mode === '429') return json(429, { ok: false, reason: 'too many new installs from this network today', retryAfter: 3600000 });
+      if (mode === 'defer') return json(200, { ok: true, accepted: [], rejected: [], deferred: body.reports.map((r) => r.status), retryAfter: 7200000 });
+      throw new TypeError('Failed to fetch');
+    },
+  });
+  await reply(send(bg, LABEL_MSG, 7));
+  const t0 = Date.now();
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  let st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.queue.length, st.lastError], [1, 'the server asked to wait: too many new installs from this network today']);
+  assert.ok(st.retryAt >= t0 + 3600000 && st.retryAt <= Date.now() + 3600000);
+  assert.equal(bg.chrome.alarmTable['xsh-share'].when, st.retryAt);
+  // The alarm firing early sends nothing.
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.equal(bg.requests.filter(isPost).length, 1);
+  // Due, and put off by the daily cap.
+  bg.chrome.store['xsh:share'] = { ...bg.chrome.store['xsh:share'], retryAt: Date.now() - 1 };
+  mode = 'defer';
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.queue.length, st.lastError, bg.requests.filter(isPost).length], [1, null, 2]);
+  assert.ok(st.retryAt > Date.now() + 7100000 && st.retryAt <= Date.now() + 7200000);
+  // Due, and no answer.
+  bg.chrome.store['xsh:share'] = { ...bg.chrome.store['xsh:share'], retryAt: Date.now() - 1 };
+  mode = 'offline';
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.queue.length, st.lastError], [1, 'could not reach the server (Failed to fetch)']);
+  assert.ok(st.retryAt > Date.now() + 29 * 60000 && st.retryAt <= Date.now() + 30 * 60000);
+});
+
+test('sharing: Turn off drops what is waiting and sends nothing more; Delete what I shared posts the key to forget and then drops it; a failed delete keeps it', async () => {
+  let forgetOk = false;
+  const bg = shareBackground({
+    store: { 'xsh:share': { on: true, key: SKEY, sent: 4 } },
+    answer: (path, body) => {
+      if (path === '/v1/forget') return forgetOk ? json(200, { ok: true, removed: 4 }) : json(503, { ok: false, reason: 'busy' });
+      return takeAll(path, body);
+    },
+  });
+  await reply(send(bg, LABEL_MSG, 7));
+  // Only an extension page can turn it off or delete.
+  assert.equal(await send(bg, { type: 'xsh:share-stop' }, 7), undefined);
+  assert.equal(await send(bg, { type: 'xsh:share-forget' }, 7), undefined);
+  assert.equal(bg.chrome.store['xsh:share'].on, true);
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-stop' })), { ok: true });
+  let st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.on, st.key, st.queue, st.sent], [false, SKEY, [], 4]);
+  assert.equal('xsh-share' in bg.chrome.alarmTable, false);
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost), []);
+  // A delete the server did not confirm keeps the key, so it can be tried again.
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-forget' })), { ok: false, reason: 'the server answered 503' });
+  assert.equal(bg.chrome.store['xsh:share'].key, SKEY);
+  forgetOk = true;
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-forget' })), { ok: true, removed: 4 });
+  assert.deepEqual(
+    bg.requests.filter(isPost).map((r) => [r.url, JSON.parse(r.init.body)]),
+    [
+      [`${CROWD}/v1/forget`, { v: 1, key: SKEY }],
+      [`${CROWD}/v1/forget`, { v: 1, key: SKEY }],
+    ],
+  );
+  st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.on, st.key, st.sent, st.queue], [false, null, 0, []]);
+  // Turned on again, it is a new reader with a new key.
+  await reply(fromPopup(bg, { type: 'xsh:share-start' }));
+  const again = bg.chrome.store['xsh:share'].key;
+  assert.match(again, /^[0-9a-f]{32}$/);
+  assert.notEqual(again, SKEY);
+});
+
+test('sharing: Delete what I shared with sharing on turns it off first, and waits for a send already out so the delete covers it', async () => {
+  let release;
+  const held = new Promise((r) => (release = r));
+  const order = [];
+  const bg = shareBackground({
+    store: { 'xsh:share': { on: true, key: SKEY } },
+    answer: async (path, body) => {
+      order.push(path);
+      if (path === '/v1/reports') await held;
+      return path === '/v1/forget' ? json(200, { ok: true, removed: 1 }) : takeAll(path, body);
+    },
+  });
+  await reply(send(bg, LABEL_MSG, 7));
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.deepEqual(order, ['/v1/reports']);
+  const done = fromPopup(bg, { type: 'xsh:share-forget' });
+  await settleLong();
+  assert.equal(bg.chrome.store['xsh:share'].on, false);
+  assert.deepEqual(order, ['/v1/reports'], 'the delete waits for the report out');
+  release();
+  assert.deepEqual(await reply(done), { ok: true, removed: 1 });
+  assert.deepEqual(order, ['/v1/reports', '/v1/forget']);
+  assert.equal(bg.chrome.store['xsh:share'].key, null);
+});
+
+test('sharing: turning it on while Delete what I shared is out is refused, so it never ends on with no key', async () => {
+  let release;
+  const held = new Promise((r) => (release = r));
+  const bg = shareBackground({
+    store: { 'xsh:share': { on: true, key: SKEY } },
+    answer: async (path, body) => {
+      if (path === '/v1/forget') {
+        await held;
+        return json(200, { ok: true, removed: 1 });
+      }
+      return takeAll(path, body);
+    },
+  });
+  await reply(send(bg, LABEL_MSG, 7));
+  const done = fromPopup(bg, { type: 'xsh:share-forget' });
+  await settleLong();
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start', backfill: true })), {
+    ok: false,
+    reason: 'Delete what I shared is still running; try again when it ends',
+  });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-forget' })), { ok: false, reason: 'Delete what I shared is already running' });
+  release();
+  assert.deepEqual(await reply(done), { ok: true, removed: 1 });
+  const st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.on, st.key, st.queue], [false, null, []]);
+  assert.deepEqual(bg.requests.filter(isPost).map((r) => r.url), [`${CROWD}/v1/forget`]);
+  // Once it has ended, turning on works and makes a new key.
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  assert.match(bg.chrome.store['xsh:share'].key, /^[0-9a-f]{32}$/);
+  assert.notEqual(bg.chrome.store['xsh:share'].key, SKEY);
+});
+
+test('sharing: a label made while a send is set for sooner keeps that time, so steady labelling does not put the send off; one set for later is brought forward', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  const soon = Date.now() + 5000;
+  bg.chrome.alarms.create('xsh-share', { when: soon });
+  await reply(send(bg, LABEL_MSG, 7));
+  assert.equal(bg.chrome.alarmTable['xsh-share'].when, soon);
+  // The minute's wait after a full send, say: the new label's send comes sooner.
+  const later = Date.now() + 600000;
+  bg.chrome.alarms.create('xsh-share', { when: later });
+  await reply(send(bg, OTHER_MSG, 7));
+  const when = bg.chrome.alarmTable['xsh-share'].when;
+  assert.ok(when >= Date.now() + 29000 && when <= Date.now() + 30000, String(when - Date.now()));
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue.map((i) => i.status), ['2', '3']);
+});
+
+test('sharing: the settings page says what is sent before it is on, then turns it on, off and deletes through the background', async () => {
+  const s = loadSettings({ 'xsh:settings': {}, 'xsh:labelCount': 3 });
+  const sent = [];
+  const queued = (n) => Array.from({ length: n }, (_, i) => ({ op: 'report', label: 'slop', handle: 'a', status: String(i + 1), thread: null, hash: null, seq: i + 1 }));
+  s.chrome.runtime.sendMessage = async (msg) => {
+    sent.push({ ...msg });
+    if (msg.type === 'xsh:share-start') {
+      s.chrome.store['xsh:share'] = { on: true, key: SKEY, queue: queued(3), seq: 3 };
+      return { ok: true, queued: 3 };
+    }
+    if (msg.type === 'xsh:share-stop') {
+      s.chrome.store['xsh:share'] = { key: SKEY, sent: 3 };
+      return { ok: true };
+    }
+    s.chrome.store['xsh:share'] = {};
+    return { ok: true, removed: 3 };
+  };
+  await settle();
+  const all = (sel) => [...s.document.querySelectorAll(sel)].map((e) => e.textContent);
+  assert.deepEqual(all('#shareBody h3'), ['What is sent', 'What is never sent', 'Where it goes']);
+  assert.deepEqual(all('#shareBody .facts li'), [
+    "For each label: that it is slop (or not slop, for a label saved before version 0.9.0), the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent.",
+    'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.',
+    "The post's words, your X account, other pages you visit, your lists and your settings.",
+    'To ai-anti-slop.startupbros.com, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.',
+    'While sharing is on, clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.',
+  ]);
+  assert.equal(s.$('shareBackfill').checked, false, 'the labels already saved are shared only when ticked');
+  assert.equal(s.$('shareBackfill').closest('label').textContent, 'Also share the 3 labels already saved');
+  assert.equal(s.$('shareForget'), null, 'nothing shared yet, nothing to delete');
+  const link = s.document.querySelector('#shareBody .shareLink a');
+  assert.deepEqual([link.getAttribute('href'), link.textContent], ['https://ai-anti-slop.startupbros.com/', "The readers' list and how it is made"]);
+  assert.deepEqual(sent, [], 'nothing happens until the button');
+  s.$('shareBackfill').checked = true;
+  s.click('shareOn');
+  await settle();
+  assert.deepEqual(sent, [{ type: 'xsh:share-start', backfill: true }]);
+  assert.equal(s.$('shareMsg').textContent, 'Sharing is on. 3 labels are queued to send.');
+  assert.equal(s.document.querySelector('#shareBody .shareState').textContent, 'Sharing is on. 0 reports sent · 3 waiting.');
+  assert.equal(s.focused.at(-1), 'shareOff');
+  s.click('shareOff');
+  await settle();
+  assert.deepEqual(sent.at(-1), { type: 'xsh:share-stop' });
+  assert.equal(s.$('shareMsg').textContent, 'Sharing is off. Nothing more is sent.');
+  assert.equal(s.document.querySelector('#shareBody .hint').textContent, '3 reports sent from this browser stay on the server until you delete them.');
+  // Delete what I shared asks twice.
+  s.click('shareForget');
+  await settle();
+  assert.equal(s.$('shareForget').textContent, 'Click again to delete what you shared');
+  assert.equal(sent.length, 2);
+  s.click('shareForget');
+  await settle();
+  assert.deepEqual(sent.at(-1), { type: 'xsh:share-forget' });
+  assert.equal(s.$('shareMsg').textContent, 'Deleted 3 reports from the server. Sharing is off.');
+  assert.equal(s.$('shareForget'), null);
+  assert.ok(s.$('shareOn'));
+});
+
+test('sharing: a failed send shows on the settings page with when it tries again; a failed delete says nothing was deleted', async () => {
+  const s = loadSettings({
+    'xsh:settings': {},
+    'xsh:share': { on: true, key: SKEY, sent: 5, lastSentAt: Date.now() - 120000, lastError: 'could not reach the server (Failed to fetch)', retryAt: Date.UTC(2099, 0, 1, 15, 4) },
+  });
+  s.chrome.runtime.sendMessage = async () => ({ ok: false, reason: 'could not reach the server (Failed to fetch)' });
+  await settle();
+  assert.equal(s.document.querySelector('#shareBody .shareState').textContent, 'Sharing is on. 5 reports sent · last sent 2 min ago.');
+  const when = new Date(Date.UTC(2099, 0, 1, 15, 4)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  assert.equal(s.document.querySelector('#shareBody .shareErr').textContent, `The last send did not go through: could not reach the server (Failed to fetch). It tries again by itself after ${when}.`);
+  s.click('shareForget');
+  await settle();
+  s.click('shareForget');
+  await settle();
+  assert.equal(s.$('shareMsg').textContent, 'Nothing was deleted: could not reach the server (Failed to fetch). Sharing is off; try again.');
+});
+
+test('sharing: the popup says whether sharing is on, and its button opens the settings page at sharing', async () => {
+  const created = [];
+  const tabs = { query: async () => [], sendMessage: async () => null, create: async (info) => created.push(info) };
+  const off = loadPopup({ 'xsh:settings': {} }, {}, tabs);
+  await settle();
+  const text = (p, id) => p.document.getElementById(id).textContent;
+  assert.equal(text(off, 'shareLine'), "Sharing is off. Shared labels help build the readers' list, one of Recommended's sources.");
+  assert.equal(text(off, 'shareOpen'), 'Share your labels');
+  off.document.getElementById('shareOpen').dispatchEvent(new off.window.Event('click'));
+  assert.deepEqual(created.map((c) => ({ ...c })), [{ url: `chrome-extension://${EXT_ID}/src/settings.html#share` }]);
+  const on = loadPopup({ 'xsh:settings': {}, 'xsh:share': { on: true, key: SKEY, sent: 1, queue: [{ op: 'retract', status: '4', seq: 1 }], seq: 1 } }, {}, tabs);
+  await settle();
+  assert.equal(text(on, 'shareLine'), 'Sharing is on: 1 report sent, 1 waiting.');
+  assert.equal(text(on, 'shareOpen'), 'Sharing settings');
+  // A sharing field in settings is not the switch.
+  const stale = loadPopup({ 'xsh:settings': { sharing: true }, 'xsh:share': { key: SKEY } }, {}, tabs);
+  await settle();
+  assert.equal(text(stale, 'shareLine'), "Sharing is off. Shared labels help build the readers' list, one of Recommended's sources.");
+});
+
+test('sharing: a popup save of settings it read before Turn off sharing does not turn sharing back on', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  const p = loadPopup(bg.chrome.store);
+  await settle();
+  // From here the popup reads and writes the background's storage, and
+  // sharing is turned off between its save's read and its write.
+  const local = bg.chrome.storage.local;
+  let between = false;
+  p.chrome.storage.local = {
+    ...local,
+    get: async (keys) => {
+      const got = await local.get(keys);
+      if (!between && [].concat(keys).includes('xsh:settings')) {
+        between = true;
+        assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-stop' })), { ok: true });
+      }
+      return got;
+    },
+  };
+  const box = p.document.getElementById('mentions');
+  box.checked = true;
+  box.dispatchEvent(new p.window.Event('change'));
+  await settleLong();
+  assert.equal(between, true);
+  assert.equal(bg.chrome.store['xsh:settings'].hideBotMentions, true, 'the popup save went through');
+  // A label made afterwards is not sent.
+  assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost).map((r) => r.url), []);
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue, []);
+  assert.equal(bg.chrome.store['xsh:share'].on, false);
+});
+
+test('sharing: with sharing off, a key and no send counted, the settings page still offers Delete what I shared', async () => {
+  // A request the server stored can lose its answer, which leaves sent at 0.
+  const s = loadSettings({ 'xsh:settings': {}, 'xsh:share': { key: SKEY } });
+  await settle();
+  assert.ok(s.$('shareOn'));
+  assert.equal(s.$('shareForget').textContent, 'Delete what I shared');
+  assert.equal(s.document.querySelector('#shareBody .hint').textContent, 'Anything sent from this browser stays on the server until you delete it.');
 });

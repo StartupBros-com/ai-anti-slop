@@ -2,8 +2,10 @@
 // chrome.storage.local, and, when the user has turned muting on, mutes listed
 // accounts one at a time in background tabs it opens and closes itself, and
 // unmutes accounts it muted once muting no longer picks them. Its
-// only network requests are the addresses of the lists that are on (two for
-// Recommended); muting goes through X's own page and reads only the AI list.
+// network requests are the addresses of the lists that are on (three for
+// Recommended) and, only while the user has turned sharing on, the reports it
+// posts to AI Anti-Slop's server (DEFAULTS.crowdBase); muting goes through X's
+// own page and reads only the AI list.
 importScripts('lib.js');
 
 const L = self.XSlopHide;
@@ -11,6 +13,7 @@ const K = L.STORAGE_KEYS;
 const ALARM = 'xsh-refresh';
 const MUTE_ALARM = 'xsh-mute';
 const JOB_ALARM = 'xsh-job-timeout';
+const SHARE_ALARM = 'xsh-share';
 const JOB_KEY = 'xsh:job'; // chrome.storage.session: the one job in flight
 const JOB_TABS_KEY = 'xsh:jobTabs'; // chrome.storage.session: tabs opened for jobs
 const VISIT_KEY = 'xsh:visit'; // chrome.storage.local: { tabId, windowId, startedAt } of the visit in progress, to close its tab after an update
@@ -65,7 +68,9 @@ async function runRefresh(sub) {
   const record = exists ? L.commitRecord(latest, result, sub.url, startSeq, Date.now()) : null;
   if (record) await chrome.storage.local.set({ [key]: record });
   const kept = record || latest;
-  return { ok: result.ok, reason: result.reason || null, count: kept ? kept.handles.length : 0, handles: kept ? kept.handles : [] };
+  // A list of several sources can update with one of them refused (reason
+  // set): the update is stored, but the answer is not ok.
+  return { ok: result.ok && !result.reason, reason: result.reason || null, count: kept ? kept.handles.length : 0, handles: kept ? kept.handles : [] };
 }
 
 // Refresh every list that is on, in parallel. Answers { ok, reason, count }:
@@ -481,10 +486,176 @@ async function tickWith(xOpen) {
   await saveMutes(rec);
 }
 
+// ------------------------------------------------------------------ sharing
+//
+// Only while the sharing record's on is true (L.shareOn). saveLabel and clearLabels
+// queue reports and retractions inside serial(); sendShare posts them outside
+// it, so a slow server never holds up a label, and stores each answer inside
+// it again. Turning sharing off empties the queue, and sendShare reads the
+// switch before every request, so nothing is sent while it is off.
+
+const shareRec = async () => L.shareState((await chrome.storage.local.get(K.share))[K.share]);
+
+// Send what is queued at `at` (or soon). Chrome fires an alarm no sooner than
+// 30 seconds after it is set, which also gathers labels made close together
+// into one request.
+function shareSoon(at) {
+  chrome.alarms.create(SHARE_ALARM, { when: Math.max(Date.now() + 30000, at || 0) });
+}
+
+// Called inside serial(): queue the items, and come back to send them. A
+// send already set for no later than this one would be is kept, so labels
+// made less than 30 seconds apart do not keep putting the send off.
+async function queueShare(items) {
+  let st = await shareRec();
+  for (const it of items) st = L.enqueueShare(st, it);
+  await chrome.storage.local.set({ [K.share]: st });
+  const set = await chrome.alarms.get(SHARE_ALARM);
+  const now = Date.now();
+  const want = Math.max(now + 30000, st.retryAt || 0);
+  if (set && set.scheduledTime > now && set.scheduledTime <= want) return;
+  shareSoon(st.retryAt);
+}
+
+// A queue left by a worker that stopped before it sent.
+async function ensureShareAlarm() {
+  const st = await shareRec();
+  if (L.shareOn(st) && st.queue.length && !(await chrome.alarms.get(SHARE_ALARM))) shareSoon(st.retryAt);
+}
+
+// POST a JSON body as text/plain, which needs no CORS preflight, without
+// cookies. Never throws: { status, body } (body: the parsed JSON answer, or
+// null), or { status: 0, error } when no answer came.
+async function postShare(path, body) {
+  try {
+    const init = {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+      body: JSON.stringify(body),
+      cache: 'no-store',
+      credentials: 'omit',
+    };
+    if (typeof AbortSignal !== 'undefined' && AbortSignal.timeout) init.signal = AbortSignal.timeout(L.DEFAULTS.timeoutMs);
+    const res = await fetch(L.DEFAULTS.crowdBase + path, init);
+    let data = null;
+    try {
+      data = JSON.parse(await res.text());
+    } catch (e) {
+      data = null;
+    }
+    return { status: res.status, body: data };
+  } catch (e) {
+    return { status: 0, error: String((e && e.message) || e) };
+  }
+}
+
+// One send at a time: up to shareRequestsPerSend requests, then a minute's
+// wait if more is queued. Each request is planned and its answer stored
+// inside serial(), with the network call between them outside it.
+let sending = null;
+function sendShare() {
+  if (!sending) sending = sendLoop().finally(() => (sending = null));
+  return sending;
+}
+
+async function sendLoop() {
+  for (let n = 0; n < L.DEFAULTS.shareRequestsPerSend; n++) {
+    const plan = await serial(async () => {
+      const st = await shareRec();
+      if (!L.shareOn(st)) {
+        if (st.queue.length || st.retryAt) await chrome.storage.local.set({ [K.share]: Object.assign(st, { queue: [], retryAt: null }) });
+        return null;
+      }
+      if (st.retryAt && st.retryAt > Date.now()) return { wait: st.retryAt };
+      const batch = L.shareBatch(st);
+      return batch ? { batch } : null;
+    });
+    if (!plan) return;
+    if (plan.wait) return shareSoon(plan.wait);
+    const res = await postShare(plan.batch.path, plan.batch.body);
+    const st = await serial(async () => {
+      const next = L.shareResult(await shareRec(), plan.batch, res, Date.now());
+      // Turned off while the request was out: what it sent stays counted, the rest goes.
+      if (!L.shareOn(next)) Object.assign(next, { queue: [], retryAt: null });
+      await chrome.storage.local.set({ [K.share]: next });
+      return next;
+    });
+    if (st.retryAt) return shareSoon(st.retryAt);
+    if (!st.queue.length) return;
+  }
+  shareSoon(Date.now() + 60000);
+}
+
+// Called inside serial(). Turn sharing on, with a new key if this install
+// has none, and queue a report for every label already saved when asked.
+async function startShare(backfill) {
+  // A delete still out drops the key when it ends, which would leave sharing
+  // on with no key (and could send reports the delete misses).
+  if (forgetting) return { ok: false, reason: 'Delete what I shared is still running; try again when it ends' };
+  let st = await shareRec();
+  if (!st.key) st.key = L.newShareKey();
+  let queued = 0;
+  if (backfill) {
+    const reports = await L.backfillReports(L.labelsFrom(await chrome.storage.local.get(null)), (t) => L.textHash(t));
+    for (const r of reports) st = L.enqueueShare(st, r);
+    queued = reports.length;
+  }
+  st.on = true;
+  await chrome.storage.local.set({ [K.share]: st });
+  // The caller sends at once; the alarm is there if this worker stops first.
+  if (st.queue.length) shareSoon(st.retryAt);
+  return { ok: true, queued };
+}
+
+// Called inside serial(). Turn sharing off: nothing waiting is sent. What
+// was sent stays on the server until Delete what I shared, and the key stays
+// so that delete can name it.
+async function stopShare() {
+  const st = await shareRec();
+  await chrome.storage.local.set({ [K.share]: Object.assign(st, { on: false, queue: [], retryAt: null }) });
+  await chrome.alarms.clear(SHARE_ALARM);
+  return { ok: true };
+}
+
+// Delete what I shared: sharing goes off first, so nothing more is sent; a
+// send already out is waited for, so the delete covers it; then the server
+// deletes every report made with this install's key. Only once it says so is
+// the key dropped (the next time sharing is turned on gets a new one).
+// Sharing cannot be turned on while it runs.
+let forgetting = false;
+async function forgetShare() {
+  if (forgetting) return { ok: false, reason: 'Delete what I shared is already running' };
+  forgetting = true;
+  try {
+    return await forgetOnce();
+  } finally {
+    forgetting = false;
+  }
+}
+
+async function forgetOnce() {
+  const key = await serial(async () => {
+    await stopShare();
+    return (await shareRec()).key;
+  });
+  if (sending) await sending.catch(() => {});
+  if (!key) return { ok: true, removed: 0 };
+  const res = await postShare('/v1/forget', { v: 1, key });
+  if (res.status !== 200 || !res.body || res.body.ok !== true) {
+    const why = res.status ? `the server answered ${res.status}` : `could not reach the server${res.error ? ` (${res.error})` : ''}`;
+    return { ok: false, reason: why };
+  }
+  await serial(async () => {
+    if ((await shareRec()).key === key) await chrome.storage.local.set({ [K.share]: L.shareState(null) });
+  });
+  return { ok: true, removed: Number(res.body.removed) || 0 };
+}
+
 chrome.runtime.onInstalled.addListener((details) => {
   serial(() => sweepStrandedVisit(!!details && details.reason === 'update')).catch(() => {});
   ensureAlarm();
   ensureMuteAlarm();
+  ensureShareAlarm().catch(() => {});
   refresh();
 });
 
@@ -492,6 +663,7 @@ chrome.runtime.onStartup.addListener(() => {
   serial(() => sweepStrandedVisit(false)).catch(() => {}); // tab ids restart with the browser
   ensureAlarm();
   ensureMuteAlarm();
+  ensureShareAlarm().catch(() => {});
   refreshIfDue();
 });
 
@@ -513,6 +685,7 @@ function fromOwnPage(sender) {
 chrome.alarms.onAlarm.addListener((a) => {
   if (a.name === ALARM) refresh();
   if (a.name === MUTE_ALARM || a.name === JOB_ALARM) runTick();
+  if (a.name === SHARE_ALARM) sendShare().catch(() => {});
 });
 
 // The user closed a job's tab before it reported: count it as an error.
@@ -587,6 +760,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     serial(clearLabels).then(sendResponse, (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
     return true;
   }
+  // Sharing: turned on (with the labels already saved, when msg.backfill is
+  // true), turned off, or everything shared deleted. From the settings page only.
+  if (msg.type === 'xsh:share-start' || msg.type === 'xsh:share-stop') {
+    if (!fromOwnPage(sender)) return false;
+    serial(() => (msg.type === 'xsh:share-start' ? startShare(msg.backfill === true) : stopShare())).then(
+      (r) => {
+        sendResponse(r);
+        if (r && r.ok && msg.type === 'xsh:share-start') sendShare().catch(() => {});
+      },
+      (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }),
+    );
+    return true;
+  }
+  if (msg.type === 'xsh:share-forget') {
+    if (!fromOwnPage(sender)) return false;
+    forgetShare().then(sendResponse, (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg.type === 'xsh:run') {
     // Run now ({ on: true }) or Stop ({ on: false }), from the popup only.
     if (!fromOwnPage(sender)) return false;
@@ -613,8 +804,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 async function saveLabel(msg) {
   const id = msg && typeof msg.url === 'string' ? (L.statusOf(msg.url) || {}).id : null;
   const key = id ? L.LABEL_PREFIX + id : null;
-  const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, ...(key ? [key] : [])]);
+  const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, K.share, ...(key ? [key] : [])]);
   const s = got[K.settings] || {};
+  const sharing = L.shareOn(L.shareState(got[K.share]));
   if (!L.labelsOn(s)) return { ok: false, reason: 'labels are off' };
   const list = got[K.list];
   const ctx = { handles: list && list.handles, source: list && list.source, settings: s };
@@ -640,6 +832,8 @@ async function saveLabel(msg) {
       await chrome.storage.local.remove(key);
       await chrome.storage.local.set({ [K.labelCount]: Math.max(0, n - 1) });
     }
+    // A report sent for this post is taken back (the server ignores one it never had).
+    if (sharing) await queueShare([{ retract: r.id }]);
     return { ok: true, label: null };
   }
   const max = L.DEFAULTS.labelMax;
@@ -652,12 +846,19 @@ async function saveLabel(msg) {
   const patch = L.labelPatch(s, r.handle, r.label);
   if (patch) writes[K.settings] = Object.assign({}, s, patch);
   await chrome.storage.local.set(writes);
+  if (sharing) {
+    const report = L.reportOf(r.record);
+    if (report) await queueShare([Object.assign(report, { hash: await L.textHash(r.record.text) })]);
+  }
   return { ok: true, label: r.label, added: patch ? Object.keys(patch)[0] : null };
 }
 
 // Delete every label and the count. The two boxes are left as they are.
+// While sharing is on, each label's report is taken back too.
 async function clearLabels() {
-  const keys = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith(L.LABEL_PREFIX));
+  const all = await chrome.storage.local.get(null);
+  const keys = Object.keys(all).filter((k) => k.startsWith(L.LABEL_PREFIX));
   await chrome.storage.local.remove([...keys, K.labelCount]);
+  if (keys.length && L.shareOn(L.shareState(all[K.share]))) await queueShare(keys.map((k) => ({ retract: k.slice(L.LABEL_PREFIX.length) })));
   return { ok: true, removed: keys.length };
 }

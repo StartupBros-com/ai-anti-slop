@@ -679,6 +679,52 @@ x.com open. After 0.9.0 that holds back only the mutes past the day's first
 25 (the README's How many a day); in 0.9.0 and earlier it held back every
 visit.
 
+## Sharing labels in Chromium, against a local server
+
+On 2026-11-21 the unpacked extension from the working tree of the branch for
+issue #81 ran in headless
+Chromium 157.0.8103.50 through playwright-core 1.65.1, in a fresh profile, with
+real clicks on its buttons. A local HTTPS server answered x.com, clankwall and
+levelsio with fixture pages and files (Chromium's `--host-resolver-rules`), and
+passed every request for `ai-anti-slop.startupbros.com` to `wrangler dev`
+4.158.0, the real Worker from `server/` with a local D1 database, so the
+browser applied CORS to the Worker's own answers. Nothing reached the real
+hosts. The thread fixture had a post and three replies. It ran three times:
+first on the tree committed as d60c98b, then after the review fixes on the tree
+committed as 146736d, then after the fixes from the Pro review, which moved the
+sharing switch out of the settings into the sharing record, on the tree
+committed as a91295a (manifest 0.9.0 each time), each with a new local
+database built from the migration. All three runs passed all 16 checks; the
+table gives the third, whose last share record read `"on":false` with the key
+gone.
+
+| Step | Result |
+|---|---|
+| Install | Recommended stored three parts; the readers' list part was empty, with no error. One GET of `/v1/list.ndjson`, answered with `Access-Control-Allow-Origin: *`, sent no cookie |
+| Sharing off | A Hide as slop click saved its label after the Undo window, with the post's text. Nothing was posted |
+| Settings page | The sharing panel offered "Also share the 1 label already saved" |
+| Turn on, with that box ticked | The saved label was posted at once to `/v1/reports`, as `text/plain` from the extension's origin, with no cookie. The body was `{"v":1,"key":…,"reports":[{"label":"slop","handle":"xsh_demo_a","status":"3001","thread":"3000","hash":"7a59637409504a48"}]}`, with none of the post's words. The Worker's answer was readable and accepted `3001`. The share record counted 1 sent with nothing waiting, and the page read "Sharing is on. 1 report sent · last sent just now." |
+| A label while on | Posted at the share alarm, 31 s after the click |
+| Turn off | A new label was saved, and over the next 45 s nothing was posted or queued |
+| Delete what I shared | One POST to `/v1/forget`; the Worker removed 2 reports, the page read "Deleted 2 reports from the server. Sharing is off.", and the install's key was gone |
+| Requests outside the four hosts | None |
+
+Later on 2026-11-21 the same run passed all 16 checks against the deployed
+Worker, on the tree committed as 41541dd. The local server passed each request
+for `ai-anti-slop.startupbros.com` on to the real host instead of `wrangler dev`,
+so the answers, CORS headers included, came from Cloudflare and its D1 database,
+and Cloudflare set `CF-Connecting-IP` from this machine's address. Afterwards the
+production database held 0 reports and 0 reporters; what was left was the day's
+two counters (one new install, two reports), which a build removes once they
+are older than the counters' retention. An admin `rebuild` then ran a build on
+the real database: the list file was served `public, max-age=600` with an
+`ETag`, and a request with `If-None-Match` got a 304.
+
+`server/test/roundtrip.test.mjs` runs the same lib code against the Worker's
+handler in Node, including the parts this run did not reach: the daily cap,
+the 429 for a network's 11th new install, and a list built from three
+installs, read back through Recommended's own source.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -711,7 +757,13 @@ x.com (the unit and wiring tests cover the code, the run above only the
 page check), and X in other languages, where the reason kept is X's heading
 in that language. For the x.com-tab rule (after 0.9.0): an update from the
 Chrome Web Store with an x.com tab open (only a reload from the extensions
-page was tried).
+page was tried). For sharing labels (after 0.9.0): the browser talking to the
+deployed server directly (the live run above went through the local server),
+the Cron Trigger firing (the build ran from an admin rebuild), whether a list
+download was answered from the Worker's cache (the Cache API) or from D1, a
+label on real x.com, Brave, a server answer
+of 429 or an unreachable server in a browser (only the Node tests cover them),
+and many installs at once.
 For the Hide as slop icon (0.9.0): the loaded extension drawing it in the
 header on x.com, in Brave or any browser (the runs above injected its scripts),
 X's Dim theme (the build read before the release offered none), a theme

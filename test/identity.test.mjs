@@ -48,6 +48,7 @@ test('storage keys keep the xsh: prefix, so an updated copy finds its settings, 
     settings: 'xsh:settings',
     mutes: 'xsh:mutes',
     labelCount: 'xsh:labelCount',
+    share: 'xsh:share',
   });
   assert.equal(lib.LABEL_PREFIX, 'xsh:label:');
 });
