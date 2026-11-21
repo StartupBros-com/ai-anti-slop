@@ -1,6 +1,6 @@
 # AI Anti-Slop crowd list server
 
-A Cloudflare Worker with one D1 database. Installs of the AI Anti-Slop browser extension that opt in send reports, each saying that an X account's reply is Slop or Not slop. The Worker publishes the accounts that enough independent installs agree on as a plain NDJSON file. The extension reads that file as one source of its Recommended list. Tracking issue: StartupBros-com/ai-anti-slop#81.
+A Cloudflare Worker with one D1 database. Installs of the AI Anti-Slop browser extension that opt in send reports, each saying that an X account's post is Slop (or Not slop, for a label saved by a version before 0.9.0). The Worker publishes the accounts that enough independent installs agree on as a plain NDJSON file. The extension reads that file as one source of its Recommended list. Tracking issue: StartupBros-com/ai-anti-slop#81.
 
 An entry means "reported by N readers". It is not proof of anything about the account.
 

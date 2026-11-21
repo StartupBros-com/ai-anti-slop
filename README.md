@@ -13,7 +13,9 @@ your X account. You can add
 accounts of your own, choose Show, Hide or Mute for each of six answer bots
 such as @grok and @AskPerplexity, and hide posts that tag one of those bots.
 In the extension, a button on each post [hides it as slop](#labels) and adds
-its account to your own Also hide list.
+its account to your own Also hide list; if you turn on
+[sharing](#sharing-labels), those labels help build the readers' list, one of
+Recommended's sources.
 
 Hiding works on the page in your desktop browser, in this browser profile
 only, and the Pause switch shows the posts again. Muting is off until you turn
@@ -32,12 +34,15 @@ The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
 extension the list that starts on is **Recommended**: that list plus the
-accounts levelsio blocked with a public reply, 1,306 accounts on 2026-11-21.
+accounts levelsio blocked with a public reply, 1,306 accounts on 2026-11-21,
+plus the readers' list, which AI Anti-Slop builds from the labels readers
+share and which starts empty.
 You can also switch on clankwall's wider "All flags" list (2,811
 accounts on 2026-11-19, AI and spam), the whole of levelsio's "Blocked for AI reply" list
 (3,734 accounts on 2026-11-19), or add a list of handles by its address;
-see [Lists](#lists). Muting uses the AI flags list alone. AI Anti-Slop does not
-maintain any of these lists; see [Whose list is it?](#whose-list-is-it).
+see [Lists](#lists). Muting uses the AI flags list alone. Of these lists
+AI Anti-Slop runs only the readers' list; see
+[Whose list is it?](#whose-list-is-it).
 
 To install, open the
 [userscript](https://raw.githubusercontent.com/StartupBros-com/ai-anti-slop/main/dist/x-slop-hide.user.js)
@@ -264,7 +269,7 @@ seconds after.
 
 | List | Address | Starts |
 |---|---|---|
-| Recommended | `https://clankwall.vogel.dev/api/usernames.txt` and `https://blockedforaireply.levels.io/api/accounts.ndjson` | On |
+| Recommended | `https://clankwall.vogel.dev/api/usernames.txt`, `https://blockedforaireply.levels.io/api/accounts.ndjson` and `https://ai-anti-slop.startupbros.com/v1/list.ndjson` | On |
 | clankwall: AI flags | `https://clankwall.vogel.dev/api/usernames.txt` | On |
 | clankwall: All flags | `https://clankwall.vogel.dev/api/accounts.ndjson` | Off |
 | levelsio: Blocked for AI reply | `https://blockedforaireply.levels.io/api/usernames.txt` | Off |
@@ -272,17 +277,28 @@ seconds after.
 
 - **Recommended** is AI Anti-Slop's pick: every account on AI flags, plus the
   accounts on levelsio's list that were blocked with a public reply, which
-  levelsio's page links to. The extension builds it from the two files above: it keeps a
-  row of levelsio's `accounts.ndjson` only when the row says
-  `"levelsio": "confirmed"` and has at least one item under `evidence`. It held
-  1,306 accounts on 2026-11-21, 786 from AI flags and 521 from levelsio's file,
-  with 1 on both. levelsio's other accounts, blocked with no reply or copied
-  from clankwall, are left out. Each file is checked on its own, against its
-  own part of the stored copy; if either fails, Recommended keeps its previous
-  copy whole and names the file's host. It hides only, and only in the
-  extension: the userscript cannot fetch levelsio's file. It is on after the
-  update that adds it, as on a new install, until you switch it off. AI flags
-  is on too, so its file is downloaded once for each list.
+  levelsio's page links to, plus the readers' list. The extension builds it
+  from the three files above: it keeps a row of levelsio's `accounts.ndjson`
+  only when the row says `"levelsio": "confirmed"` and has at least one item
+  under `evidence`, and every row of the readers' list. It held 1,306 accounts
+  on 2026-11-21, 786 from AI flags and 521 from levelsio's file, with 1 on
+  both, before the readers' list existed. levelsio's other accounts, blocked
+  with no reply or copied from clankwall, are left out. Each file is checked on
+  its own, against its own part of the stored copy, and one that fails keeps
+  its previous part while the others update
+  ([How list updates stay safe](#how-list-updates-stay-safe)). It hides only,
+  and only in the extension: the userscript cannot fetch levelsio's file or
+  the readers' list. It is on after the update that adds it, as on a new
+  install, until you switch it off. AI flags is on too, so its file is
+  downloaded once for each list.
+- **The readers' list** is the part of Recommended that AI Anti-Slop's server
+  builds from the labels readers chose to [share](#sharing-labels). An account
+  is on it once three or more installs, on two or more networks, have labelled
+  its posts slop in two or more threads, counting only reports a day old or
+  more from installs that have been sharing for a week or more, and at least
+  three times as many installs labelled it slop as not slop. It is empty until
+  that first happens. It is not a list of its own on the settings page, so
+  switching Recommended off stops its download too.
 - **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
   2026-11-19. Muting uses it alone, so it stays switched on while muting is
   on. To switch it off, turn muting off first. Recommended includes it, so
@@ -624,7 +640,7 @@ A record holds:
 | `url` | The post's link, `https://x.com/handle/status/id` |
 | `text` | The first 1,000 characters of the post's own text (not a post it quotes), with its emoji |
 | `page` | The post page it was labelled on, or `null` on any other page, such as the home timeline |
-| `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null`. For Recommended, the host of the file that had it: `clankwall.vogel.dev` or `blockedforaireply.levels.io` |
+| `list` | The host of the first list that was on and had the account, such as `clankwall.vogel.dev`; otherwise `null`. For Recommended, the host of the first of its files that had it: `clankwall.vogel.dev`, `blockedforaireply.levels.io` or `ai-anti-slop.startupbros.com` |
 | `lists` | Only when a list other than AI flags was on (Recommended starts on): the lists that were on and had the account, `recommended` (Recommended), `clankwall-ai` (AI flags), `clankwall-all` (All flags), `levelsio` (levelsio's list), or `u` and letters and digits for a list you added; empty when none of them had it. A label saved with only AI flags on, or before this field existed, has none |
 | `extra`, `allow` | Whether the account was in Also hide or Always show before this click |
 | `hidden` | Whether AI Anti-Slop hid the account's posts on that page then, leaving out Pause and tag hiding |
@@ -634,6 +650,37 @@ oldest first, named `ai-anti-slop-labels-YYYY-MM-DD.jsonl`. **Delete all
 labels** deletes them on its second click. Up to 2,000 labels are kept; past
 that, a new one is refused ("2000 labels saved: export and delete them to add
 more") while saved ones can still be changed.
+
+### Sharing labels
+
+Sharing is off unless you turn it on under **Share your labels** on the
+settings page, which the popup's **Share your labels** button opens. While it
+is on, each label you save is sent to AI Anti-Slop's server at
+`ai-anti-slop.startupbros.com`, where enough agreeing labels put an account on
+the [readers' list](#lists). Turning it on offers to send the labels already
+saved too (**Also share the N labels already saved**), unticked.
+
+- A report holds the label, the author's handle, the post's id, the id of the
+  post page it was labelled on (none on other pages; the server then counts
+  the post as its own thread) and a hash of the post's words. The words
+  themselves, the label's other fields, your settings and your X handle are
+  never sent. With them goes a random code made when you first turn sharing
+  on, so the server can count one install once and delete its reports. The
+  settings page lists all of it before the button.
+- Labels go about 30 seconds after they are saved, up to 50 in a request.
+  Clearing a label, or **Delete all labels**, takes its report back. When the
+  server cannot be reached, the request waits 30 minutes; when it asks to
+  wait (past 100 reports from one install in a UTC day, say), it waits as long
+  as it is told, up to 26 hours. At most 4,000 reports wait at once; past
+  that the oldest are dropped.
+- The popup says whether sharing is on and how many reports it has sent.
+- **Turn off sharing** stops sending and drops what is waiting. **Delete what
+  I shared** also deletes, on the server, every report from this install, and
+  then the random code. Reports left on the server are deleted after 90 days.
+
+The server's code is in [`server/`](server/), with its rules and what it
+stores in [server/README.md](server/README.md). What it keeps is in
+[PRIVACY.md](PRIVACY.md#sharing-labels).
 
 ## Export and import
 
@@ -683,12 +730,23 @@ The AI flags and All flags lists are clankwall's, not this project's;
 levelsio's list is @levelsio's; and a list you add is whoever publishes it.
 Neither AI Anti-Slop nor its developers check a list you add.
 
-Recommended is a rule over clankwall's and levelsio's lists, not a list of
-this project's. The extension applies it to their files as they are
-published; AI Anti-Slop adds or removes no account by hand and hosts no
-copy. An account leaves Recommended once it is neither on AI flags nor among
-levelsio's confirmed accounts, and the removal routes are those two sites'
-own, below.
+Recommended is a rule over clankwall's and levelsio's lists, plus the
+readers' list. The extension applies the rule to clankwall's and levelsio's
+files as they are published, and AI Anti-Slop hosts no copy of either. An
+account leaves Recommended once it is on none of the three: neither on AI
+flags, nor among levelsio's confirmed accounts, nor on the readers' list.
+The removal routes for the first two are those sites' own, below.
+
+The readers' list is this project's. Its server builds it from shared labels
+by the rule under [Lists](#lists), every three hours, and drops an account
+once too few of its reports are left: a report is deleted after 90 days.
+Its maintainers can also add an account or take one off by hand, and each
+build that adds or removes an account is published at
+`https://ai-anti-slop.startupbros.com/v1/changes`. If you think an account is
+on it by mistake, the form on `https://ai-anti-slop.startupbros.com/` sends a
+removal request, which a maintainer reads; sending one does not remove the
+account by itself. An entry means readers reported the account, not that it
+posts AI replies.
 
 The AI flags list is clankwall's, not this project's. clankwall's homepage says "Flags
 aren’t proof of AI use." and states no licence or uptime terms. AI Anti-Slop
@@ -697,7 +755,7 @@ fetches it at run time and does not copy it into this repository.
 If you think an account is listed by mistake, clankwall's homepage has a
 Request removal form (it says requests are "Logged for review, not removed
 automatically.") and links dispute-spam@ryan.ceo (read on 2026-11-08).
-AI Anti-Slop cannot remove anyone from the list. To see an account anyway, add
+AI Anti-Slop cannot remove anyone from clankwall's list. To see an account anyway, add
 it to Always show; that also keeps it from being muted.
 
 levelsio's page has an Appeal a listing form, which asks for a post from the
@@ -716,12 +774,14 @@ levelsio's `accounts.ndjson`, whose lines are JSON) or 50,000 handles, is mostly
 that are not handles, is empty, or has fewer than half as many handles as the
 stored list (once that list has 20 or more), the previous list stays in place
 and the popup shows why. A broken or truncated feed cannot empty your filter.
-Recommended's two files are each checked this way, against that file's own
+Recommended's three files are each checked this way, against that file's own
 part of the stored copy, so levelsio's rows losing the field that marks them
 confirmed counts as an empty file even while clankwall's part is fine. A
 file that fails keeps its own previous part while the other files update,
 and the popup names the file's host. Only when every file fails does all of
-Recommended keep its previous copy.
+Recommended keep its previous copy. The readers' list may be empty, since it
+starts that way: an empty file is taken while its stored part holds fewer
+than 20 accounts, and refused like any other once it holds 20 or more.
 
 ## Permissions and privacy
 
@@ -751,16 +811,20 @@ The privacy policy, with what each storage key holds, is
   title, and only the extension's script on an x.com page answers.
 - It clicks only in a tab the background worker opened for a visit. The worker
   hands that tab its job once, so a reload of the tab does not click again.
-- The one kind of network request the extension's own code sends is a list
-  fetch, from the background worker, for each list that is on: clankwall's
-  at `clankwall.vogel.dev` (the only host permission), levelsio's at
-  `blockedforaireply.levels.io`, and each list you add at its own address.
-  Recommended, which starts on, fetches one file from each of the first two
-  hosts: about 9 KB from clankwall and about 1 MB from levelsio (2026-11-21),
-  every 6 hours.
-  levelsio's files and a list you add are fetched with no host permission, so
-  the browser lets the extension read one only when its host allows other
-  sites to (an `Access-Control-Allow-Origin` header; levelsio's sends `*`). Every fetch sends no cookies
+- The extension's own code sends two kinds of network request, both from
+  the background worker. The first is a list fetch for each list that is on:
+  clankwall's at `clankwall.vogel.dev` (the only host permission), levelsio's
+  at `blockedforaireply.levels.io`, and each list you add at its own address.
+  Recommended, which starts on, fetches one file from each of those two hosts
+  and the readers' list from `ai-anti-slop.startupbros.com`: about 9 KB from
+  clankwall and about 1 MB from levelsio (2026-11-21), every 6 hours.
+  The second, only while [sharing](#sharing-labels) is on, posts reports to
+  `ai-anti-slop.startupbros.com`: labels, retractions, and **Delete what I
+  shared**, as plain text.
+  Every host but clankwall's is reached with no host permission, so the
+  browser lets the extension read an answer only when its host allows other
+  sites to (an `Access-Control-Allow-Origin` header; levelsio's and AI
+  Anti-Slop's send `*`). Every request sends no cookies
   (`credentials: 'omit'`) and bypasses the cache. The userscript fetches
   clankwall's lists through its manager (`@connect clankwall.vogel.dev`,
   `anonymous: true`, so no cookies); the cache setting applies to the
@@ -769,10 +833,13 @@ The privacy policy, with what each storage key holds, is
   tab, which the browser loads with your x.com login like any page you open,
   and the mute is the request x.com's page sends when its Mute item is
   clicked, as when you click it yourself.
-- Labels, including the text of the posts you label, are stored only in this
+- Labels, including the text of the posts you label, are stored in this
   browser profile's extension storage (an `xsh:label:<post id>` key for each,
-  and a count, `xsh:labelCount`). They leave it only when you click **Export
-  labels** and save the file, and removing the extension deletes them.
+  and a count, `xsh:labelCount`). They leave it as a file when you click
+  **Export labels**, and, only while sharing is on, as reports without the
+  post's text. Removing the extension deletes them, but not reports already
+  shared; **Delete what I shared** does that. Sharing's own record (its random
+  code and the reports waiting to go) is `xsh:share`.
 - Nothing else is collected or sent. There is no analytics.
 - The AI flags list's address is a setting (`feedUrl` in `xsh:settings`)
   with no UI. To use another list, add it on the settings page instead. A
@@ -875,7 +942,10 @@ reads (see [Limits](#limits)). Please open an issue.
   **Also hide these accounts**, or by a bot set to Hide or Mute, are hidden. A
   reply by any other account stays, however it was written, unless it tags
   such a bot and you turned on hiding posts that tag one.
-- The list is someone else's judgement. If the feed goes away, the last good
+- The list is someone else's judgement, and the readers' list is the
+  judgement of whoever shares. Its rule needs agreement from several installs
+  on several networks, but it cannot tell several installs one person runs on
+  several networks from several people. If a feed goes away, the last good
   list stays in use.
 - Hiding only works in a browser where it is installed, so it never covers the
   X app (the mutes do), and it has been tested only in desktop Chromium.
@@ -959,7 +1029,10 @@ mute you made yourself is left alone.
 Remove the extension in `chrome://extensions`, or delete the script in your
 userscript manager. Hiding leaves nothing to undo. Removing the extension
 deletes your labels and settings, so export them first if you want them
-(**Export labels**, and **Export settings** under **Export or import**). The mutes
+(**Export labels**, and **Export settings** under **Export or import**). It
+does not delete labels you shared from AI Anti-Slop's server: click **Delete
+what I shared** on the settings page first, or they are deleted 90 days after
+they were sent. The mutes
 AI Anti-Slop made stay on your X account; unmute them on X at
 `x.com/settings/muted/all`. To see
 which accounts it muted, read the record before removing the extension: click
@@ -972,7 +1045,7 @@ that opens, run `chrome.storage.local.get('xsh:mutes').then(console.log)`.
 pnpm install
 pnpm test            # node --test 'test/*.test.mjs'
 pnpm run build       # rebuild dist/x-slop-hide.user.js from src/
-pnpm run check       # userscript is current + parses + tests (what CI runs)
+pnpm run check       # userscript is current + parses + tests + server tests (what CI runs)
 pnpm run package:store                     # Chrome Web Store zip of HEAD, into build/
 node scripts/store-screenshots.mjs --chrome <chromium>   # redraw store/images/
 ```
@@ -999,7 +1072,13 @@ node scripts/store-screenshots.mjs --chrome <chromium>   # redraw store/images/
 - `src/background.js`: the service worker. It fetches the feed and stores it,
   and, while muting is on, runs the visits: a 1-minute alarm, one background
   tab at a time, and a 90 s limit per tab. It also stores the labels.
-- `src/popup.*`: the popup.
+- `src/popup.*`: the popup. `src/settings.*`: the settings page (lists,
+  your accounts, sharing).
+- `server/`: the readers' list server, a Cloudflare Worker with a D1
+  database, and its tests (`node --test 'server/test/*.test.mjs'`, which CI
+  runs). `server/test/roundtrip.test.mjs` runs the extension's own request
+  and list code against it. How to run and deploy it is in
+  [server/README.md](server/README.md).
 - `src/userscript-adapter.js` and `scripts/build-userscript.mjs`: the
   userscript build, which concatenates `lib.js`, the adapter and `content.js`.
   The adapter has no visit jobs and no label storage, so the userscript hides
@@ -1024,6 +1103,8 @@ has run in Brave on the maintainer's own account since 2026-11-07; 0.5.0's
 labels and daily setting have not run in Brave yet. One unmute from 0.8.0's
 page code ran on real x.com on 2026-11-18. 0.9.0's **Run now** has run against the
 real worker and popup in Chromium with x.com unreachable, not yet on x.com.
+Sharing has run in Chromium against the server on this machine (`wrangler
+dev`), not yet against the deployed server or on x.com.
 [docs/TESTING.md](docs/TESTING.md) has each run, its method and results, and
 what has not been tested.
 

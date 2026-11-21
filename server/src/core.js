@@ -312,7 +312,7 @@ button{font:inherit;margin-top:1rem;padding:.4rem 1rem}
 </style></head>
 <body><main id="home">
 <h1>AI Anti-Slop crowd list</h1>
-<p>This is a list of X accounts that readers using the AI Anti-Slop browser extension have flagged as posting slop replies. Installs that opt in send a report when they mark a reply as Slop or Not slop. The extension can use this list as one source for its Recommended list.</p>
+<p>This is a list of X accounts that readers using the AI Anti-Slop browser extension have flagged as posting slop replies. Installs that opt in send a report for each post they label Slop (labels saved as Not slop by versions before 0.9.0 are sent too). The extension can use this list as one source for its Recommended list.</p>
 <p class="mut">An entry means that several readers reported the account. It is not proof of anything about the account.</p>
 <h2>When an account is listed</h2>
 <p>An account is listed when all of these hold:</p>

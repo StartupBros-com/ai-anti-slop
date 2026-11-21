@@ -16,8 +16,9 @@ released together, so update both.
 
 ## In scope
 
-The code in this repository: the extension, the userscript, and the scripts
-that build and package them. For example:
+The code in this repository: the extension, the userscript, the scripts
+that build and package them, and the readers' list server in `server/`. For
+example:
 
 - a page, a list update (from clankwall, levelsio or a list you added) or another
   extension getting AI Anti-Slop to run code, read its stored data, or change
@@ -27,7 +28,12 @@ that build and package them. For example:
   clankwall's AI flags list alone);
 - muting an account the settings did not allow, or muting from an account other
   than the one the popup names after "Muting as";
-- your labels or the mute record leaving the browser.
+- your labels or the mute record leaving the browser, other than the reports
+  sharing sends while it is on;
+- the server storing more than [PRIVACY.md](PRIVACY.md#sharing-labels) says,
+  someone deleting or retracting another install's reports, or reports
+  getting an account onto the readers' list against its rule (from one
+  install, or from one network).
 
 ## Out of scope
 
@@ -35,9 +41,11 @@ that build and package them. For example:
   run by clankwall ([clankwall.vogel.dev](https://clankwall.vogel.dev)); report
   a wrong entry there. levelsio's list is run by @levelsio
   ([blockedforaireply.levels.io](https://blockedforaireply.levels.io/)); report
-  a wrong entry there. Recommended takes its accounts from those two lists, so
-  a wrong entry on it is reported to whichever of them holds the account. A
-  list you add is run by whoever publishes it.
+  a wrong entry there. Recommended takes most of its accounts from those two lists, so
+  a wrong entry from them is reported to whichever of them holds the account.
+  The readers' list, Recommended's third source, is this project's: ask for a
+  removal with the form on `https://ai-anti-slop.startupbros.com/`. A list you
+  add is run by whoever publishes it.
 - What X does to an account that mutes in bulk. The README's
   [Muting](README.md#muting) section describes that risk, and muting is off
   until you turn it on.

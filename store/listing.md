@@ -19,7 +19,12 @@ sentence, Slop and Not slop buttons under replies in LABELS, and the summary
 that ended "at a capped daily pace" in place of "daily or all at once". The
 LABELS section, the Run now sentence, the storage and content-script
 justifications, the Website content row and the test instructions below all
-changed after v0.8.0. Field names and rules are from Google's developer documentation
+changed after v0.8.0. Sharing labels came after 0.9.0 and is in no
+submitted version: the readers' list in the first paragraph, the sharing
+line under LABELS, the PRIVACY section, the single purpose, the storage
+justification, the readers' list under Remote code, the data-usage reasons
+and the certification line were written for the first submit that carries
+it. Field names and rules are from Google's developer documentation
 at developer.chrome.com/docs/webstore, read on 2026-11-09. Where the docs show a
 dashboard label only in a screenshot, this file says so; match it to the
 dashboard itself.
@@ -54,7 +59,7 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on its Recommended list: clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev), plus the accounts @levelsio blocked with a public "Blocked for AI reply" (blockedforaireply.levels.io). The lists refresh every 6 hours. On the settings page you can switch Recommended off, switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or the whole of levelsio's Blocked for AI reply list, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
+AI Anti-Slop hides posts on x.com by accounts on its Recommended list: clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev), plus the accounts @levelsio blocked with a public "Blocked for AI reply" (blockedforaireply.levels.io), plus the readers' list, the accounts that three or more AI Anti-Slop readers who share their labels reported as slop. The lists refresh every 6 hours. On the settings page you can switch Recommended off, switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or the whole of levelsio's Blocked for AI reply list, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
 - A post is hidden when its author is on a list you have switched on, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
@@ -64,7 +69,8 @@ HIDING
 LABELS
 - A Hide as slop icon sits in the header of each post, beside X's More menu, on the home timeline, search, profiles, lists and post pages. Posts by the account whose page is open have none, nor do your own once X shows who is logged in. The icon is on by default; turn it off in the popup under Label posts.
 - A click hides the post and adds the account to Also hide, with 6 seconds to undo. An undone click is never saved. A click on a filled icon removes the label.
-- A saved label keeps the post's text and link and stays in this browser. Export labels saves them to a file.
+- A saved label keeps the post's text and link in this browser. Export labels saves them to a file.
+- Sharing is off until you turn it on in settings. While it is on, each label is sent to AI Anti-Slop's server as the author's handle, the post's id, the id of the post page it was on and a hash of its words, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
 
 SETTINGS FILES
 - Export your Always show and Also hide accounts, bot choices and tag setting to a file, or Also hide alone as a list of handles to share.
@@ -76,7 +82,7 @@ MUTING (optional, off until you turn it on)
 - X's rules forbid "scripting the X website" and say: "The use of these techniques may result in the permanent suspension of your account." Muting scripts x.com. Read the Muting section on the project page before you turn it on.
 
 PRIVACY
-- No account, no server, no analytics. The extension's own code makes one kind of request: it downloads the lists you have switched on, clankwall's, levelsio's and any you add, without cookies. Everything it keeps stays in your browser's extension storage.
+- No account, no analytics. The extension's own code downloads the lists you have switched on, clankwall's, levelsio's, the readers' list and any you add, without cookies. Only if you turn on sharing does it send anything else: your labels' reports, without the post's words, to AI Anti-Slop's server. Everything else it keeps stays in your browser's extension storage.
 - Privacy policy: https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md
 
 Free and open source under the MIT license: https://github.com/StartupBros-com/ai-anti-slop
@@ -133,7 +139,7 @@ system one.
 **Single purpose:**
 
 ```
-Hide posts on x.com by accounts on public lists of AI-reply spam accounts, or on lists the user keeps, with an optional mute of the same accounts on the user's X account that is off until the user turns it on.
+Hide posts on x.com by accounts on public lists of AI-reply spam accounts, among them one built from the slop labels users choose to share, or on lists the user keeps, with an optional mute of the same accounts on the user's X account that is off until the user turns it on.
 ```
 
 **Permission justifications:** the dashboard takes all host access, the
@@ -143,7 +149,7 @@ justification** field, which holds the last two rows of this table joined
 
 | Permission | Justification |
 |---|---|
-| `storage` | Keeps the downloaded lists and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on. All of it stays in the browser's extension storage. |
+| `storage` | Keeps the downloaded lists and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on, and sharing's queue only if the user turns sharing on. All of it stays in the browser's extension storage; while sharing is on, a label's report (handle, post id, page post id, hash of the words) is also sent to AI Anti-Slop's server. |
 | `alarms` | Refreshes the lists every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. |
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads clankwall's public lists from `https://clankwall.vogel.dev/api/`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except on posts by the account whose page is open and, once X shows who is logged in, the user's own, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
@@ -154,9 +160,10 @@ JavaScript ships in the package, and the lists it downloads are data, read and
 never run: plain text with one handle per line, or JSON lines. Of clankwall's
 JSON lines only the `username` field is read; of levelsio's, which the
 Recommended list uses, the `username`, `levelsio` and `evidence` fields, to
-keep only the handles of accounts marked `confirmed` with evidence. levelsio's
-files and a list the user adds by address are fetched without any host
-permission, so only a host that lets other sites read the file (an
+keep only the handles of accounts marked `confirmed` with evidence; of the
+readers' list (`https://ai-anti-slop.startupbros.com/v1/list.ndjson`), the
+`username` field. levelsio's files, the readers' list and a list the user adds
+by address are fetched without any host permission, so only a host that lets other sites read the file (an
 `Access-Control-Allow-Origin` header) can serve one.
 
 **Data usage.** The docs show the checkbox labels only in a screenshot, so the
@@ -166,23 +173,26 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 | Box | Tick | Why |
 |---|---|---|
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
-| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. |
-| Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. A narrow case, but ticking it is the safer reading. |
+| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, only a 16-character hash of that text is sent. |
+| Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. With sharing on, the two post ids are sent, with the hour, which says which post page the user was reading. |
 | User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
 | Personal communications | No | Public posts only; no messages or email. |
 | Health, financial and payment, location | No | None handled. |
 
-The boxes are ticked though nothing leaves the browser, because Google's User
-Data FAQ asks "Does an extension need to disclose user data handling if the
-data is only processed or stored locally on a user's device?" and answers
-"Yes".
+The boxes would be ticked even with nothing leaving the browser, because
+Google's User Data FAQ asks "Does an extension need to disclose user data
+handling if the data is only processed or stored locally on a user's device?"
+and answers "Yes". With sharing on, the handle, the two post ids and the hash
+leave it, for AI Anti-Slop's server, which Cloudflare hosts.
 
 **Certifications:** tick every one. The docs show their wording only in a
 screenshot; they certify compliance with the Limited Use policy. All of it
-holds for AI Anti-Slop: it does not sell or transfer user data, does not use it
-for anything outside its single purpose, does not use it for advertising or
-for creditworthiness or lending, and no person reads it.
+holds for AI Anti-Slop: it does not sell user data or transfer it to third
+parties, does not use it for anything outside its single purpose, and does not
+use it for advertising or for creditworthiness or lending. Shared reports are
+used only to build the readers' list; no person reads them one by one, and
+the maintainers see only counts per account across installs.
 
 **Privacy policy URL:**
 `https://github.com/StartupBros-com/ai-anti-slop/blob/main/PRIVACY.md`. It
