@@ -430,26 +430,28 @@
   async function tryAgain(id) {
     if (trying) return;
     trying = true;
-    note($('listMsg'), 'Downloading the lists that are on again…');
-    draw();
-    const key = L.listKey(id);
-    const attempt = async () => {
-      const rec = (await chrome.storage.local.get(key))[key];
-      return rec ? { at: rec.lastAttemptAt, error: rec.lastError, partial: !!rec.partial } : null;
-    };
-    let r;
-    let before = null;
+    let r, before = null, after = null, readbackFailed = false;
     try {
+      note($('listMsg'), 'Downloading the lists that are on again…');
+      draw();
+      const key = L.listKey(id);
+      const attempt = async () => {
+        const rec = (await chrome.storage.local.get(key))[key];
+        return rec ? { at: rec.lastAttemptAt, error: rec.lastError, partial: !!rec.partial } : null;
+      };
       before = await attempt();
       r = await chrome.runtime.sendMessage({ type: 'xsh:refresh' });
+      if (r && !r.ok && !r.error) after = await attempt();
     } catch (e) {
-      r = { ok: false, error: String((e && e.message) || e) };
+      if (r) readbackFailed = true;
+      else r = { ok: false, error: String((e && e.message) || e) };
+    } finally {
+      trying = false;
     }
-    const after = r && !r.error ? await attempt() : null;
-    trying = false;
     const why = (s) => String(s).replace(/[\s.]+$/, '');
     if (r && r.ok) note($('listMsg'), 'Downloaded. Every list that is on is up to date.');
     else if (!r || r.error) note($('listMsg'), `The download could not start: ${why((r && r.error) || 'no answer from the extension')}.`, true);
+    else if (readbackFailed) note($('listMsg'), 'Could not check whether this list downloaded. Try again.', true);
     else if (after && after.at && (!before || after.at !== before.at)) {
       note(
         $('listMsg'),
