@@ -462,7 +462,7 @@
       let on;
       let locked = false;
       if (b.id === MUTE_LIST) {
-        locked = !!s.muteEnabled;
+        locked = !!(s.muteEnabled && s.muteAccount);
         on = locked || chosen[b.id] !== false;
       } else {
         on = b.on ? chosen[b.id] !== false : chosen[b.id] === true;
@@ -532,7 +532,7 @@
     const s = settings || {};
     const sub = subscriptions(s).find((l) => l.id === id);
     if (!sub) return { ok: false, reason: 'There is no such list.' };
-    if (id === MUTE_LIST && !on && s.muteEnabled) {
+    if (id === MUTE_LIST && !on && sub.locked) {
       return { ok: false, reason: 'Muting uses this list, so it stays on while muting is on.' };
     }
     if (sub.builtin) {
