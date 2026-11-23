@@ -710,34 +710,20 @@
 
   const clockTime = (ms) => new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+  // What is sent, as data from lib (the consent card shows the same text).
   function shareFacts(host) {
-    return [
-      h('h3', {}, 'What is sent'),
-      h(
-        'ul',
-        { class: 'facts' },
-        h('li', {}, "For each label: that it is slop (or not slop, for a label saved before version 0.9.0), the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent."),
-        h('li', {}, 'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.'),
-      ),
-      h('h3', {}, 'What is never sent'),
-      h('ul', { class: 'facts' }, h('li', {}, "The post's words, your X account, other pages you visit, your lists and your settings.")),
-      h('h3', {}, 'Where it goes'),
-      h(
-        'ul',
-        { class: 'facts' },
-        h('li', {}, `To ${host}, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.`),
-        h('li', {}, 'While sharing is on, clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.'),
-      ),
-    ];
+    return L.shareDisclosure(host).flatMap((sec) => [h('h3', {}, sec.heading), h('ul', { class: 'facts' }, ...sec.items.map((t) => h('li', {}, t)))]);
   }
 
   async function drawShare() {
     const mine = ++shareSeq;
-    const o = await chrome.storage.local.get([K.share, K.labelCount]);
+    const o = await chrome.storage.local.get(null);
     if (mine !== shareSeq) return;
     const st = L.shareState(o[K.share]);
     const on = L.shareOn(st);
-    const saved = Number.isInteger(o[K.labelCount]) && o[K.labelCount] > 0 ? o[K.labelCount] : 0;
+    // What "Also share" sends: the newest label for each account, from the last
+    // shareBackfillDays days, so the number is of accounts, not of labels.
+    const saved = L.backfillReports(L.labelsFrom(o), Date.now()).length;
     const host = new URL(L.DEFAULTS.crowdBase).host;
     const busy = shareBusy ? 'true' : null;
     const nodes = [];
@@ -763,7 +749,7 @@
       nodes.push(...shareFacts(host));
       if (saved) {
         nodes.push(
-          h('label', { class: 'backfill' }, h('input', { type: 'checkbox', id: 'shareBackfill' }), h('span', {}, `Also share the ${plural(saved, 'label', 'labels')} already saved`)),
+          h('label', { class: 'backfill' }, h('input', { type: 'checkbox', id: 'shareBackfill' }), h('span', {}, `Also share the newest saved label for ${plural(saved, 'account', 'accounts')}, from the last ${L.DEFAULTS.shareBackfillDays} days`)),
         );
       }
       const row = [h('button', { type: 'button', id: 'shareOn', class: 'primary', 'aria-disabled': busy, onclick: onStart }, 'Turn on sharing')];
@@ -811,7 +797,7 @@
     const box = $('shareBackfill');
     shareAction({ type: 'xsh:share-start', backfill: !!(box && box.checked) }, (r) =>
       r.ok
-        ? `Sharing is on. ${r.queued ? `${plural(r.queued, 'label is', 'labels are')} queued to send.` : 'Labels you make from now on are sent.'}`
+        ? `Sharing is on. ${r.queued ? `The newest label for ${plural(r.queued, 'account', 'accounts')} is queued to send.` : 'Labels you make from now on are sent.'}`
         : `Sharing did not turn on: ${why(r)}.`,
     );
   }
@@ -837,7 +823,7 @@
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     if (changes[K.settings] || Object.keys(changes).some((k) => L.isListKey(k))) draw();
-    if (changes[K.settings] || changes[K.share] || changes[K.labelCount]) drawShare();
+    if (changes[K.settings] || changes[K.share] || changes[K.labelCount] || Object.keys(changes).some((k) => k.startsWith(L.LABEL_PREFIX))) drawShare();
   });
   // Report a problem or suggest something, as in the popup.
   try {

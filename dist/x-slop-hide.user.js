@@ -103,13 +103,18 @@
     // go to, which also publishes the readers' list Recommended reads; the
     // most reports or retractions in one request (the server's cap); the
     // most requests one send makes before it waits a minute; the longest
-    // queue kept (labelMax reports plus their retractions); and the wait
-    // after a send that failed.
+    // queue kept (labelMax reports plus their retractions); the wait after a
+    // send that failed, which doubles with each failure in a row up to the
+    // longest wait; and how far back a label may be and still be shared (the
+    // server refuses one made more than 90 days ago; two days of margin for
+    // the queue).
     crowdBase: 'https://ai-anti-slop.startupbros.com',
     shareBatch: 50,
     shareRequestsPerSend: 10,
     shareQueueMax: 4000,
     shareRetryMinutes: 30,
+    shareRetryMaxMinutes: 360,
+    shareBackfillDays: 88,
   });
 
   // The xsh: prefix is from before the rename. Changing it would strand every
@@ -487,7 +492,7 @@
       let on;
       let locked = false;
       if (b.id === MUTE_LIST) {
-        locked = !!(s.muteEnabled && s.muteAccount);
+        locked = mutingOn(s);
         on = locked || chosen[b.id] !== false;
       } else {
         on = b.on ? chosen[b.id] !== false : chosen[b.id] === true;
@@ -759,6 +764,13 @@
   }
 
   // ---------------------------------------------------------------- muting
+
+  // Whether muting is on: switched on and for an account. Every read that
+  // means "muting is on" goes through this one test.
+  function mutingOn(settings) {
+    const s = settings;
+    return !!(s && s.muteEnabled && s.muteAccount);
+  }
 
   function utcDay(ms) {
     return new Date(ms).toISOString().slice(0, 10);
@@ -1337,9 +1349,11 @@
   // While it is on, each label saved is queued as a report and each label
   // cleared as a retraction, and the background sends them to crowdBase. A
   // report holds the label, the account, the post's id, the id of the post
-  // whose page it was on and a hash of the post's words; each request carries
-  // the install's random key. The words, the user's X account, other pages
-  // and settings are never sent.
+  // whose page it was on and the UTC day the label was made; each request
+  // carries the install's random key. The words, the user's X account, other
+  // pages and settings are never sent. The server keeps one verdict per
+  // install and account (server/README.md, "How a report changes a verdict"),
+  // so the client leaves it holding the account's newest remaining label.
 
   function shareOn(state) {
     return !!state && typeof state === 'object' && state.on === true;
@@ -1347,8 +1361,18 @@
 
   const SHARE_KEY_RE = /^[0-9a-f]{32}$/;
   const POST_ID_RE = /^\d{1,25}$/;
+  // Only a 0.10.0 queue item holds a hash (of the post's words); it is read
+  // so that item survives the update, and never sent.
   const HASH_RE = /^[0-9a-f]{16}$/;
+  const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const DAY_MS = 86400000;
   const hex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+  function dayOk(d) {
+    if (typeof d !== 'string' || !DAY_RE.test(d)) return false;
+    const t = Date.parse(`${d}T00:00:00Z`);
+    return Number.isFinite(t) && utcDay(t) === d;
+  }
 
   // A new install key: 16 random bytes as 32 lowercase hex characters. It
   // is not derived from anything about the user or the browser.
@@ -1357,31 +1381,9 @@
     return hex(c.getRandomValues(new Uint8Array(16)));
   }
 
-  // The words a hash is made from: case, spacing, links and @handles taken
-  // out, so the same reply posted by two accounts hashes the same.
-  function shareText(text) {
-    return String(text || '')
-      .normalize('NFKC')
-      .toLowerCase()
-      .replace(/https?:\/\/\S+/g, ' ')
-      .replace(/@[a-z0-9_]{1,15}/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  }
-
-  // The first 16 hex characters of the SHA-256 of shareText(text), or null
-  // for a post with no words.
-  async function textHash(text, cryptoImpl) {
-    const t = shareText(text);
-    if (!t) return null;
-    const c = cryptoImpl || globalThis.crypto;
-    const d = await c.subtle.digest('SHA-256', new TextEncoder().encode(t));
-    return hex(new Uint8Array(d)).slice(0, 16);
-  }
-
-  // The report a saved label makes, { label, handle, status, thread }, or
-  // null when the record is not a label. The caller adds the hash (textHash
-  // is async).
+  // The report a saved label makes, { label, handle, status, thread, day },
+  // or null when the record is not a label. day is the UTC day the label was
+  // made (null for a record with no usable time).
   function reportOf(record) {
     const r = record || {};
     if (!LABELS.includes(r.label)) return null;
@@ -1389,51 +1391,91 @@
     const handle = normalizeHandle(r.handle);
     if (!post || !handle || handle !== post.handle) return null;
     const page = r.page ? statusOf(r.page) : null;
-    return { label: r.label, handle, status: post.id, thread: page ? page.id : null };
+    const day = Number.isFinite(r.at) && r.at > 0 && r.at <= 8.64e15 ? utcDay(r.at) : null;
+    return { label: r.label, handle, status: post.id, thread: page ? page.id : null, day };
   }
 
-  const shareItemOk = (i) =>
-    !!i &&
-    typeof i === 'object' &&
-    Number.isInteger(i.seq) &&
-    POST_ID_RE.test(String(i.status)) &&
-    (i.op === 'retract' ||
-      (i.op === 'report' &&
-        LABELS.includes(i.label) &&
-        !!normalizeHandle(i.handle) &&
-        (i.thread === null || POST_ID_RE.test(String(i.thread))) &&
-        (i.hash === null || HASH_RE.test(String(i.hash)))));
+  const shareItemOk = (i) => {
+    if (!i || typeof i !== 'object' || !Number.isInteger(i.seq)) return false;
+    if (i.op === 'retract-handle') return !!normalizeHandle(i.handle);
+    if (!POST_ID_RE.test(String(i.status))) return false;
+    if (i.op === 'retract') return true;
+    return (
+      i.op === 'report' &&
+      LABELS.includes(i.label) &&
+      !!normalizeHandle(i.handle) &&
+      (i.thread === null || POST_ID_RE.test(String(i.thread))) &&
+      (i.day == null || dayOk(i.day)) &&
+      (i.hash == null || HASH_RE.test(String(i.hash)))
+    );
+  };
+
+  // held maps an account to what the server last confirmed this install's
+  // verdict on it to be: { s: its label, l: the day it is dated, in ms, as the
+  // server dates it, or later }, 'none' when the server was told to take it back,
+  // or 'unknown' when an answer left it uncertain. A plain object read with
+  // hasOwnProperty and written with defineProperty, since '__proto__' is a
+  // valid handle.
+  const heldGet = (held, h) => (Object.prototype.hasOwnProperty.call(held, h) ? held[h] : undefined);
+  const heldSet = (held, h, v) => Object.defineProperty(held, h, { value: v, enumerable: true, writable: true, configurable: true });
+  function heldOf(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const k of Object.keys(raw)) {
+      const v = raw[k];
+      if (normalizeHandle(k) !== k) continue;
+      if (v === 'none' || v === 'unknown') heldSet(out, k, v);
+      else if (v && typeof v === 'object' && LABELS.includes(v.s) && Number.isFinite(v.l) && v.l > 0) heldSet(out, k, { s: v.s, l: v.l });
+    }
+    return out;
+  }
 
   // The stored sharing record, read defensively: { on, key, queue, seq, sent,
-  // lastSentAt, lastError, retryAt }. on is true only while sharing is on.
-  // key is null until sharing is first turned on, and again after Delete what
-  // I shared.
+  // lastSentAt, lastError, retryAt, fails, held, legacy }. on is true only
+  // while sharing is on. key is null until sharing is first turned on, and
+  // again after Delete what I shared. fails counts the sends in a row that
+  // failed. held is described above; an account missing from it holds
+  // nothing, unless legacy is true: the key sent reports with 0.10.0, which
+  // kept no held, so an account not confirmed since then is unknown.
   function shareState(raw) {
     const s = raw && typeof raw === 'object' ? raw : {};
     const int = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+    const key = typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null;
+    const hadHeld = !!(s.held && typeof s.held === 'object');
     return {
       on: s.on === true,
-      key: typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null,
+      key,
       queue: Array.isArray(s.queue) ? s.queue.filter(shareItemOk) : [],
       seq: int(s.seq),
       sent: int(s.sent),
       lastSentAt: int(s.lastSentAt) || null,
       lastError: typeof s.lastError === 'string' && s.lastError ? s.lastError : null,
       retryAt: int(s.retryAt) || null,
+      fails: int(s.fails),
+      held: key ? heldOf(s.held) : {},
+      legacy: !!key && (s.legacy === true || (!hadHeld && int(s.sent) > 0)),
     };
   }
 
-  // Queue a report ({ label, handle, status, thread, hash }) or a retraction
-  // ({ retract: status }). Either replaces whatever was queued for that post,
-  // so only the last word on a post is sent. Each item gets a number of its
-  // own, so a send that finishes after the item was replaced leaves the new
-  // one queued. Past shareQueueMax the oldest items go.
+  // Queue a report ({ label, handle, status, thread, day }), a retraction of
+  // one post ({ retract: status }) or a retraction of the install's verdict on
+  // an account ({ retractHandle: handle }). A report or a retraction of a post
+  // replaces whatever was queued for that post, and a report also replaces any
+  // report queued for the same account, since the server keeps one verdict for
+  // each install and account; a retraction of an account replaces what was
+  // queued for that account (its reports and an earlier retraction of it), so
+  // only the last word is sent. Each item gets a number
+  // of its own, so a send that finishes after the item was replaced leaves the
+  // new one queued. Past shareQueueMax the reports of the oldest days go
+  // first (an undated 0.10.0 report counts as oldest), and a retraction goes
+  // only when nothing but retractions is left.
   function enqueueShare(state, item) {
     const st = shareState(state);
     const it = item || {};
     const seq = st.seq + 1;
     let next;
-    if (it.retract != null) next = { op: 'retract', status: String(it.retract), seq };
+    if (it.retractHandle != null) next = { op: 'retract-handle', handle: normalizeHandle(it.retractHandle), seq };
+    else if (it.retract != null) next = { op: 'retract', status: String(it.retract), seq };
     else {
       next = {
         op: 'report',
@@ -1441,35 +1483,115 @@
         handle: normalizeHandle(it.handle),
         status: String(it.status),
         thread: it.thread == null ? null : String(it.thread),
-        hash: it.hash == null ? null : String(it.hash),
+        day: it.day == null ? null : String(it.day),
         seq,
       };
     }
     if (!shareItemOk(next)) return st;
-    const queue = st.queue.filter((i) => i.status !== next.status);
+    const queue =
+      next.op === 'retract-handle'
+        ? st.queue.filter((i) => i.handle !== next.handle)
+        : st.queue.filter(
+            (i) => i.op === 'retract-handle' || (i.status !== next.status && !(next.op === 'report' && i.op === 'report' && i.handle === next.handle)),
+          );
     queue.push(next);
-    return Object.assign(st, { seq, queue: queue.slice(-DEFAULTS.shareQueueMax) });
+    const dayOf = (i) => i.day || '';
+    while (queue.length > DEFAULTS.shareQueueMax) {
+      let drop = -1;
+      queue.forEach((i, at) => {
+        if (i.op !== 'report') return;
+        if (drop < 0 || dayOf(i) < dayOf(queue[drop]) || (dayOf(i) === dayOf(queue[drop]) && i.seq < queue[drop].seq)) drop = at;
+      });
+      queue.splice(drop < 0 ? 0 : drop, 1);
+    }
+    return Object.assign(st, { seq, queue });
   }
 
-  // The next request to send, or null for none: up to shareBatch
-  // retractions while any are queued, else up to shareBatch reports.
+  // The next request to send, or null for none: while any retraction is
+  // queued, one /v1/retract with up to shareBatch post retractions and up to
+  // shareBatch account retractions; else up to shareBatch reports, newest day
+  // first (undated ones last, ties in the order they were queued).
   // { path, key, items, body }; body is what is posted, as JSON.
   function shareBatch(state) {
     const st = shareState(state);
     if (!st.key) return null;
     const n = DEFAULTS.shareBatch;
     const retracts = st.queue.filter((i) => i.op === 'retract').slice(0, n);
-    if (retracts.length) {
-      return { path: '/v1/retract', key: st.key, items: retracts, body: { v: 1, key: st.key, statuses: retracts.map((i) => i.status) } };
+    const handles = st.queue.filter((i) => i.op === 'retract-handle').slice(0, n);
+    if (retracts.length || handles.length) {
+      const body = { v: 1, key: st.key, statuses: retracts.map((i) => i.status) };
+      if (handles.length) body.handles = handles.map((i) => i.handle);
+      return { path: '/v1/retract', key: st.key, items: [...retracts, ...handles], body };
     }
-    const reports = st.queue.filter((i) => i.op === 'report').slice(0, n);
+    const dayOf = (i) => i.day || '';
+    const reports = st.queue
+      .filter((i) => i.op === 'report')
+      .sort((a, b) => (dayOf(a) === dayOf(b) ? a.seq - b.seq : dayOf(a) < dayOf(b) ? 1 : -1))
+      .slice(0, n);
     if (!reports.length) return null;
+    // First, the accounts among them whose verdict on the server is on the
+    // other side, or unknown, are taken back: the server keeps a verdict
+    // against a report of the other side unless the report's day is later
+    // (or the same day, for Not slop), so the report alone would not always
+    // replace it. handles names them; items is empty, since nothing leaves
+    // the queue when it is done.
+    const first = [...new Set(reports.filter((i) => retractFirst(st, i)).map((i) => i.handle))];
+    if (first.length) return { path: '/v1/retract', key: st.key, items: [], handles: first, body: { v: 1, key: st.key, statuses: [], handles: first } };
     return {
       path: '/v1/reports',
       key: st.key,
       items: reports,
-      body: { v: 1, key: st.key, reports: reports.map((i) => ({ label: i.label, handle: i.handle, status: i.status, thread: i.thread, hash: i.hash })) },
+      body: {
+        v: 1,
+        key: st.key,
+        reports: reports.map((i) => {
+          const r = { label: i.label, handle: i.handle, status: i.status, thread: i.thread };
+          if (i.day) r.day = i.day;
+          return r;
+        }),
+      },
     };
+  }
+
+  // Whether a queued report must wait for its account to be taken back: the
+  // server may hold the other side, or what it holds is unknown. The server
+  // keeps a verdict against a report of the other side unless the report's day
+  // is later (or the same day, for Not slop), so a report alone would not
+  // always replace it; after a taking-back, any report does.
+  function retractFirst(st, item) {
+    const v = heldGet(st.held, item.handle);
+    if (v === undefined) return st.legacy;
+    if (v === 'none') return false;
+    if (v === 'unknown') return true;
+    return v.s !== item.label;
+  }
+
+  // What held says once a report may have reached the server: its side, dated
+  // by its day (a 0.10.0 report has none: the hour), when the server held
+  // nothing or the same side; unknown otherwise. It is written whenever the
+  // server may have taken the report, so it says more than the server holds,
+  // which costs at most one taking-back more. Only a browser closed between
+  // the server taking a report and its answer being stored leaves it out, until
+  // that report is sent again or replaced.
+  function heldAfter(st, item, now) {
+    const l = item.day ? Date.parse(`${item.day}T00:00:00Z`) : Math.floor(now / 3600000) * 3600000;
+    const v = heldGet(st.held, item.handle);
+    let next = 'unknown';
+    if (v === 'none' || (v === undefined && !st.legacy)) next = { s: item.label, l };
+    else if (v && typeof v === 'object' && v.s === item.label) next = { s: v.s, l: Math.max(v.l, l) };
+    heldSet(st.held, item.handle, next);
+  }
+
+  // An account dated more than 92 days back holds nothing: the server deletes
+  // a verdict 90 days after its day.
+  function pruneHeld(st, now) {
+    const cut = now - 92 * DAY_MS;
+    for (const h of Object.keys(st.held)) {
+      const v = st.held[h];
+      if (!v || typeof v !== 'object' || v.l >= cut) continue;
+      if (st.legacy) heldSet(st.held, h, 'none');
+      else delete st.held[h];
+    }
   }
 
   // Milliseconds from now to the next UTC midnight, when the server's daily
@@ -1486,23 +1608,51 @@
   // leaves the queue too: sent again it would be refused again. Any other
   // answer that is not 200 keeps it. A result for another key (the record
   // was deleted while the request was out) changes nothing.
-  function shareResult(state, batch, res, now) {
+  // Waits are spread so that installs do not all come back at once: a failure
+  // waits shareRetryMinutes, doubling with each failure in a row up to
+  // shareRetryMaxMinutes, times a factor of 0.75 to 1.25; a 429 or a put-off
+  // report waits what the server said (at most 26 hours), else until UTC
+  // midnight, plus up to an hour. rand() is a number from 0 to 1.
+  function shareResult(state, batch, res, now, rand = Math.random) {
     const st = shareState(state);
     if (!batch || batch.key !== st.key) return st;
     const r = res || {};
     const body = r.body && typeof r.body === 'object' ? r.body : {};
     const seqs = new Set(batch.items.map((i) => i.seq));
+    // Out of the queue: what this request carried, by the server's name for it
+    // (a post's id), unless it was replaced while the request was out.
     const drop = (statuses) => {
       const out = new Set(statuses);
       st.queue = st.queue.filter((i) => !(seqs.has(i.seq) && out.has(i.status)));
     };
+    const dropAll = () => {
+      st.queue = st.queue.filter((i) => !seqs.has(i.seq));
+    };
     const why = typeof body.reason === 'string' && body.reason ? body.reason : null;
-    // The server's retryAfter, at most a day and two hours, else until UTC midnight.
-    const wait = (ms) => now + (Number.isFinite(ms) && ms > 0 ? Math.min(ms, 26 * 3600000) : msToUtcMidnight(now));
-    const later = now + DEFAULTS.shareRetryMinutes * 60000;
+    const jitter = () => {
+      const v = Number(rand());
+      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.5;
+    };
+    const wait = (ms) => Math.round(now + (Number.isFinite(ms) && ms > 0 ? Math.min(ms, 26 * 3600000) : msToUtcMidnight(now)) + jitter() * 3600000);
+    const later = () => {
+      st.fails += 1;
+      const base = Math.min(DEFAULTS.shareRetryMinutes * 2 ** (st.fails - 1), DEFAULTS.shareRetryMaxMinutes) * 60000;
+      return Math.round(now + base * (0.75 + 0.5 * jitter()));
+    };
+    // Reports the server may have taken go in held, whatever the answer (or
+    // none at all): only those a 200 answer names as put off or refused are
+    // surely not on the server.
+    if (batch.path === '/v1/reports') {
+      const ok = r.status === 200 && body.ok === true;
+      const not = new Set(ok ? [...(Array.isArray(body.deferred) ? body.deferred : []), ...(Array.isArray(body.rejected) ? body.rejected : [])].map(String) : []);
+      batch.items.forEach((i, n) => {
+        if (!not.has(i.status) && !not.has(`#${n}`)) heldAfter(st, i, now);
+      });
+      pruneHeld(st, now);
+    }
     if (!r.status) {
       st.lastError = `could not reach the server${r.error ? ` (${r.error})` : ''}`;
-      st.retryAt = later;
+      st.retryAt = later();
     } else if (r.status === 429) {
       st.lastError = `the server asked to wait${why ? `: ${why}` : ''}`;
       st.retryAt = wait(Number(body.retryAfter));
@@ -1510,14 +1660,27 @@
       // 5xx, any other refusal (403, 404, 408, ...) that a proxy or a server
       // mid-deploy may give, or a 200 that is not ok: kept, and tried later.
       st.lastError = `the server answered ${r.status}${why ? `: ${why}` : ''}`;
-      st.retryAt = later;
+      st.retryAt = later();
     } else if (r.status !== 200) {
-      drop(batch.items.map((i) => i.status));
-      st.lastError = `the server refused ${batch.items.length} (${r.status}${why ? `: ${why}` : ''})`;
+      dropAll();
+      // A taking-back that comes before reports, refused, would be planned
+      // again and again: those accounts' reports are dropped instead.
+      const first = new Set(batch.handles || []);
+      if (first.size) st.queue = st.queue.filter((i) => !(i.op === 'report' && first.has(i.handle)));
+      st.lastError = `the server refused ${batch.items.length + first.size} (${r.status}${why ? `: ${why}` : ''})`;
       st.retryAt = null;
+      st.fails = 0;
     } else if (batch.path === '/v1/retract') {
-      drop(batch.items.map((i) => i.status));
-      Object.assign(st, { lastSentAt: now, lastError: null, retryAt: null });
+      dropAll();
+      // Each account taken back now holds nothing on the server. (A post's
+      // retraction names no account, so held stays as it was: at worst one
+      // more taking-back later, never one missed.)
+      const taken = [...batch.items.filter((i) => i.op === 'retract-handle').map((i) => i.handle), ...(batch.handles || [])];
+      for (const h of taken) {
+        if (st.legacy) heldSet(st.held, h, 'none');
+        else delete st.held[h];
+      }
+      Object.assign(st, { lastSentAt: now, lastError: null, retryAt: null, fails: 0 });
     } else {
       const list = (k) => (Array.isArray(body[k]) ? body[k].map(String) : []);
       const accepted = list('accepted');
@@ -1534,20 +1697,106 @@
       st.sent += accepted.length;
       st.lastSentAt = now;
       st.lastError = rejected.length ? `the server refused ${rejected.length} as malformed` : null;
-      st.retryAt = deferred.size ? wait(Number(body.retryAfter)) : null;
+      if (deferred.size) st.retryAt = wait(Number(body.retryAfter));
+      else Object.assign(st, { retryAt: null, fails: 0 });
     }
     return st;
   }
 
-  // Each saved label's report, for the labels already saved when sharing is
-  // turned on with "Also share" ticked. hashOf is textHash.
-  async function backfillReports(records, hashOf) {
-    const out = [];
+  // Which label is the newer: the one made later, to the millisecond, and
+  // Not slop only when both were made at the same moment. (The server can
+  // only compare days, so it gives a tie on the day to Not slop; shareBatch
+  // takes the account back first whenever that rule would keep the wrong
+  // side.) x and y are { rep, rec } (a report and the label record it came
+  // from); positive when x is newer.
+  function newerLabel(x, y) {
+    const ax = Number(x.rec.at) || 0;
+    const ay = Number(y.rec.at) || 0;
+    if (ax !== ay) return ax - ay;
+    if (x.rep.label !== y.rep.label) return x.rep.label === 'not_slop' ? 1 : -1;
+    return 0;
+  }
+
+  // The newest label (see newerLabel) on each account among the records.
+  // Records that are not labels, and the post named by
+  // exceptStatus, are left out. With now, a label made more than
+  // shareBackfillDays before it is left out too, since the server refuses a
+  // label made more than 90 days back (a little margin for the queue).
+  function newestLabels(records, { now, exceptStatus } = {}) {
+    const best = new Map();
     for (const rec of records || []) {
       const rep = reportOf(rec);
-      if (rep) out.push(Object.assign(rep, { hash: await hashOf(rec.text) }));
+      if (!rep || rep.status === exceptStatus) continue;
+      const cand = { rep, rec };
+      const cur = best.get(rep.handle);
+      if (!cur || newerLabel(cand, cur) > 0) best.set(rep.handle, cand);
+    }
+    let out = [...best.values()];
+    if (now != null) {
+      const oldest = utcDay(now - DEFAULTS.shareBackfillDays * DAY_MS);
+      out = out.filter((c) => c.rep.day && c.rep.day >= oldest);
     }
     return out;
+  }
+
+  // The reports to queue for the labels already saved, when sharing is turned
+  // on with "Also share" ticked: one per account, its newest label, newest
+  // first, none the server would refuse as too old.
+  function backfillReports(records, now) {
+    return newestLabels(records, { now })
+      .sort((a, b) => -newerLabel(a, b))
+      .map((c) => c.rep);
+  }
+
+  // What to queue after a stored label was cleared, given the label records
+  // stored before (the cleared one included): the account's verdict is taken
+  // back, and the newest label still kept on that account, if any and not too
+  // old, is sent again, so the server ends holding it.
+  function shareItemsOnClear(records, record, now) {
+    const post = statusOf(record && record.url);
+    const handle = normalizeHandle(record && record.handle) || (post && post.handle);
+    if (!post || !handle) return [];
+    const same = (records || []).filter((r) => r && normalizeHandle(r.handle) === handle);
+    const keep = newestLabels(same, { now, exceptStatus: post.id })[0];
+    const items = [{ retractHandle: handle }];
+    if (keep) items.push(keep.rep);
+    return items;
+  }
+
+  // What to queue after Delete all labels: one retraction for each account
+  // among the deleted labels.
+  function shareItemsOnClearAll(records) {
+    const handles = new Set();
+    for (const rec of records || []) {
+      const rep = reportOf(rec);
+      if (rep) handles.add(rep.handle);
+    }
+    return [...handles].map((h) => ({ retractHandle: h }));
+  }
+
+  // What the settings page and the consent card tell the user is sent, as
+  // sections of a heading and items of text, with the server's host filled in.
+  function shareDisclosure(host) {
+    return [
+      {
+        heading: 'What is sent',
+        items: [
+          "For each label: that it is slop or not slop, the account's handle, the post's id, the id of the post whose page it was on, and the day you labelled it. The post's words are not sent.",
+          'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.',
+        ],
+      },
+      {
+        heading: 'What is never sent',
+        items: ["The post's words, your X account, other pages you visit, your lists and your settings."],
+      },
+      {
+        heading: 'Where it goes',
+        items: [
+          `To ${host}, run by AI Anti-Slop. It keeps one entry for each account you labelled: whether your newest label says slop or not slop and its day, with the post and page ids, the hour and a keyed hash of the first part of your IP address (never the address) from the report that set that side, so that one network cannot count as many readers. An entry is deleted 90 days after your newest label on that account.`,
+          'While sharing is on, clearing a label takes back what the server keeps for that account and sends your newest remaining label on it, if there is one. Delete what I shared removes everything from this browser. Turning sharing off stops sending and keeps what was sent.',
+        ],
+      },
+    ];
   }
 
   // ------------------------------------------------------------------ settings files
@@ -1719,7 +1968,7 @@
       muteBots: muteTargets.filter((h) => BOT_HANDLES.has(h)),
       staysShown: addHide.filter((h) => always.has(h)),
       staysShownBots: addHide.filter((h) => allow.has(h) && !always.has(h)),
-      muting: !!(s.muteEnabled && s.muteAccount),
+      muting: mutingOn(s),
       muteAccount: s.muteAccount || null,
       muteCap: muteCap(s),
     };
@@ -1808,6 +2057,7 @@
     mentionIn,
     shouldHideMention,
     utcDay,
+    mutingOn,
     chooseMuteItem,
     chooseUnmuteItem,
     emptyMutes,
@@ -1843,8 +2093,6 @@
     labelsJsonl,
     shareOn,
     newShareKey,
-    shareText,
-    textHash,
     reportOf,
     shareState,
     enqueueShare,
@@ -1852,6 +2100,9 @@
     msToUtcMidnight,
     shareResult,
     backfillReports,
+    shareItemsOnClear,
+    shareItemsOnClearAll,
+    shareDisclosure,
     SETTINGS_FORMAT,
     SETTINGS_VERSION,
     IMPORT_KEYS,
@@ -2735,7 +2986,7 @@
     allow = L.effectiveAllow(s.settings);
     mentions = L.mentionTargets(s.settings, handles);
     paused = !!st.paused;
-    muting = !!st.muteEnabled;
+    muting = L.mutingOn(st);
     listed = new Set(handles);
     allowBox = L.parseAllowlist(st.allowlist);
     extraBox = L.parseAllowlist(st.extraList);

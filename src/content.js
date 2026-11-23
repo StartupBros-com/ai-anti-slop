@@ -725,7 +725,7 @@
     allow = L.effectiveAllow(s.settings);
     mentions = L.mentionTargets(s.settings, handles);
     paused = !!st.paused;
-    muting = !!st.muteEnabled;
+    muting = L.mutingOn(st);
     listed = new Set(handles);
     allowBox = L.parseAllowlist(st.allowlist);
     extraBox = L.parseAllowlist(st.extraList);
