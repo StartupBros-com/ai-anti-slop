@@ -817,8 +817,10 @@
 
   // ------------------------------------------------------- consent card
 
-  // The card's look: the notice's dark box, fixed at the bottom left. When the
-  // disclosure is taller than the card allows, the text scrolls and the row of
+  // The card's look: the notice's dark box, fixed at the bottom right, over X's
+  // sidebar. At the bottom left it covered X's Post button and account menu,
+  // and at widths up to 1,440 px the start of the posts as well (measured on
+  // x.com on 2026-11-22). When the disclosure is taller than the card allows, the text scrolls and the row of
   // buttons stays at the card's bottom edge (on x.com at 1358 px high, the
   // card's 560 px held the text but not the buttons). The card has no bottom
   // padding: a sticky row stops at the padding's edge, and scrolled text
@@ -828,7 +830,7 @@
     const st = document.createElement('style');
     st.id = 'xsh-consent-style';
     st.textContent =
-      `[${CONSENT}]{position:fixed;left:16px;bottom:16px;z-index:2147483646;box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;padding:14px 16px 0;border-radius:12px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 16px rgba(0,0,0,.4);font:14px/1.4 system-ui,sans-serif}` +
+      `[${CONSENT}]{position:fixed;right:16px;bottom:16px;z-index:2147483646;box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;padding:14px 16px 0;border-radius:12px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 16px rgba(0,0,0,.4);font:14px/1.4 system-ui,sans-serif}` +
       `[${CONSENT}] p{margin:0 0 8px}` +
       `[${CONSENT}] [data-xsh-consent-title]{font-size:15px;font-weight:700}` +
       `[${CONSENT}] h3{margin:12px 0 4px;font-size:13px;font-weight:700;color:rgb(180,185,190)}` +

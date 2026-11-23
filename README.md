@@ -669,7 +669,7 @@ none of the counts in the popup.
 ### The first time you share
 
 The first time you save a **Hide as slop** click while sharing is off and you
-have not answered before, a card appears at the bottom left of the page. It
+have not answered before, a card appears at the bottom right of the page. It
 lists what sharing sends and what it never sends, with three buttons.
 **Share** turns sharing on for labels you make from now on, and sends none of
 the labels already saved. **Not now** keeps it off and does not ask again.

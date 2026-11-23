@@ -251,6 +251,9 @@ test('the card keeps its buttons in view while the disclosure scrolls', async ()
   // No bottom padding on the card: the sticky row stops at the padding's edge,
   // and on x.com scrolled text showed through the strip below it.
   assert.match(css, /\[data-xsh-consent\]\{[^}]*padding:14px 16px 0;/);
+  // Bottom right, over X's sidebar: at the bottom left it covered X's Post
+  // button and account menu, and the posts at widths up to 1,440 px.
+  assert.match(css, /\[data-xsh-consent\]\{position:fixed;right:16px;bottom:16px;/);
 });
 
 test('Also hide, a pending Hide as slop click and a tag of a bot stay fully hidden, with no note', async () => {
