@@ -201,6 +201,55 @@ test("focus moves to the revealed post's own Hide as slop button, and Undo puts 
   assert.deepEqual(focused, ['not-slop'], 'focus goes to its Not slop button');
 });
 
+// Planted negative: a focused node that is moved in the page loses focus, as in
+// Chrome. On x.com, X fills in a revealed post's header icons a moment after
+// Show, which moved the button Show had just focused, and focus fell to the page.
+test("the post's Hide as slop button keeps focus when X fills in the header icons after it was focused", async () => {
+  const cells = [post({ author: 'op', status: '1' }), post({ author: 'listed_a', status: '2', head: 'more' })];
+  const t = runContent(page(cells), { pathname: PAGE, state: on(), labels: {}, clock: true });
+  const doc = t.document;
+  let active = null;
+  t.window.HTMLElement.prototype.focus = function focus() {
+    active = this;
+  };
+  Object.defineProperty(doc, 'activeElement', { configurable: true, get: () => (active && active.isConnected ? active : doc.body) });
+  // linkedom defines insertBefore below Node.prototype: wrap it where an element finds it.
+  let owner = doc.body;
+  while (owner && !Object.prototype.hasOwnProperty.call(owner, 'insertBefore')) owner = Object.getPrototypeOf(owner);
+  const insert = owner.insertBefore;
+  owner.insertBefore = function insertBefore(node, ref) {
+    if (active && node.contains && node.contains(active)) active = null;
+    return insert.call(this, node, ref);
+  };
+  // Nodes are compared with ===: a failed equal on two linkedom nodes formats their whole tree.
+  try {
+    await settle();
+    click(t, act(t, '2', 'show'));
+    await settle();
+    const slop = doc.querySelector('[data-fixture="2"] [data-xsh-label="slop"]');
+    assert.ok(doc.activeElement === slop, "Show focused the post's own button");
+    // X adds Grok's button beside More: the button's spot moves to before it.
+    const icons = doc.querySelector('[data-fixture="2"] [data-icons]');
+    icons.insertAdjacentHTML('afterbegin', '<div><button aria-label="Grok actions" type="button"><svg viewBox="0 0 24 24"></svg></button></div>');
+    await settle();
+    const bar = doc.querySelector('[data-fixture="2"] [data-xsh-bar]');
+    assert.ok(bar.parentElement === icons, 'the button moved into the group of icons');
+    assert.ok(doc.activeElement === slop, 'and kept focus');
+  } finally {
+    owner.insertBefore = insert;
+  }
+});
+
+test('the card keeps its buttons in view while the disclosure scrolls', async () => {
+  const t = consentRun();
+  await settle();
+  await hideClick(t, '2');
+  assert.ok(card(t));
+  const css = t.document.getElementById('xsh-consent-style').textContent;
+  assert.match(css, /\[data-xsh-consent-actions\]\{position:sticky;bottom:0;/);
+  assert.match(css, /\[data-xsh-consent\]\{[^}]*max-height:[^}]*overflow:auto/);
+});
+
 test('Also hide, a pending Hide as slop click and a tag of a bot stay fully hidden, with no note', async () => {
   // Also hide.
   const a = runContent(page(THREAD()), { pathname: PAGE, state: on({ extraList: 'listed_a' }), labels: {} });

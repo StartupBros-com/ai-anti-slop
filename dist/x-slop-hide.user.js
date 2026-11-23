@@ -2778,6 +2778,11 @@
   function placeBar(article, bar) {
     const spot = headSpot(article, bar);
     if (spot ? bar.parentNode === spot.parent && bar.nextElementSibling === spot.before : bar.parentNode === article) return;
+    // Moving a node takes focus off anything in it. A button the user is on
+    // keeps focus: X fills in a revealed post's header icons a moment after
+    // Show, which moves the button focus was just given to.
+    const active = document.activeElement;
+    const focused = active && active !== document.body && bar.contains(active) ? active : null;
     if (spot) {
       spot.parent.insertBefore(bar, spot.before);
       bar.removeAttribute('data-xsh-own-row');
@@ -2789,6 +2794,7 @@
       bar.setAttribute('data-xsh-own-row', '');
       bar.removeAttribute('style');
     }
+    if (focused && document.activeElement !== focused && typeof focused.focus === 'function') focused.focus({ preventScroll: true });
   }
 
   // Add, update or remove the button on one post. X reuses a post's nodes
@@ -3116,8 +3122,10 @@
 
   // ------------------------------------------------------- consent card
 
-  // The card's look: the notice's dark box, fixed at the bottom left, scrolling
-  // when the disclosure is taller than the window.
+  // The card's look: the notice's dark box, fixed at the bottom left. When the
+  // disclosure is taller than the card allows, the text scrolls and the row of
+  // buttons stays at the card's bottom edge (on x.com at 1358 px high, the
+  // card's 560 px held the text but not the buttons).
   function injectConsentStyle() {
     if (document.getElementById('xsh-consent-style')) return;
     const st = document.createElement('style');
@@ -3129,7 +3137,7 @@
       `[${CONSENT}] h3{margin:12px 0 4px;font-size:13px;font-weight:700;color:rgb(180,185,190)}` +
       `[${CONSENT}] ul{margin:0;padding-left:18px;font-size:13px}` +
       `[${CONSENT}] li{margin:0 0 4px}` +
-      `[${CONSENT}] [data-xsh-consent-actions]{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}` +
+      `[${CONSENT}] [data-xsh-consent-actions]{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;margin:12px -16px -14px;padding:10px 16px 14px;background:rgb(15,20,25);border-top:1px solid rgba(255,255,255,.15)}` +
       `[${CONSENT}] button{margin:0;padding:6px 14px;border:0;border-radius:9999px;background:none;font:inherit;font-weight:700;color:rgb(29,155,240);cursor:pointer}` +
       `[${CONSENT}] button[data-xsh-consent-act="share"]{background:#fff;color:rgb(15,20,25)}` +
       `[${CONSENT}] button[aria-disabled="true"]{opacity:.6;cursor:default}` +
