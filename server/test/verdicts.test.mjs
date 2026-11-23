@@ -177,8 +177,12 @@ test('retract: the verdict\'s post or its newest label\'s post withdraws it; ano
   await say(w, 1, 'slop', 'r3', 5, 1, T0);
   await say(w, 1, 'slop', 'r3', 6, 1, T0 + DAY);
   await say(w, 1, 'slop', 'r2', 3, 1, T0);
+  await say(w, 1, 'slop', 'r4', 10, 1, T0);
+  await say(w, 1, 'slop', 'r4', 11, 1, T0 + DAY);
+  await say(w, 1, 'not_slop', 'r4', 12, 1, T0 + 2 * DAY); // a flip: both posts are the new one
   const row = (h) => ({ ...w.db.raw.prepare('SELECT status, latest, labeled FROM reports WHERE handle = ?').get(h) });
   assert.deepEqual(row('r1'), { status: '1', latest: '2', labeled: T0 + DAY });
+  assert.deepEqual(row('r4'), { status: '12', latest: '12', labeled: T0 + 2 * DAY });
   // The newest label's post sent again is not newer.
   await say(w, 1, 'slop', 'r1', 2, 1, T0 + 2 * DAY);
   assert.deepEqual(row('r1'), { status: '1', latest: '2', labeled: T0 + DAY });
@@ -186,9 +190,20 @@ test('retract: the verdict\'s post or its newest label\'s post withdraws it; ano
   assert.deepEqual((await retract({ statuses: ['4'] })).json, { ok: true, removed: 0 });
   assert.deepEqual((await retract({ statuses: ['2'] })).json, { ok: true, removed: 1 });
   assert.deepEqual((await retract({ statuses: ['5'] })).json, { ok: true, removed: 1 });
-  assert.deepEqual((await retract({ statuses: [], handles: ['R2', 'bad handle!'] })).json, { ok: true, removed: 1 });
+  assert.deepEqual((await retract({ statuses: ['11'] })).json, { ok: true, removed: 0 });
+  assert.deepEqual((await retract({ statuses: [], handles: ['R2', 'r4', 'bad handle!'] })).json, { ok: true, removed: 2 });
   assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), 0);
   assert.equal((await retract({ statuses: ['1'], handles: 'r1' })).status, 400);
+});
+
+test('retract: a full batch of 50 statuses and 50 handles stays within D1\'s 100 bound parameters per statement', async () => {
+  const w = world();
+  for (let i = 0; i < 50; i++) await say(w, 1, 'slop', 'full' + i, 7000 + i, 1, T0);
+  const statuses = Array.from({ length: 50 }, (_, i) => String(7000 + i));
+  const handles = Array.from({ length: 50 }, (_, i) => 'other' + i);
+  const r = await w.req('POST', '/v1/retract', { body: { v: 1, key: keyOf(1), statuses, handles } });
+  assert.deepEqual([r.status, r.json], [200, { ok: true, removed: 50 }]);
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), 0);
 });
 
 // The next two failed on this branch before the fix for the review of #95.

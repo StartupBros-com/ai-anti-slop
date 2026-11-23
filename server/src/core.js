@@ -565,10 +565,12 @@ async function postRetract(db, env, request, body) {
   // (0.11.0 on) withdraws the install's verdict on that account, whichever post
   // it holds; the extension then sends the newest label it still keeps on it.
   const stmts = [];
+  // Two statements, not one with the list twice: D1 binds at most 100 values
+  // per statement. The second sees only what the first left, so none is counted twice.
   if (statuses.length) {
-    stmts.push(
-      db.prepare(`DELETE FROM reports WHERE reporter = ? AND (status IN (${marks(statuses)}) OR latest IN (${marks(statuses)}))`).bind(reporter, ...statuses, ...statuses),
-    );
+    for (const col of ['status', 'latest']) {
+      stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND ${col} IN (${marks(statuses)})`).bind(reporter, ...statuses));
+    }
   }
   if (handles.length) stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND handle IN (${marks(handles)})`).bind(reporter, ...handles));
   const res = await db.batch(stmts);
