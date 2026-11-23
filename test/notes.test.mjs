@@ -145,6 +145,23 @@ test('Show reveals that one post, stores nothing, and is forgotten when the page
   assert.ok(noteOf(t, '2'), 'the note is back');
 });
 
+test('Show is forgotten when the page changes through a page with no posts and back', async () => {
+  const t = runContent(page(THREAD()), { pathname: PAGE, state: on(), labels: {}, clock: true });
+  await settle();
+  click(t, act(t, '2', 'show'));
+  assert.equal(t.hidden('2'), false);
+  const timeline = t.document.querySelector('[aria-label="Timeline"]');
+  // X removes the timeline on a page with no posts, then draws it again.
+  t.location.pathname = '/messages';
+  timeline.innerHTML = '<div></div>';
+  await settle();
+  t.location.pathname = PAGE;
+  timeline.innerHTML = THREAD().join('');
+  await settle();
+  assert.equal(t.hidden('2'), true);
+  assert.ok(noteOf(t, '2'), 'the note is back');
+});
+
 test('a click the page makes by script, not the user, does nothing on the note', async () => {
   const t = runContent(page(THREAD()), { pathname: PAGE, state: on(), labels: {}, clock: true });
   await settle();
@@ -390,6 +407,21 @@ test('with the extension\'s own adapter, the note names the list a Recommended p
   ]);
 });
 
+test('with the extension\'s own adapter, a list added by address is named "a list you added", and its address is nowhere in the page', async () => {
+  const url = 'https://lists.example.test/private/team.txt?access_token=SECRET1';
+  const store = {
+    'xsh:list': { handles: [], fetchedAt: 1, source: AI },
+    'xsh:list:u1': { handles: ['addedonly'], fetchedAt: 1, source: url },
+    'xsh:settings': { labeling: true, lists: { recommended: false }, customLists: [{ id: 'u1', url, on: true }] },
+  };
+  const cells = [post({ author: 'op', status: '1' }), post({ author: 'addedonly', status: '2' })];
+  const t = runContent(page(cells), { pathname: PAGE, chrome: contentChrome(store) });
+  await settle();
+  assert.equal(noteText(t, '2'), 'Hidden: on a list you added');
+  const html = t.document.documentElement.outerHTML;
+  assert.ok(!html.includes('SECRET1') && !html.includes('example.test'), 'the address is not in the page');
+});
+
 // ----------------------------------------------------------- the consent card
 
 const ASK = { ok: true, label: 'slop', askShare: true };
@@ -464,6 +496,37 @@ test('Share and Not now send the choice and close the card; Details opens the se
   key(e, 'Escape');
   assert.equal(card(e), null);
   assert.deepEqual(e.consents, [], 'Escape answers nothing');
+});
+
+test('Share answered while another label is in its Undo window keeps that Undo; the answer follows when the window ends', async () => {
+  const slop3 = (t) => t.document.querySelector('[data-fixture="3"] [data-xsh-label="slop"]');
+  const t = consentRun();
+  await settle();
+  await hideClick(t, '2');
+  click(t, slop3(t));
+  const labelText = toastText(t);
+  click(t, card(t).querySelector('[data-xsh-consent-act="share"]'));
+  await settle();
+  assert.deepEqual(t.consents, ['share']);
+  assert.equal(toastText(t), labelText, "the label's notice stays");
+  assert.equal(undoBtn(t).hasAttribute('hidden'), false, 'with its Undo');
+  t.advance(UNDO_MS);
+  await settle();
+  assert.deepEqual(t.saves.map((s) => s.url.split('/').pop()), ['2', '3']);
+  assert.match(toastText(t), /^Sharing is on for labels you make from now on\./);
+
+  const u = consentRun();
+  await settle();
+  await hideClick(u, '2');
+  click(u, slop3(u));
+  click(u, card(u).querySelector('[data-xsh-consent-act="share"]'));
+  await settle();
+  click(u, undoBtn(u));
+  await settle();
+  assert.match(toastText(u), /^Undone\. Sharing is on for labels you make from now on\./);
+  u.advance(UNDO_MS * 2);
+  await settle();
+  assert.deepEqual(u.saves.map((s) => s.url.split('/').pop()), ['2'], 'the undone label is not saved');
 });
 
 test('Share refused because the answer is already recorded says so, and any other refusal gives its reason', async () => {
@@ -554,6 +617,13 @@ test('listNamesOf names the first list that is on and holds each account, by Rec
   assert.deepEqual({ ...lib.listNamesOf({ lists: { recommended: false } }, recs) }, { a: 'clankwall: AI flags', both: 'clankwall: AI flags' });
   assert.deepEqual({ ...lib.listNamesOf({}, {}) }, {});
   assert.deepEqual({ ...lib.listNamesOf({}, null) }, {});
+  // A list added by address is named as one, never by its address.
+  const url = 'https://lists.example.test/private/team.txt?access_token=SECRET2';
+  const added = lib.listNamesOf(
+    { lists: { recommended: false }, customLists: [{ id: 'u1', url, on: true }] },
+    { [lib.listKey('u1')]: { handles: ['added', 'a'] }, 'xsh:list': { handles: ['a'] } },
+  );
+  assert.deepEqual({ ...added }, { a: 'clankwall: AI flags', added: 'a list you added' });
   // A Recommended record from before it kept parts is named by the list.
   assert.deepEqual({ ...lib.listNamesOf({ lists: { 'clankwall-ai': false } }, { 'xsh:list:recommended': { handles: ['x'] } }) }, { x: 'Recommended' });
 });

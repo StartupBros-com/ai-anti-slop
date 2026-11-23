@@ -70,6 +70,8 @@
   const UNDO_MS = 6000;
   // The one click still inside its Undo window, or null.
   let pending = null;
+  // A notice that waits for that window to end, so the click keeps its Undo.
+  let laterToast = null;
   // Accounts a click has put in a box that the stored settings do not show
   // there yet: { handle, field } with field 'extraList' (Also hide) or
   // 'allowlist' (Always show). Each stays until the stored settings have it,
@@ -657,6 +659,7 @@
     const undoHadFocus = isUndoFocused();
     closeToast();
     if (undoHadFocus) focusNext(p);
+    showLater('');
     let sent;
     try {
       sent = Promise.resolve(adapter.saveLabel(p.msg));
@@ -731,8 +734,11 @@
     refreshView();
     rescanAll();
     renderId(p.id);
-    if (quiet) return;
-    showToast('Undone.', false);
+    if (quiet) {
+      laterToast = null;
+      return;
+    }
+    if (!showLater('Undone.')) showToast('Undone.', false);
     // The click was on a note, which is back: its Not slop button.
     if (p.btn && p.btn.hasAttribute('data-xsh-note-act') && p.cell && document.contains(p.cell)) {
       const again = p.cell.querySelector(`[${NOTE}] [data-xsh-note-act="not-slop"]`);
@@ -781,6 +787,16 @@
     e.preventDefault();
     if (e.isTrusted === false) return;
     if (e.target && e.target.closest && e.target.closest('[data-xsh-undo]')) undo(false);
+  }
+
+  // Show the notice that waited for a click's Undo window, after prefix.
+  // Whether there was one.
+  function showLater(prefix) {
+    const text = laterToast;
+    laterToast = null;
+    if (!text) return false;
+    showToast(prefix ? `${prefix} ${text}` : text, false);
+    return true;
   }
 
   function showToast(text, offerUndo) {
@@ -922,7 +938,10 @@
             : why === 'already answered'
               ? 'You have already answered this. Sharing can be turned on or off in settings.'
               : `Sharing was not turned on: ${why}`;
-          showToast(text, false);
+          // A label click still in its window keeps its notice and its Undo:
+          // this one follows when the window ends.
+          if (pending) laterToast = text;
+          else showToast(text, false);
         }
       });
   }
@@ -956,7 +975,10 @@
   function onMutations(records) {
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
-      // Leaving the page ends a label click's Undo window.
+      // Leaving the page forgets the posts Show revealed there, even when the
+      // page in between has no posts, and ends a label click's Undo window.
+      shownPath = location.pathname;
+      shownIds = new Set();
       commit();
       rescanAll();
       return;

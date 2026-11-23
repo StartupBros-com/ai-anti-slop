@@ -165,6 +165,8 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     MutationObserver: TestObserver,
     ...(chrome ? { chrome } : { XSlopHideAdapter: adapter }),
     console,
+    // Every page has URL; lib.js needs it to read a list added by address.
+    URL,
     setTimeout: fake ? fake.setTimeout : setTimeout,
     clearTimeout: fake ? fake.clearTimeout : clearTimeout,
     ...(styles ? { getComputedStyle: styles } : {}),

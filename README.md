@@ -645,7 +645,9 @@ A post by an account that is on a list you have switched on does not vanish.
 In its place the extension draws one line, about 32 px high: **Hidden: on**
 and the name of the first list that holds the account (for Recommended, the
 file that does: clankwall's AI flags, levelsio's list or the readers' list),
-then two buttons. The note never says how many readers reported an account.
+then two buttons. A list you added by address is named "a list you added",
+never by its address, since the note is part of x.com's page. The note never
+says how many readers reported an account.
 
 - **Show** shows that one post, on this page only. Nothing is stored: when you
   open another page, or reload, the post is hidden again.

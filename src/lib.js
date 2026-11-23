@@ -399,8 +399,10 @@
   // that is on and holds each account, as { handle: name }. `records` maps a
   // list's storage key (listKey) to its stored record. A list made of several
   // sources (Recommended) is named by the source whose file holds the account
-  // (its noteName), when the record keeps its parts. Only handles are read, so
-  // the name never says how many readers reported an account.
+  // (its noteName), when the record keeps its parts. A list added by address
+  // is named only "a list you added": the note is in x.com's page, where X's
+  // scripts can read it, and the address may hold a token. Only handles are
+  // read, so the name never says how many readers reported an account.
   function listNamesOf(settings, records) {
     const out = {};
     const recs = records || {};
@@ -417,7 +419,7 @@
           if (part) claim(part.handles, src.noteName || src.name);
         }
       } else {
-        claim(rec.handles, l.name);
+        claim(rec.handles, l.builtin ? l.name : 'a list you added');
       }
     }
     return out;
