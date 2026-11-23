@@ -1024,6 +1024,13 @@
     };
   }
 
+  function beginMuteDayEdit(rec, now) {
+    const r = structuredCloneish(rec || emptyMutes());
+    const today = utcDay(now);
+    const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
+    return { r, today, d };
+  }
+
   // Fold one visit's outcome into the record (a new object). The visit was
   // already counted when its tab opened. Outcomes:
   //   muted        clicked the Mute item (toast text kept; confirmed later)
@@ -1039,9 +1046,7 @@
   // A mute records `account`, the account the job ran as, so it is unmuted
   // only as that account.
   function recordOutcome(rec, handle, outcome, now, account) {
-    const r = structuredCloneish(rec || emptyMutes());
-    const today = utcDay(now);
-    const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
+    const { r, today, d } = beginMuteDayEdit(rec, now);
     const prev = entryOf(r, handle) || {};
     const status = outcome.status;
     const entry = { status, at: now };
@@ -1172,9 +1177,7 @@
 
   // A profile tab was opened: it counts against today's visit cap whatever it finds.
   function countVisit(rec, now) {
-    const r = structuredCloneish(rec || emptyMutes());
-    const today = utcDay(now);
-    const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
+    const { r, today, d } = beginMuteDayEdit(rec, now);
     d.visits += 1;
     r.days[today] = d;
     return r;
@@ -1182,9 +1185,7 @@
 
   // Stop muting until the next UTC day, with the reason the popup shows.
   function stopDay(rec, now, reason) {
-    const r = structuredCloneish(rec || emptyMutes());
-    const today = utcDay(now);
-    const d = Object.assign({ mutes: 0, visits: 0, stopped: null }, r.days[today]);
+    const { r, today, d } = beginMuteDayEdit(rec, now);
     d.stopped = String(reason).slice(0, 200);
     r.days[today] = d;
     return r;
