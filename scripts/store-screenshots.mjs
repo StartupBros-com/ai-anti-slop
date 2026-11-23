@@ -370,7 +370,10 @@ try {
   const muting = await shootPart('section.muting');
 
   // ---- 4. labels (on by default), with hiding paused so the labelled reply
-  // stays in view
+  // stays in view. The sharing card, shown after a first saved label while
+  // sharing is unanswered, would cover the thread, so it is answered first as
+  // Not now would answer it.
+  await sw().evaluate(() => chrome.storage.local.set({ 'xsh:share': { asked: true } }));
   await setSettings({ paused: true });
   await x.setViewportSize({ width: 700, height: STAGE_H });
   await x.goto(`https://x.com${threadPath(2000)}`);

@@ -1,6 +1,6 @@
 {
   "name": "ai-anti-slop",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "private": true,
   "license": "MIT",
   "description": "Hide x.com posts by accounts on a self-updating AI-reply spam list, and optionally mute them on X, daily or all at once. No X API.",

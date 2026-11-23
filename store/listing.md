@@ -13,10 +13,17 @@ the store added an `update_url` to `manifest.json` and a
 `_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.10.0,
-field by field. 0.10.0 was submitted on 2026-11-21 with this text, in place of
-0.9.0, whose review (since 2026-11-19) was cancelled; the store still served
-0.8.0 that day. Sharing labels is new
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.11.0,
+field by field. 0.10.0 was submitted on 2026-11-21, in place of 0.9.0, whose
+review (since 2026-11-19) was cancelled; the store still served 0.8.0 that day.
+The store served 0.10.0 by 2026-11-22: its package was the
+store package built from the v0.10.0 tag (69a72aa), 13 of its 14 files byte
+for byte, `manifest.json` the same once the store's `update_url` line is
+removed, and the store's `_metadata/verified_contents.json` added. 0.11.0 has
+not been submitted. Since 0.10.0's text, the note under HIDING and
+the card in the sharing line under LABELS are new, and the Website content row
+and the paragraph after the data-usage table name the day where they named a
+hash. Sharing labels is new
 in 0.10.0, so these were written for the first submit that carries it: the
 readers' list in the first paragraph, the sharing line under LABELS, the
 PRIVACY section, the single purpose, the storage justification, the readers'
