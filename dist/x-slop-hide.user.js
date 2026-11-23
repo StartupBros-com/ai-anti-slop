@@ -3125,19 +3125,21 @@
   // The card's look: the notice's dark box, fixed at the bottom left. When the
   // disclosure is taller than the card allows, the text scrolls and the row of
   // buttons stays at the card's bottom edge (on x.com at 1358 px high, the
-  // card's 560 px held the text but not the buttons).
+  // card's 560 px held the text but not the buttons). The card has no bottom
+  // padding: a sticky row stops at the padding's edge, and scrolled text
+  // showed through the strip below it.
   function injectConsentStyle() {
     if (document.getElementById('xsh-consent-style')) return;
     const st = document.createElement('style');
     st.id = 'xsh-consent-style';
     st.textContent =
-      `[${CONSENT}]{position:fixed;left:16px;bottom:16px;z-index:2147483646;box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;padding:14px 16px;border-radius:12px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 16px rgba(0,0,0,.4);font:14px/1.4 system-ui,sans-serif}` +
+      `[${CONSENT}]{position:fixed;left:16px;bottom:16px;z-index:2147483646;box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;padding:14px 16px 0;border-radius:12px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 16px rgba(0,0,0,.4);font:14px/1.4 system-ui,sans-serif}` +
       `[${CONSENT}] p{margin:0 0 8px}` +
       `[${CONSENT}] [data-xsh-consent-title]{font-size:15px;font-weight:700}` +
       `[${CONSENT}] h3{margin:12px 0 4px;font-size:13px;font-weight:700;color:rgb(180,185,190)}` +
       `[${CONSENT}] ul{margin:0;padding-left:18px;font-size:13px}` +
       `[${CONSENT}] li{margin:0 0 4px}` +
-      `[${CONSENT}] [data-xsh-consent-actions]{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;margin:12px -16px -14px;padding:10px 16px 14px;background:rgb(15,20,25);border-top:1px solid rgba(255,255,255,.15)}` +
+      `[${CONSENT}] [data-xsh-consent-actions]{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;margin:12px -16px 0;padding:10px 16px 14px;background:rgb(15,20,25);border-top:1px solid rgba(255,255,255,.15)}` +
       `[${CONSENT}] button{margin:0;padding:6px 14px;border:0;border-radius:9999px;background:none;font:inherit;font-weight:700;color:rgb(29,155,240);cursor:pointer}` +
       `[${CONSENT}] button[data-xsh-consent-act="share"]{background:#fff;color:rgb(15,20,25)}` +
       `[${CONSENT}] button[aria-disabled="true"]{opacity:.6;cursor:default}` +
