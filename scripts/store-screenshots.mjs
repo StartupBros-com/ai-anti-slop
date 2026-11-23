@@ -66,6 +66,8 @@ const PEOPLE = {
 };
 const SPAM = ['xsh_demo_bot1', 'xsh_demo_bot2', 'xsh_demo_bot3'];
 const CROWD_HOST = 'ai-anti-slop.startupbros.com';
+// The readers' list's address, as Recommended names the file it came from.
+const CROWD_LIST = `https://${CROWD_HOST}/v1/list.ndjson`;
 const OP_TEXT = 'Shipped my first browser extension this weekend. Two days from idea to a working build.';
 const THREADS = {
   // The hiding shots: three spam replies among three real ones.
@@ -311,11 +313,11 @@ try {
   // Recommended, with the readers' list holding the example's spam accounts.
   const rec = await until(async () => {
     const r = (await local('xsh:list:recommended'))['xsh:list:recommended'];
-    const crowd = r && Array.isArray(r.parts) && r.parts.find((p) => p && String(p.source).includes(CROWD_HOST));
+    const crowd = r && Array.isArray(r.parts) && r.parts.find((p) => p && p.source === CROWD_LIST);
     return crowd && SPAM.every((h) => crowd.handles.includes(h)) ? r : null;
   }, 30000, "Recommended with the example's readers' list");
   for (const p of rec.parts) {
-    if (!String(p.source).includes(CROWD_HOST) && SPAM.concat('xsh_demo_bot4').some((h) => p.handles.includes(h))) throw new Error(`an example handle is on ${p.source}; pick others`);
+    if (p.source !== CROWD_LIST && SPAM.concat('xsh_demo_bot4').some((h) => p.handles.includes(h))) throw new Error(`an example handle is on ${p.source}; pick others`);
     console.log(`recommended part: ${p.handles.length} handles from ${p.source}`);
   }
 
