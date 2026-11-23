@@ -682,7 +682,8 @@ saved too (**Also share the N labels already saved**), unticked.
 - The popup says whether sharing is on and how many reports it has sent.
 - **Turn off sharing** stops sending and drops what is waiting. **Delete what
   I shared** also deletes, on the server, every report from this install, and
-  then the random code. Reports left on the server are deleted after 90 days.
+  then the random code. What is left on the server about an account is
+  deleted 90 days after this install's newest label on it.
 
 The server's code is in [`server/`](server/), with its rules and what it
 stores in [server/README.md](server/README.md). What it keeps is in
@@ -1046,8 +1047,8 @@ userscript manager. Hiding leaves nothing to undo. Removing the extension
 deletes your labels and settings, so export them first if you want them
 (**Export labels**, and **Export settings** under **Export or import**). It
 does not delete labels you shared from AI Anti-Slop's server: click **Delete
-what I shared** on the settings page first, or they are deleted 90 days after
-they were sent. The mutes
+what I shared** on the settings page first, or what the server keeps about
+each account is deleted 90 days after your newest label on it. The mutes
 AI Anti-Slop made stay on your X account; unmute them on X at
 `x.com/settings/muted/all`. To see
 which accounts it muted, read the record before removing the extension: click

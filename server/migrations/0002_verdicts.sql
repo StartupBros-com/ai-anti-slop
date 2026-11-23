@@ -7,6 +7,9 @@ CREATE TABLE verdicts (
   -- The post behind the verdict, and its thread.
   status TEXT NOT NULL,
   thread TEXT,
+  -- The post of the install's newest label on that side, which sets `labeled`. A retraction of
+  -- either post deletes the verdict.
+  latest TEXT NOT NULL,
   label TEXT NOT NULL CHECK (label IN ('slop','not_slop')),
   net TEXT NOT NULL,
   -- When the verdict last changed side, rounded down to the hour. The 24-hour wait runs on it.
@@ -18,8 +21,8 @@ CREATE TABLE verdicts (
 );
 -- Carry over any existing reports: per install and account, the newest one, a tie going to Not slop.
 -- The text hash is not carried; it was never used.
-INSERT INTO verdicts (reporter, handle, status, thread, label, net, at, labeled)
-  SELECT reporter, handle, status, thread, label, net, at, at FROM (
+INSERT INTO verdicts (reporter, handle, status, thread, latest, label, net, at, labeled)
+  SELECT reporter, handle, status, thread, status, label, net, at, at FROM (
     SELECT reporter, handle, status, thread, label, net, at,
       ROW_NUMBER() OVER (PARTITION BY reporter, handle ORDER BY at DESC, label = 'not_slop' DESC, status DESC) AS rn
     FROM reports

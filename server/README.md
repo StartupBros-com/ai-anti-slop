@@ -27,18 +27,18 @@ A label's day is the UTC day the extension says it was made (`day`), or the hour
 | The report | The install's verdict on that account |
 |---|---|
 | Its first on the account | Created. |
-| The post the verdict holds, sent again | Unchanged. |
+| The post the verdict holds, or the post of its newest label, sent again | Unchanged. |
 | The other side, labelled on a later day (or on the same day, when it is Not slop) | Replaced by this report's post, thread, network and arrival hour, so its 24 hours start again. |
-| The same side, another post, labelled later | Only the label's day moves forward. The post, thread, network and arrival hour stay, so more labels never lower an account's thread or network count, and the side's 24 hours do not start again. |
+| The same side, another post, labelled later | The label's day moves forward, and this post is kept as the post of the newest label. The post, thread, network and arrival hour that put the verdict on its side stay, so more labels never lower an account's thread or network count, and the side's 24 hours do not start again. |
 | Anything else: labelled before the verdict's day, or the same side on the same day | Unchanged. |
 
-A retraction by post id deletes the verdict whose post it is; retracting another post of the same account leaves the verdict and its day as they are. A retraction by handle deletes the install's verdict on that account, whichever post it holds. 0.10.0 retracts by post id only, so a 0.10.0 reader who clears the label behind a verdict loses that verdict even while keeping other labels on the account: the count can be lower than what readers keep, not higher.
+A retraction by post id deletes the verdict when that post is the verdict's post or the post of its newest label, so a cleared label's day never keeps counting; retracting any other post of the same account leaves the verdict and its day as they are. A retraction by handle deletes the install's verdict on that account, whichever posts it holds. 0.10.0 retracts by post id only, so a 0.10.0 reader who clears either of those labels loses that verdict even while keeping other labels on the account: the count can be lower than what readers keep, not higher.
 
 ## What is stored
 
 - `reporter`: the first 32 hex characters of HMAC-SHA256(`HMAC_SECRET`, `"r:" + key`). The install key itself is never stored.
 - `net`: the first 16 hex characters of HMAC-SHA256(`HMAC_SECRET`, `"n:" + prefix`), where prefix is `a.b.c` or the first three IPv6 hextets, taken from the `CF-Connecting-IP` header. The IP address is never stored. With no header (local dev) the prefix is `local`.
-- A verdict row holds the reporter, the account's handle, the post's status id and its thread id, the label, the network, `at` (the hour its side last changed, rounded down) and `labeled` (the start of its label's UTC day, or the arrival hour). One row per install and account; older reports on the account are not kept.
+- A verdict row holds the reporter, the account's handle, the post's status id and its thread id, `latest` (the status id of the newest label's post), the label, the network, `at` (the hour its side last changed, rounded down) and `labeled` (the start of its newest label's UTC day, or the arrival hour). One row per install and account; older reports on the account are not kept.
 - The hash of a post's words that 0.10.0 sends is checked for its form and not stored.
 - No user agent, Referer or Origin is stored, and request bodies are not logged.
 - A removal request stores the handle and the hour, nothing else; `reason` and `contact` fields are ignored.
@@ -53,7 +53,7 @@ Every response carries `Access-Control-Allow-Origin: *` and `X-Content-Type-Opti
 | Endpoint | What it does |
 |---|---|
 | `POST /v1/reports` | `{v:1, key, reports:[{label, handle, status, thread, day}]}`, 1 to 50 items. `key` is 32 lowercase hex characters. `day` is optional, `YYYY-MM-DD`; a 0.10.0 item also carries `hash`, which is checked and dropped. An invalid item goes in `rejected` and is not fatal. Returns `{ok, accepted, rejected, deferred, retryAfter?}`. A new install from a network that already started 10 installs today gets 429. Each install may write 100 reports per UTC day, and all installs together 6,000; the rest are returned as `deferred`, with `retryAfter` the milliseconds to the next UTC midnight. Each limit is a counter bumped with `INSERT ... ON CONFLICT ... RETURNING n` before the decision, and the part not taken is subtracted again, so requests at the same moment cannot all pass. |
-| `POST /v1/retract` | `{v:1, key, statuses:[...], handles:[...]}`, up to 50 of each and at least one in all; `handles` is optional. A status deletes this install's verdict whose post it is, a handle its verdict on that account. Returns `{ok, removed}`; an unknown key gives `removed: 0`. |
+| `POST /v1/retract` | `{v:1, key, statuses:[...], handles:[...]}`, up to 50 of each and at least one in all; `handles` is optional. A status deletes this install's verdict whose post or newest label's post it is, a handle its verdict on that account. Returns `{ok, removed}`; an unknown key gives `removed: 0`. |
 | `POST /v1/forget` | `{v:1, key}`. Deletes every verdict of this install and its reporter row. Returns `{ok, removed}`. |
 | `GET /v1/list.ndjson` | The latest built list, one line per account sorted by handle: `{"username":"...","reporters":3,"since":"YYYY-MM-DD"}`. Empty body when nothing is listed. After a build: `Cache-Control: public, max-age=600`, an `ETag` of the build time, and the Workers Cache API for 600 seconds. Before the first build: an empty body with `Cache-Control: no-store`, not cached, so the first build shows at once. |
 | `GET /v1/changes?limit=N` | Builds that added or removed something, newest first: `[{at, count, added, removed}]`. N is 1 to 100, default 20. |

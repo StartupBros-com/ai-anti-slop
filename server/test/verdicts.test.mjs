@@ -165,21 +165,63 @@ test('the text hash 0.10.0 sends is accepted and never stored', async () => {
   const r = await w.report(1, [{ label: 'slop', handle: 'h', status: '1', thread: '2', hash: '0123456789abcdef' }]);
   assert.deepEqual(r.json.accepted, ['1']);
   const cols = w.db.raw.prepare('PRAGMA table_info(reports)').all().map((c) => c.name);
-  assert.deepEqual(cols.sort(), ['at', 'handle', 'label', 'labeled', 'net', 'reporter', 'status', 'thread']);
+  assert.deepEqual(cols.sort(), ['at', 'handle', 'label', 'labeled', 'latest', 'net', 'reporter', 'status', 'thread']);
   assert.equal(JSON.stringify(w.db.raw.prepare('SELECT * FROM reports').all()).includes('0123456789abcdef'), false);
 });
 
-test('retract: a post withdraws the verdict it holds; another post of the account does not; a handle withdraws the verdict', async () => {
+test('retract: the verdict\'s post or its newest label\'s post withdraws it; another post does not; a handle withdraws it', async () => {
   const w = world();
   await say(w, 1, 'slop', 'r1', 1, 1, T0);
-  await say(w, 1, 'slop', 'r1', 2, 1, T0 + DAY); // same side, later: the verdict keeps post 1
+  await say(w, 1, 'slop', 'r1', 2, 1, T0 + DAY); // same side, later: the verdict keeps post 1, dated by post 2
+  await say(w, 1, 'slop', 'r1', 4, 1, T0 + DAY); // same side, same day: unchanged
+  await say(w, 1, 'slop', 'r3', 5, 1, T0);
+  await say(w, 1, 'slop', 'r3', 6, 1, T0 + DAY);
   await say(w, 1, 'slop', 'r2', 3, 1, T0);
+  const row = (h) => ({ ...w.db.raw.prepare('SELECT status, latest, labeled FROM reports WHERE handle = ?').get(h) });
+  assert.deepEqual(row('r1'), { status: '1', latest: '2', labeled: T0 + DAY });
+  // The newest label's post sent again is not newer.
+  await say(w, 1, 'slop', 'r1', 2, 1, T0 + 2 * DAY);
+  assert.deepEqual(row('r1'), { status: '1', latest: '2', labeled: T0 + DAY });
   const retract = (body) => w.req('POST', '/v1/retract', { body: { v: 1, key: keyOf(1), ...body } });
-  assert.deepEqual((await retract({ statuses: ['2'] })).json, { ok: true, removed: 0 });
-  assert.deepEqual((await retract({ statuses: ['1'] })).json, { ok: true, removed: 1 });
+  assert.deepEqual((await retract({ statuses: ['4'] })).json, { ok: true, removed: 0 });
+  assert.deepEqual((await retract({ statuses: ['2'] })).json, { ok: true, removed: 1 });
+  assert.deepEqual((await retract({ statuses: ['5'] })).json, { ok: true, removed: 1 });
   assert.deepEqual((await retract({ statuses: [], handles: ['R2', 'bad handle!'] })).json, { ok: true, removed: 1 });
   assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), 0);
   assert.equal((await retract({ statuses: ['1'], handles: 'r1' })).status, 400);
+});
+
+// The next two failed on this branch before the fix for the review of #95.
+test('clearing the newest label by its post id, as 0.10.0 does, stops that label counting', async () => {
+  const w = world();
+  await slopFrom(w, 'cleared', [1, 2, 3], { when: OLD, nets: 2 });
+  await w.buildAt();
+  assert.deepEqual(await names(w), ['cleared']);
+  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'cleared' }, ip: '192.0.2.1', now: T0 + HOUR })).json.state, 'taken');
+  // The same three readers label other posts of it a day later: those labels count, and it is listed again.
+  for (const i of [1, 2, 3]) await say(w, i, 'slop', 'cleared', 8000 + i, 800 + i, T0 + DAY + HOUR, { day: dayOf(T0 + DAY) });
+  await w.buildAt(T0 + 2 * DAY);
+  assert.deepEqual(await entries(w, T0 + 2 * DAY), [['cleared', 3]]);
+  // Reader 3 clears that newer label by its post id. What is left of reader 3's
+  // verdict predates the request, so it must stop counting.
+  const r = await w.req('POST', '/v1/retract', { body: { v: 1, key: keyOf(3), statuses: ['8003'] } });
+  assert.deepEqual(r.json, { ok: true, removed: 1 });
+  await w.buildAt(T0 + 2 * DAY + HOUR);
+  assert.deepEqual(await names(w, T0 + 2 * DAY + HOUR), []);
+});
+
+test('removal requests for one account at the same moment store one request and use one place in each limit', async () => {
+  const w = world();
+  const put = w.db.raw.prepare('INSERT INTO listed (handle, reporters, since) VALUES (?, 3, ?)');
+  put.run('dup', T0);
+  put.run('other', T0);
+  const rs = await Promise.all(Array.from({ length: 5 }, () => w.req('POST', '/v1/removal', { body: { handle: 'dup' }, ip: '198.51.100.4' })));
+  assert.deepEqual(rs.map((r) => r.json.state).sort(), ['standing', 'standing', 'standing', 'standing', 'taken']);
+  for (const r of rs) assert.equal(r.status, 200);
+  assert.equal(w.count('SELECT COUNT(*) AS c FROM removals'), 1);
+  assert.equal(w.count("SELECT n AS c FROM counters WHERE kind = 'removal'"), 1);
+  assert.equal(w.count("SELECT n AS c FROM counters WHERE kind = 'removal_all'"), 1);
+  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'other' }, ip: '198.51.100.4' })).json.state, 'taken');
 });
 
 test('removal: only a listed account, once per 90 days, keeps only the handle and the hour', async () => {
@@ -271,11 +313,11 @@ test('migration 0002: each install keeps its newest report per account, a tie go
   rem.run('h1', null, null, 'n', T0 - 2 * DAY, 'open');
   rem.run('h2', null, null, 'n', T0, 'done');
   R.exec(migrationText('0002_verdicts.sql'));
-  const rows = R.prepare('SELECT reporter, handle, status, thread, label, net, at, labeled FROM reports ORDER BY reporter, handle').all().map((r) => ({ ...r }));
+  const rows = R.prepare('SELECT reporter, handle, status, thread, latest, label, net, at, labeled FROM reports ORDER BY reporter, handle').all().map((r) => ({ ...r }));
   assert.deepEqual(rows, [
-    { reporter: 'a', handle: 'h1', status: '2', thread: '11', label: 'not_slop', net: 'n2', at: T0 - DAY, labeled: T0 - DAY },
-    { reporter: 'a', handle: 'h2', status: '3', thread: null, label: 'slop', net: 'n1', at: T0, labeled: T0 },
-    { reporter: 'b', handle: 'h1', status: '5', thread: '13', label: 'not_slop', net: 'n3', at: T0, labeled: T0 },
+    { reporter: 'a', handle: 'h1', status: '2', thread: '11', latest: '2', label: 'not_slop', net: 'n2', at: T0 - DAY, labeled: T0 - DAY },
+    { reporter: 'a', handle: 'h2', status: '3', thread: null, latest: '3', label: 'slop', net: 'n1', at: T0, labeled: T0 },
+    { reporter: 'b', handle: 'h1', status: '5', thread: '13', latest: '5', label: 'not_slop', net: 'n3', at: T0, labeled: T0 },
   ]);
   assert.deepEqual(R.prepare('SELECT handle, at FROM removals').all().map((r) => ({ ...r })), [{ handle: 'h1', at: T0 - 2 * DAY }]);
   assert.deepEqual(R.prepare('SELECT handle FROM overrides').all().map((r) => r.handle), ['kept']);

@@ -438,20 +438,22 @@ function checkKey(body) {
 // takes the row over only when it was made on the same day or later (a tie
 // goes to Not slop); the row then holds the new label's post, thread, network
 // and arrival hour, so the 24-hour wait starts again. A label on the same side
-// about another post only moves the labelled day forward: the post, thread and
-// network that put the install on its side stay, so more labels never lower
-// the thread or network count, and the side's wait does not restart. An older
-// label, or the same post sent again, changes nothing.
+// about another post only moves the labelled day forward and records that post
+// as `latest`: the post, thread and network that put the install on its side
+// stay, so more labels never lower the thread or network count, and the side's
+// wait does not restart. An older label, or either recorded post sent again,
+// changes nothing.
 const FLIP = "excluded.label <> reports.label AND (excluded.labeled > reports.labeled OR (excluded.labeled = reports.labeled AND excluded.label = 'not_slop'))";
-const VERDICT_UPSERT = `INSERT INTO reports (reporter, handle, status, thread, label, net, at, labeled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+const VERDICT_UPSERT = `INSERT INTO reports (reporter, handle, status, thread, latest, label, net, at, labeled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(reporter, handle) DO UPDATE SET
+    latest = excluded.status,
     status = CASE WHEN ${FLIP} THEN excluded.status ELSE reports.status END,
     thread = CASE WHEN ${FLIP} THEN excluded.thread ELSE reports.thread END,
     net = CASE WHEN ${FLIP} THEN excluded.net ELSE reports.net END,
     at = CASE WHEN ${FLIP} THEN excluded.at ELSE reports.at END,
     labeled = CASE WHEN ${FLIP} THEN excluded.labeled ELSE MAX(reports.labeled, excluded.labeled) END,
     label = CASE WHEN ${FLIP} THEN excluded.label ELSE reports.label END
-  WHERE ${FLIP} OR (excluded.label = reports.label AND excluded.status <> reports.status AND excluded.labeled > reports.labeled)`;
+  WHERE ${FLIP} OR (excluded.label = reports.label AND excluded.status <> reports.status AND excluded.status <> reports.latest AND excluded.labeled > reports.labeled)`;
 
 async function postReports(db, env, request, body, now) {
   if (body.v !== 1) return fail(400, 'unsupported version');
@@ -529,7 +531,7 @@ async function postReports(db, env, request, body, now) {
     if (offered > fit) stmts.push(unbump(db, 'report', reporter, day, offered - fit));
     accepted = valid.slice(0, fit);
     deferred = valid.slice(fit);
-    for (const r of accepted) stmts.push(db.prepare(VERDICT_UPSERT).bind(reporter, r.handle, r.status, r.thread, r.label, net, at, r.labeled));
+    for (const r of accepted) stmts.push(db.prepare(VERDICT_UPSERT).bind(reporter, r.handle, r.status, r.thread, r.status, r.label, net, at, r.labeled));
     await db.batch(stmts);
   } catch (err) {
     try {
@@ -557,12 +559,17 @@ async function postRetract(db, env, request, body) {
   if (!statuses.length && !handles.length) return json(200, { ok: true, removed: 0 });
   const { reporter } = await identity(env, request, body.key);
   const marks = (list) => list.map(() => '?').join(', ');
-  // A status withdraws the verdict whose post it is; retracting another post of
-  // the same account leaves the verdict as it is. A handle (0.11.0 on) withdraws
-  // the install's verdict on that account, whichever post it holds; the
-  // extension then sends the newest label it still keeps on that account.
+  // A status withdraws the verdict when it is the verdict's post or the post of
+  // its newest label (so a cleared label's day never keeps counting); retracting
+  // any other post of the same account leaves the verdict as it is. A handle
+  // (0.11.0 on) withdraws the install's verdict on that account, whichever post
+  // it holds; the extension then sends the newest label it still keeps on it.
   const stmts = [];
-  if (statuses.length) stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND status IN (${marks(statuses)})`).bind(reporter, ...statuses));
+  if (statuses.length) {
+    stmts.push(
+      db.prepare(`DELETE FROM reports WHERE reporter = ? AND (status IN (${marks(statuses)}) OR latest IN (${marks(statuses)}))`).bind(reporter, ...statuses, ...statuses),
+    );
+  }
   if (handles.length) stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND handle IN (${marks(handles)})`).bind(reporter, ...handles));
   const res = await db.batch(stmts);
   return json(200, { ok: true, removed: res.reduce((n, r) => n + Number(r.meta.changes), 0) });
@@ -616,10 +623,17 @@ async function postRemoval(db, env, request, raw, now) {
     return fail(429, 'too many removal requests today', { retryAfter: msToMidnight(now) });
   }
   // A request past its days can still be stored until the next build prunes it.
-  await db
+  const put = await db
     .prepare('INSERT INTO removals (handle, at) VALUES (?, ?) ON CONFLICT(handle) DO UPDATE SET at = excluded.at WHERE removals.at < ?')
     .bind(h, hourFloor(now), expCut)
     .run();
+  if (Number(put.meta.changes) === 0) {
+    // A request for the same account, made at the same moment, was stored first:
+    // this one takes no place in the day's limits.
+    await db.batch([unbump(db, 'removal', net, day, 1), unbump(db, 'removal_all', '*', day, 1)]);
+    const first = await db.prepare('SELECT at FROM removals WHERE handle = ?').bind(h).first();
+    return answer({ state: 'standing', since: dayOf(Number(first ? first.at : now)) });
+  }
   return answer({ state: 'taken' });
 }
 

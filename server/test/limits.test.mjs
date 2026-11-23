@@ -137,7 +137,7 @@ test('retention: build drops old reporters with no reports, and removal requests
   addReporter.run('old_empty', old);
   addReporter.run('old_with_report', old);
   addReporter.run('new_empty', fresh);
-  const addReport = R.prepare("INSERT INTO reports (reporter, handle, status, label, net, at, labeled) VALUES (?, 'h', ?, 'slop', 'n', ?, ?)");
+  const addReport = R.prepare("INSERT INTO reports (reporter, handle, status, latest, label, net, at, labeled) VALUES (?1, 'h', ?2, ?2, 'slop', 'n', ?3, ?4)");
   // Labelled long ago but arrived yesterday: the labelled day decides, so it expires.
   addReporter.run('old_backfilled', old);
   addReport.run('old_backfilled', '3', T0 - DAY, old);

@@ -211,8 +211,9 @@ made close together go in one request of up to 50. When you turn sharing on,
 the labels already saved are sent too only if you tick **Also share the N
 labels already saved**. While sharing is on, clearing a label sends a
 retraction for its post, and **Delete all labels** sends one for every label.
-With sharing off neither does, so a report already sent stays until it is 90
-days old or you click **Delete what I shared**. A request goes to
+With sharing off neither does, so what was already sent stays on the server
+until 90 days after your newest label on that account, or until you click
+**Delete what I shared**. A request goes to
 `https://ai-anti-slop.startupbros.com/v1/reports` (`/v1/retract` for a
 retraction), as plain text with no cookies. If the server cannot be reached,
 the request is tried again 30 minutes later; if it asks to wait, as it does
@@ -230,11 +231,15 @@ see Cloudflare's privacy policy for what it does with them. The Worker keeps:
   that put the entry on that side, with the hour that report arrived (not the
   minute) and a keyed hash of the first part of your IP address when it was
   sent (the first three numbers of an IPv4 address, the first three groups of
-  an IPv6 one), so that one network cannot count as many readers; the day of
-  your newest report on that side; and a keyed hash (HMAC) of your browser's
-  code. Older reports on the same account are not kept. A retraction deletes
-  the entry when the entry holds that post, and leaves it when it holds
-  another post of the same account;
+  an IPv6 one), so that one network cannot count as many readers; the day
+  your newest report on that side was labelled (for version 0.10.0, which
+  sends no day, the hour it arrived); and a keyed hash (HMAC) of your
+  browser's code; and the id of the post that newest label was on. Older
+  reports on the same account are not kept, but a newer label on the same
+  side moves only that day and that post's id, so the first post's id, the
+  page's id, the hour and the network kept can come from a report older than
+  90 days. A retraction deletes the entry when it names either post the entry
+  holds, and leaves it for any other post of the same account;
 - the hour it first heard from your browser's code, under the same keyed hash,
   deleted once none of its entries are left and that hour is more than 90 days
   ago;
@@ -246,7 +251,8 @@ see Cloudflare's privacy policy for what it does with them. The Worker keeps:
 
 It never stores the code itself, your IP address, your browser's headers or a
 request's body as sent. Its request logs (Workers Logs) are off. An entry is
-deleted 90 days after the newest report behind it arrived.
+deleted 90 days after the day it holds: the day of your newest label on that
+account that the server took.
 
 **What is published.** The readers' list at
 `https://ai-anti-slop.startupbros.com/v1/list.ndjson`: each listed account's
@@ -274,8 +280,8 @@ request per account counts in those 90 days, and the request is deleted when
 they end. It is sent from that web page, never by the extension.
 
 **Turning it off and deleting.** **Turn off sharing** stops sending and drops
-what is waiting; what was sent stays on the server until it is 90 days old or
-you delete it. **Delete what I shared** turns sharing off, asks the server to
+what is waiting; what was sent stays on the server until 90 days after your
+newest label on each account, or until you delete it. **Delete what I shared** turns sharing off, asks the server to
 delete every entry from your browser's code, the hour it first heard from it
 and its daily counts, and then deletes the code from your browser. If the
 server does not confirm, the code is kept so you can try again. Turning
