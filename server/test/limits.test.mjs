@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { world, slopFrom, keyOf, RULES, build, T0, HOUR, DAY } from './helpers.mjs';
 
-const item = (status) => ({ label: 'slop', handle: 'someone', status: String(status), thread: '1' });
+// Each post is by its own account, so every accepted report is its own verdict row.
+const item = (status) => ({ label: 'slop', handle: 'acct' + status, status: String(status), thread: '1' });
 const counter = (w, kind, subject) => {
   const r = w.db.raw.prepare('SELECT n FROM counters WHERE kind = ? AND subject = ?').get(kind, subject);
   return r ? Number(r.n) : null;
@@ -64,10 +65,12 @@ test('limits: the global daily cap defers the excess, and the counters give back
 
 test('limits: parallel removal requests from one network: 5 pass, the rest get 429, counter ends at 5', async () => {
   const w = world();
+  const put = w.db.raw.prepare('INSERT INTO listed (handle, reporters, since) VALUES (?, 3, ?)');
+  for (let i = 0; i < 12; i++) put.run('victim' + i, T0);
   const rs = await Promise.all(
-    Array.from({ length: 12 }, () => w.req('POST', '/v1/removal', { body: { handle: 'victim' }, ip: '198.51.100.4' })),
+    Array.from({ length: 12 }, (_, i) => w.req('POST', '/v1/removal', { body: { handle: 'victim' + i }, ip: '198.51.100.4' })),
   );
-  assert.equal(rs.filter((r) => r.status === 200).length, RULES.REMOVALS_PER_NET_DAY);
+  assert.equal(rs.filter((r) => r.status === 200 && r.json.state === 'taken').length, RULES.REMOVALS_PER_NET_DAY);
   const limited = rs.filter((r) => r.status === 429);
   assert.equal(limited.length, 12 - RULES.REMOVALS_PER_NET_DAY);
   for (const r of limited) assert.equal(r.json.retryAfter, toMidnight);
@@ -125,7 +128,7 @@ test('admin rebuild clears the list cache entry', async () => {
   }
 });
 
-test('retention: build drops old reporters with no reports, and closed removals past 90 days; keeps the rest', async () => {
+test('retention: build drops old reporters with no reports, and removal requests past 90 days; keeps the rest', async () => {
   const w = world();
   const old = T0 - (RULES.EXPIRY_DAYS + 5) * DAY;
   const fresh = T0 - 2 * DAY;
@@ -134,18 +137,21 @@ test('retention: build drops old reporters with no reports, and closed removals 
   addReporter.run('old_empty', old);
   addReporter.run('old_with_report', old);
   addReporter.run('new_empty', fresh);
-  R.prepare("INSERT INTO reports (reporter, status, handle, label, net, at) VALUES ('old_with_report', '1', 'h', 'slop', 'n', ?)").run(T0 - DAY);
+  const addReport = R.prepare("INSERT INTO reports (reporter, handle, status, latest, label, net, at, labeled) VALUES (?1, 'h', ?2, ?2, 'slop', 'n', ?3, ?4)");
+  // Labelled long ago but arrived yesterday: the labelled day decides, so it expires.
+  addReporter.run('old_backfilled', old);
+  addReport.run('old_backfilled', '3', T0 - DAY, old);
+  addReport.run('old_with_report', '1', T0 - DAY, T0 - DAY);
   // An old report expires in this same build, so its reporter goes too.
   addReporter.run('old_expiring', old);
-  R.prepare("INSERT INTO reports (reporter, status, handle, label, net, at) VALUES ('old_expiring', '2', 'h', 'slop', 'n', ?)").run(old);
-  const addRemoval = R.prepare('INSERT INTO removals (handle, net, at, status) VALUES (?, ?, ?, ?)');
-  addRemoval.run('open_old', 'n', old, 'open');
-  addRemoval.run('done_old', 'n', old, 'done');
-  addRemoval.run('rejected_old', 'n', old, 'rejected');
-  addRemoval.run('done_new', 'n', fresh, 'done');
+  addReport.run('old_expiring', '2', old, old);
+  const addRemoval = R.prepare('INSERT INTO removals (handle, at) VALUES (?, ?)');
+  addRemoval.run('lapsed', old);
+  addRemoval.run('standing', fresh);
   await w.buildAt();
   assert.deepEqual(R.prepare('SELECT id FROM reporters ORDER BY id').all().map((r) => r.id), ['new_empty', 'old_with_report']);
-  assert.deepEqual(R.prepare('SELECT handle FROM removals ORDER BY handle').all().map((r) => r.handle), ['done_new', 'open_old']);
+  assert.deepEqual(R.prepare('SELECT status FROM reports').all().map((r) => r.status), ['1']);
+  assert.deepEqual(R.prepare('SELECT handle FROM removals ORDER BY handle').all().map((r) => r.handle), ['standing']);
 });
 
 test('veto: not_slop counts only from aged installs and only once the report is past the wait', async () => {
@@ -246,7 +252,7 @@ test('build: the rule query reads reports in handle order, with no sort for the 
   const rule = seen.find((s) => s.sql.includes('INSERT INTO next_listed (handle, reporters, since)\n'));
   assert.ok(rule, 'the rule statement');
   const plan = w.db.raw.prepare('EXPLAIN QUERY PLAN ' + rule.sql).all(...rule.args).map((p) => p.detail);
-  assert.ok(plan.includes('SCAN reports USING INDEX reports_handle'), plan.join(' | '));
+  assert.ok(plan.includes('SCAN r USING INDEX reports_handle'), plan.join(' | '));
   assert.equal(plan.some((d) => d.includes('TEMP B-TREE FOR GROUP BY')), false, plan.join(' | '));
 });
 

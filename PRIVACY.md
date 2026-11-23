@@ -5,7 +5,7 @@ by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to posts.
 This policy covers the extension and the userscript, version 0.10.0, which adds
 the choice of lists, the Recommended list and sharing labels. Where an earlier
-version differs, it says so. Last updated 2026-11-21.
+version differs, it says so. Last updated 2026-11-22.
 
 ## In short
 
@@ -190,11 +190,9 @@ of five fields:
   thread;
 - a hash of the post's words: the first 16 hexadecimal characters of the
   SHA-256 of the text, put in lower case, with links, @handles and extra spaces
-  taken out. The same words give the same hash, so copies of one reply can be
-  matched without their words; the server keeps it for that, and its listing
-  rule does not use it today. A hash cannot be turned back into the words,
-  but someone who guesses a short or common reply can check the guess against
-  it.
+  taken out. The server checks that it has that form and does not keep it.
+  A hash cannot be turned back into the words, but someone who guesses a short
+  or common reply could check the guess against it on its way.
 
 With them goes a random code, 32 hexadecimal characters made in your browser
 when you first turn sharing on, so that your reports count as one reader's and
@@ -213,8 +211,9 @@ made close together go in one request of up to 50. When you turn sharing on,
 the labels already saved are sent too only if you tick **Also share the N
 labels already saved**. While sharing is on, clearing a label sends a
 retraction for its post, and **Delete all labels** sends one for every label.
-With sharing off neither does, so a report already sent stays until it is 90
-days old or you click **Delete what I shared**. A request goes to
+With sharing off neither does, so what was already sent stays on the server
+until 90 days after your newest label on that account, or until you click
+**Delete what I shared**. A request goes to
 `https://ai-anti-slop.startupbros.com/v1/reports` (`/v1/retract` for a
 retraction), as plain text with no cookies. If the server cannot be reached,
 the request is tried again 30 minutes later; if it asks to wait, as it does
@@ -227,51 +226,63 @@ repository's `server/` folder. Cloudflare runs the machines, so each request
 reaches Cloudflare with your IP address and your browser's standard headers;
 see Cloudflare's privacy policy for what it does with them. The Worker keeps:
 
-- each report's five fields, the hour it arrived (not the minute), a keyed hash
-  (HMAC) of your browser's code and a keyed hash of the first part of your IP
-  address (the first three numbers of an IPv4 address, the first three groups
-  of an IPv6 one), so that one network cannot count as many readers;
+- for each account your reports name, one entry: whether your newest report
+  on it says slop or not slop; the post's id and the page's id from the report
+  that put the entry on that side, with the hour that report arrived (not the
+  minute) and a keyed hash of the first part of your IP address when it was
+  sent (the first three numbers of an IPv4 address, the first three groups of
+  an IPv6 one), so that one network cannot count as many readers; the day
+  your newest report on that side was labelled (for version 0.10.0, which
+  sends no day, the hour it arrived); and a keyed hash (HMAC) of your
+  browser's code; and the id of the post that newest label was on. Older
+  reports on the same account are not kept, but a newer label on the same
+  side moves only that day and that post's id, so the first post's id, the
+  page's id, the hour and the network kept can come from a report older than
+  90 days. A retraction deletes the entry when it names either post the entry
+  holds, and leaves it for any other post of the same account;
 - the hour it first heard from your browser's code, under the same keyed hash,
-  deleted once none of its reports are left and that hour is more than 90 days
+  deleted once none of its entries are left and that hour is more than 90 days
   ago;
 - per keyed hash of your browser's code, how many reports arrived each UTC
   day; per keyed hash of your network, how many new browser codes and removal
-  requests arrived each UTC day; and how many reports all browsers sent each
-  UTC day. These counts are deleted after three days.
+  requests arrived each UTC day; and how many reports all browsers sent, and
+  how many removal requests were taken, each UTC day. These counts are deleted
+  after three days.
 
 It never stores the code itself, your IP address, your browser's headers or a
-request's body as sent. Its request logs (Workers Logs) are off. A report is
-deleted 90 days after it arrives.
+request's body as sent. Its request logs (Workers Logs) are off. An entry is
+deleted 90 days after the day it holds: the day of your newest label on that
+account that the server took.
 
 **What is published.** The readers' list at
 `https://ai-anti-slop.startupbros.com/v1/list.ndjson`: each listed account's
 handle, how many browsers reported it and the day it was first listed; at
 `/v1/changes`, which accounts each rebuild added or removed; and at
 `/v1/status`, the number of listed accounts and of browser codes it keeps,
-with the time of the last build. An account is listed once three or more
-browsers on two or more networks have reported it as slop in two or more
-threads, and at least three times as many browsers reported it as slop as
-reported it as not slop, counting, for slop and not slop alike, only reports a
-day old or more from browsers the server first heard from a week or more
-before. Reports are not checked against anything, so a list entry means
-browsers agreed, not that the account posts AI replies. The page at
-`https://ai-anti-slop.startupbros.com/` states the rule. No report, code or
-network appears in anything published. AI Anti-Slop's operator can read, with
-a token, the accounts near the bar with their counts, and can add an account to
-the list or take one off by hand; a rebuild's additions and removals are
-public either way.
+with the time of the last build. Each browser counts once per account, by its
+entry. An account is listed once three or more browsers on two or more
+networks say slop, about posts in two or more threads, and at least three
+times as many browsers say slop as say not slop, counting, for slop and not
+slop alike, only entries that have said so for a day or more, from browsers
+the server first heard from a week or more before. Reports are not checked
+against anything, so a list entry means browsers agreed, not that the account
+posts AI replies. The page at `https://ai-anti-slop.startupbros.com/` states
+the rule. No report, code or network appears in anything published. AI
+Anti-Slop's operator can read, with a token, the accounts near the bar with
+their counts, and can take an account off the list by hand; nobody can add
+one by hand. A rebuild's additions and removals are public either way.
 
-**Removal requests.** The readers' list page has a form for asking that an
-account be taken off. A request keeps the handle, the reason and contact you
-type (both optional), the hour and a keyed hash of your network, for the
-operator to read. Once the operator has closed it, it is deleted 90 days after
-it arrived; until then it is kept. It is sent from that web page, never by the
-extension.
+**Removal requests.** The readers' list page has a form for asking that a
+listed account be taken off. A request keeps the handle and the hour, nothing
+else, and nobody needs to read it: the account leaves the list at the next
+rebuild, and for 90 days only reports made on later days count for it. One
+request per account counts in those 90 days, and the request is deleted when
+they end. It is sent from that web page, never by the extension.
 
 **Turning it off and deleting.** **Turn off sharing** stops sending and drops
-what is waiting; what was sent stays on the server until it is 90 days old or
-you delete it. **Delete what I shared** turns sharing off, asks the server to
-delete every report from your browser's code, the hour it first heard from it
+what is waiting; what was sent stays on the server until 90 days after your
+newest label on each account, or until you delete it. **Delete what I shared** turns sharing off, asks the server to
+delete every entry from your browser's code, the hour it first heard from it
 and its daily counts, and then deletes the code from your browser. If the
 server does not confirm, the code is kept so you can try again. Turning
 sharing on again makes a new code, which counts as a new reader.
