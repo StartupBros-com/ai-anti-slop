@@ -16,6 +16,7 @@ export const RULES = Object.freeze({
   REPORTS_PER_DAY: 6000,
   NEW_INSTALLS_PER_NET_DAY: 10,
   REMOVALS_PER_NET_DAY: 5,
+  REMOVALS_PER_DAY: 50,
 });
 
 const HOUR = 3600000;
@@ -27,12 +28,21 @@ const KEY_RE = /^[0-9a-f]{32}$/;
 const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
 const ID_RE = /^\d{1,25}$/;
 const HASH_RE = /^[0-9a-f]{16}$/;
+const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 // ---------- small helpers ----------
 
 const dayOf = (now) => new Date(now).toISOString().slice(0, 10);
 const msToMidnight = (now) => (Math.floor(now / DAY) + 1) * DAY - now;
 const hourFloor = (now) => now - (now % HOUR);
+
+// The start of a UTC day written YYYY-MM-DD, in ms, or null when it is not a real day.
+function dayStart(s) {
+  const m = DAY_RE.exec(s);
+  if (!m) return null;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return dayOf(t) === s ? t : null;
+}
 
 function toHex(buf) {
   let s = '';
@@ -171,56 +181,80 @@ const unbump = (db, kind, subject, day, by) =>
 
 // ---------- build ----------
 
+// SQL with its binds. Interpolated values become ? placeholders in order; a
+// fragment made by sql`` or lit() is spliced in with its own binds, so shared
+// conditions keep their placeholders in step wherever they are used.
+function sql(strings, ...vals) {
+  let text = strings[0];
+  const binds = [];
+  vals.forEach((v, i) => {
+    if (v && typeof v === 'object' && typeof v.text === 'string') {
+      text += v.text;
+      binds.push(...v.binds);
+    } else {
+      text += '?';
+      binds.push(v);
+    }
+    text += strings[i + 1];
+  });
+  return { text, binds };
+}
+const lit = (v) => ({ text: String(v), binds: [] });
+const prep = (db, q) => db.prepare(q.text).bind(...q.binds);
+
+const cuts = (now) => ({
+  addCut: now - RULES.ADD_WAIT_HOURS * HOUR,
+  expCut: now - RULES.EXPIRY_DAYS * DAY,
+  ageCut: now - RULES.AGE_DAYS * DAY,
+});
+
+// A report row is one install's verdict on one account (see postReports). It
+// counts toward the list when the day it was labelled is inside the window,
+// its side has stood ADD_WAIT_HOURS since it last changed, and its install is
+// AGE_DAYS old.
+const inWindow = (c) => sql`r.labeled >= ${c.expCut}`;
+const stood = (c) => sql`r.at <= ${c.addCut} AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ${c.ageCut})`;
+// While a removal request for the account stands, a Slop verdict counts only
+// when it was labelled on a UTC day after the request's.
+const slopSide = (c) =>
+  sql`r.label = 'slop' AND r.labeled >= COALESCE((SELECT (q.at / ${lit(DAY)} + 1) * ${lit(DAY)} FROM removals q WHERE q.handle = r.handle AND q.at >= ${c.expCut}), 0)`;
+
 // Rebuild the published list inside one batch. All counting happens in SQL.
 export async function build(db, env, now) {
-  const addCut = now - RULES.ADD_WAIT_HOURS * HOUR;
-  const expCut = now - RULES.EXPIRY_DAYS * DAY;
-  const ageCut = now - RULES.AGE_DAYS * DAY;
+  const c = cuts(now);
+  const { expCut } = c;
   const dayCut = dayOf(now - 3 * DAY);
+  const slop = slopSide(c);
 
   const stmts = [
-    // The label list lets this use reports_label_at; reports has no index on at alone.
-    db.prepare("DELETE FROM reports WHERE label IN ('slop', 'not_slop') AND at < ?").bind(expCut),
-    // Retention: installs with nothing left to show, and closed removal requests.
+    db.prepare('DELETE FROM reports WHERE labeled < ?').bind(expCut),
+    // Retention: installs with nothing left to show, and removal requests past their 90 days.
     db
       .prepare('DELETE FROM reporters WHERE first_seen < ? AND NOT EXISTS (SELECT 1 FROM reports r WHERE r.reporter = reporters.id)')
       .bind(expCut),
-    db.prepare("DELETE FROM removals WHERE status <> 'open' AND at < ?").bind(expCut),
+    db.prepare('DELETE FROM removals WHERE at < ?').bind(expCut),
     db.prepare('DELETE FROM counters WHERE day < ?').bind(dayCut),
     db.prepare('DELETE FROM next_listed'),
-    // The rule. Slop reports count once aged installs have waited out ADD_WAIT_HOURS;
-    // Not slop reports (the veto) count under the same conditions: aged install, past the wait, inside the window.
-    db
-      .prepare(
-        `INSERT INTO next_listed (handle, reporters, since)
-         SELECT g.handle, g.slop, COALESCE((SELECT l.since FROM listed l WHERE l.handle = g.handle), ?)
+    // The rule. Each install counts at most once per account, on one side.
+    prep(
+      db,
+      sql`INSERT INTO next_listed (handle, reporters, since)
+         SELECT g.handle, g.slop, COALESCE((SELECT l.since FROM listed l WHERE l.handle = g.handle), ${now})
          FROM (
-           SELECT handle,
-             COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN reporter END) AS slop,
-             COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN COALESCE(thread, status) END) AS threads,
-             COUNT(DISTINCT CASE WHEN label = 'slop' AND at <= ? THEN net END) AS nets,
-             COUNT(DISTINCT CASE WHEN label = 'not_slop' AND at <= ? THEN reporter END) AS notslop
-           -- reports_handle gives the rows in handle order, so GROUP BY needs no sort. On local
-           -- D1 at 532,836 reports this read 533,887 rows; a plain scan plus the sort read 1,039,932.
-           FROM reports INDEXED BY reports_handle
-           WHERE at >= ? AND reporter IN (SELECT id FROM reporters WHERE first_seen <= ?)
-           GROUP BY handle
+           SELECT r.handle AS handle,
+             COUNT(CASE WHEN ${slop} THEN 1 END) AS slop,
+             COUNT(DISTINCT CASE WHEN ${slop} THEN COALESCE(r.thread, r.status) END) AS threads,
+             COUNT(DISTINCT CASE WHEN ${slop} THEN r.net END) AS nets,
+             COUNT(CASE WHEN r.label = 'not_slop' THEN 1 END) AS notslop
+           -- reports_handle gives the rows in handle order, so GROUP BY needs no sort.
+           FROM reports r INDEXED BY reports_handle
+           WHERE ${inWindow(c)} AND ${stood(c)}
+           GROUP BY r.handle
          ) g
-         WHERE g.slop >= ${RULES.MIN_REPORTERS} AND g.threads >= ${RULES.MIN_THREADS} AND g.nets >= ${RULES.MIN_NETS}
-           AND g.slop >= ${RULES.NOT_SLOP_WEIGHT} * g.notslop
+         WHERE g.slop >= ${lit(RULES.MIN_REPORTERS)} AND g.threads >= ${lit(RULES.MIN_THREADS)} AND g.nets >= ${lit(RULES.MIN_NETS)}
+           AND g.slop >= ${lit(RULES.NOT_SLOP_WEIGHT)} * g.notslop
            AND g.handle NOT IN (SELECT handle FROM overrides WHERE action = 'delist')`,
-      )
-      .bind(now, addCut, addCut, addCut, addCut, expCut, ageCut),
-    // Admin "list" overrides always add.
-    db
-      .prepare(
-        `INSERT OR IGNORE INTO next_listed (handle, reporters, since)
-         SELECT o.handle,
-           (SELECT COUNT(DISTINCT r.reporter) FROM reports r INDEXED BY reports_handle WHERE r.handle = o.handle AND r.label = 'slop' AND r.at >= ?),
-           COALESCE((SELECT l.since FROM listed l WHERE l.handle = o.handle), ?)
-         FROM overrides o WHERE o.action = 'list'`,
-      )
-      .bind(expCut, now),
+    ),
     db
       .prepare(
         `INSERT INTO changes (at, count, added, removed)
@@ -321,63 +355,70 @@ async function getStatus(db) {
   return json(200, { ok: true, listed: stats.listed, reporters: stats.reporters, builtAt: m.builtAt ? Number(m.builtAt) : null }, { 'cache-control': 'public, max-age=60' });
 }
 
-function homePage() {
-  const R = RULES;
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AI Anti-Slop crowd list</title>
-<style>
-:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--mut:#555;--line:#ccc;--acc:#0b57d0}
+const PAGE_STYLE = `:root{color-scheme:light dark;--bg:#fff;--fg:#1a1a1a;--mut:#555;--line:#ccc;--acc:#0b57d0}
 @media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--mut:#aaa;--line:#444;--acc:#8ab4f8}}
 body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,sans-serif}
 main{max-width:40rem;margin:0 auto;padding:2rem 1rem}
 h1{font-size:1.5rem}h2{font-size:1.1rem;margin-top:2rem}
 a{color:var(--acc)}code{background:rgba(127,127,127,.15);padding:0 .25em;border-radius:3px}
-label{display:block;margin:.8rem 0 .2rem}input,textarea{width:100%;box-sizing:border-box;font:inherit;padding:.4rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px}
+label{display:block;margin:.8rem 0 .2rem}input{width:100%;box-sizing:border-box;font:inherit;padding:.4rem;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:4px}
 button{font:inherit;margin-top:1rem;padding:.4rem 1rem}
-.mut{color:var(--mut)}
+.mut{color:var(--mut)}`;
+
+const page = (title, inner) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)}</title>
+<style>
+${PAGE_STYLE}
 </style></head>
-<body><main id="home">
-<h1>AI Anti-Slop crowd list</h1>
-<p>This is a list of X accounts that readers using the <a href="https://github.com/StartupBros-com/ai-anti-slop">AI Anti-Slop browser extension</a> have flagged as posting slop replies. Installs that opt in send a report for each post they label Slop (labels saved as Not slop by versions before 0.9.0 are sent too). The extension can use this list as one source for its Recommended list.</p>
+<body><main>
+${inner}
+</main></body></html>`;
+
+function homePage() {
+  const R = RULES;
+  return page(
+    'AI Anti-Slop crowd list',
+    `<h1>AI Anti-Slop crowd list</h1>
+<p>This is a list of X accounts that readers using the <a href="https://github.com/StartupBros-com/ai-anti-slop">AI Anti-Slop browser extension</a> have flagged as posting slop replies. Installs that opt in send a report for each post they label Slop or Not slop. The extension can use this list as one source for its Recommended list.</p>
 <p class="mut">An entry means that several readers reported the account. It is not proof of anything about the account.</p>
 <h2>When an account is listed</h2>
-<p>An account is listed when all of these hold:</p>
+<p>Each install counts once per account, on one side: its newest label on any of the account's posts decides whether it says Slop or Not slop. A label counts from the day the reader made it. An account is listed when all of these hold:</p>
 <ul>
-<li>At least ${R.MIN_REPORTERS} different installs reported it as Slop.</li>
-<li>Those reports are about at least ${R.MIN_THREADS} different threads and come from at least ${R.MIN_NETS} different networks.</li>
-<li>Each install is at least ${R.AGE_DAYS} days old, and each report, Slop or Not slop, is at least ${R.ADD_WAIT_HOURS} hours old.</li>
-<li>The Slop reporters are at least ${R.NOT_SLOP_WEIGHT} times as many as the installs that reported the account as Not slop.</li>
+<li>At least ${R.MIN_REPORTERS} different installs say Slop.</li>
+<li>Their labels are about at least ${R.MIN_THREADS} different threads and came from at least ${R.MIN_NETS} different networks.</li>
+<li>Each install is at least ${R.AGE_DAYS} days old, and each install's side, Slop or Not slop, has stood for at least ${R.ADD_WAIT_HOURS} hours.</li>
+<li>The installs saying Slop are at least ${R.NOT_SLOP_WEIGHT} times as many as those saying Not slop.</li>
 </ul>
-<p>Reports older than ${R.EXPIRY_DAYS} days are deleted, so an account drops off when readers stop reporting it. The list is rebuilt every six hours.</p>
+<p>Labels made more than ${R.EXPIRY_DAYS} days ago are deleted, so an account drops off when readers stop reporting it. The list is rebuilt every six hours.</p>
 <h2>Data</h2>
 <ul>
 <li><a href="/v1/list.ndjson">/v1/list.ndjson</a>: the current list, one JSON object per line.</li>
 <li><a href="/v1/changes">/v1/changes</a>: recent builds that added or removed accounts.</li>
 </ul>
 <h2>Ask for a removal</h2>
-<p>If your account is listed and you think that is wrong, send a request. Requests are reviewed by hand. Sending one does not remove the account by itself.</p>
+<p>If your account is listed and you think that is wrong, send its handle. Nobody needs to read the request: the account comes off the list at the next rebuild, within six hours, and goes back on only if enough readers label its posts Slop on later days. One request per account counts in any ${R.EXPIRY_DAYS} days, and only for an account that is listed.</p>
 <form method="post" action="/v1/removal">
 <label for="handle">X handle</label>
 <input id="handle" name="handle" required maxlength="16" pattern="@?[A-Za-z0-9_]{1,15}" autocomplete="off">
-<label for="reason">Reason (optional, up to 1,000 characters)</label>
-<textarea id="reason" name="reason" rows="4" maxlength="1000"></textarea>
-<label for="contact">Contact (optional, up to 200 characters)</label>
-<input id="contact" name="contact" maxlength="200" autocomplete="off">
 <button type="submit">Send request</button>
 </form>
-<p class="mut">AI Anti-Slop and this server are open source. Their code, and the place to report a problem with either, are on <a href="https://github.com/StartupBros-com/ai-anti-slop">GitHub</a>.</p>
-</main></body></html>`;
+<p class="mut">AI Anti-Slop and this server are open source. Their code, and the place to report a problem with either, are on <a href="https://github.com/StartupBros-com/ai-anti-slop">GitHub</a>.</p>`,
+  );
 }
 
-function thanksPage() {
-  return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Request received</title>
-<style>body{font:16px/1.55 system-ui,sans-serif;max-width:40rem;margin:2rem auto;padding:0 1rem}</style></head>
-<body><h1>Request received</h1>
-<p>Removal requests are reviewed by hand. The account stays listed until a reviewer acts on the request.</p>
-<p><a href="/">Back</a></p></body></html>`;
+// What a removal request did, as a page for the form and as fields for JSON.
+function removalPage(handle, result) {
+  const h = esc('@' + handle);
+  const body = {
+    taken: `<h1>Request received</h1>
+<p>${h} comes off the list at the next rebuild, within six hours. From tomorrow (UTC) on, it goes back on only if enough readers label its posts Slop again.</p>`,
+    standing: `<h1>Already requested</h1>
+<p>A request for ${h} was made on ${esc(result.since)} and still stands, so this one changes nothing. Only labels made after that day count for the account.</p>`,
+    unlisted: `<h1>Not listed</h1>
+<p>${h} is not on the list, so there is nothing to remove. A request can be made once an account is listed.</p>`,
+  }[result.state];
+  return page('Removal request', `${body}\n<p><a href="/">Back</a></p>`);
 }
 
 // ---------- write endpoints ----------
@@ -393,6 +434,27 @@ function checkKey(body) {
   return body && typeof body.key === 'string' && KEY_RE.test(body.key);
 }
 
+// One row per install and account: its verdict. A label on the other side
+// takes the row over only when it was made on the same day or later (a tie
+// goes to Not slop); the row then holds the new label's post, thread, network
+// and arrival hour, so the 24-hour wait starts again. A label on the same side
+// about another post only moves the labelled day forward and records that post
+// as `latest`: the post, thread and network that put the install on its side
+// stay, so more labels never lower the thread or network count, and the side's
+// wait does not restart. An older label, or either recorded post sent again,
+// changes nothing.
+const FLIP = "excluded.label <> reports.label AND (excluded.labeled > reports.labeled OR (excluded.labeled = reports.labeled AND excluded.label = 'not_slop'))";
+const VERDICT_UPSERT = `INSERT INTO reports (reporter, handle, status, thread, latest, label, net, at, labeled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(reporter, handle) DO UPDATE SET
+    latest = excluded.status,
+    status = CASE WHEN ${FLIP} THEN excluded.status ELSE reports.status END,
+    thread = CASE WHEN ${FLIP} THEN excluded.thread ELSE reports.thread END,
+    net = CASE WHEN ${FLIP} THEN excluded.net ELSE reports.net END,
+    at = CASE WHEN ${FLIP} THEN excluded.at ELSE reports.at END,
+    labeled = CASE WHEN ${FLIP} THEN excluded.labeled ELSE MAX(reports.labeled, excluded.labeled) END,
+    label = CASE WHEN ${FLIP} THEN excluded.label ELSE reports.label END
+  WHERE ${FLIP} OR (excluded.label = reports.label AND excluded.status <> reports.status AND excluded.status <> reports.latest AND excluded.labeled > reports.labeled)`;
+
 async function postReports(db, env, request, body, now) {
   if (body.v !== 1) return fail(400, 'unsupported version');
   if (!checkKey(body)) return fail(400, 'bad key');
@@ -401,16 +463,27 @@ async function postReports(db, env, request, body, now) {
   }
   const rejected = [];
   const valid = [];
+  const at = hourFloor(now);
+  const expCut = now - RULES.EXPIRY_DAYS * DAY;
   body.reports.forEach((it, i) => {
+    // day: the UTC day the reader labelled the post (0.11.0 on). A label older
+    // than the window is refused; a day later than arrival counts as the
+    // arrival hour, so a wrong clock can only make a label older.
+    const given = it && typeof it === 'object' ? it.day : undefined;
+    const labeledDay = given == null ? undefined : typeof given === 'string' ? dayStart(given) : null;
     const ok =
       it && typeof it === 'object' &&
       (it.label === 'slop' || it.label === 'not_slop') &&
       typeof it.handle === 'string' && HANDLE_RE.test(it.handle) &&
       typeof it.status === 'string' && ID_RE.test(it.status) &&
       (it.thread == null || (typeof it.thread === 'string' && ID_RE.test(it.thread))) &&
-      (it.hash == null || (typeof it.hash === 'string' && HASH_RE.test(it.hash)));
+      // 0.10.0 sends a hash of the post's words; it is checked and dropped, never stored.
+      (it.hash == null || (typeof it.hash === 'string' && HASH_RE.test(it.hash))) &&
+      labeledDay !== null &&
+      (labeledDay === undefined || labeledDay >= expCut);
     if (ok) {
-      valid.push({ label: it.label, handle: it.handle.toLowerCase(), status: it.status, thread: it.thread ?? null, hash: it.hash ?? null });
+      const labeled = labeledDay === undefined ? at : Math.min(labeledDay, at);
+      valid.push({ label: it.label, handle: it.handle.toLowerCase(), status: it.status, thread: it.thread ?? null, labeled });
     } else {
       rejected.push(it && typeof it.status === 'string' && ID_RE.test(it.status) ? it.status : `#${i}`);
     }
@@ -458,18 +531,7 @@ async function postReports(db, env, request, body, now) {
     if (offered > fit) stmts.push(unbump(db, 'report', reporter, day, offered - fit));
     accepted = valid.slice(0, fit);
     deferred = valid.slice(fit);
-    const at = hourFloor(now);
-    for (const r of accepted) {
-      stmts.push(
-        db
-          .prepare(
-            `INSERT INTO reports (reporter, status, handle, thread, hash, label, net, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(reporter, status) DO UPDATE SET label = excluded.label, handle = excluded.handle, thread = excluded.thread,
-               hash = excluded.hash, net = excluded.net, at = excluded.at`,
-          )
-          .bind(reporter, r.status, r.handle, r.thread, r.hash, r.label, net, at),
-      );
-    }
+    for (const r of accepted) stmts.push(db.prepare(VERDICT_UPSERT).bind(reporter, r.handle, r.status, r.thread, r.status, r.label, net, at, r.labeled));
     await db.batch(stmts);
   } catch (err) {
     try {
@@ -487,15 +549,32 @@ async function postReports(db, env, request, body, now) {
 async function postRetract(db, env, request, body) {
   if (body.v !== 1) return fail(400, 'unsupported version');
   if (!checkKey(body)) return fail(400, 'bad key');
-  if (!Array.isArray(body.statuses) || body.statuses.length < 1 || body.statuses.length > RULES.BATCH_MAX) {
-    return fail(400, `statuses must hold 1 to ${RULES.BATCH_MAX} items`);
+  const given = body.handles ?? [];
+  if (!Array.isArray(body.statuses) || body.statuses.length > RULES.BATCH_MAX || !Array.isArray(given) || given.length > RULES.BATCH_MAX) {
+    return fail(400, `statuses and handles must each hold at most ${RULES.BATCH_MAX} items`);
   }
+  if (body.statuses.length + given.length < 1) return fail(400, 'nothing to retract');
   const statuses = body.statuses.filter((s) => typeof s === 'string' && ID_RE.test(s));
-  if (!statuses.length) return json(200, { ok: true, removed: 0 });
+  const handles = given.filter((h) => typeof h === 'string' && HANDLE_RE.test(h)).map((h) => h.toLowerCase());
+  if (!statuses.length && !handles.length) return json(200, { ok: true, removed: 0 });
   const { reporter } = await identity(env, request, body.key);
-  const marks = statuses.map(() => '?').join(', ');
-  const r = await db.prepare(`DELETE FROM reports WHERE reporter = ? AND status IN (${marks})`).bind(reporter, ...statuses).run();
-  return json(200, { ok: true, removed: Number(r.meta.changes) });
+  const marks = (list) => list.map(() => '?').join(', ');
+  // A status withdraws the verdict when it is the verdict's post or the post of
+  // its newest label (so a cleared label's day never keeps counting); retracting
+  // any other post of the same account leaves the verdict as it is. A handle
+  // (0.11.0 on) withdraws the install's verdict on that account, whichever post
+  // it holds; the extension then sends the newest label it still keeps on it.
+  const stmts = [];
+  // Two statements, not one with the list twice: D1 binds at most 100 values
+  // per statement. The second sees only what the first left, so none is counted twice.
+  if (statuses.length) {
+    for (const col of ['status', 'latest']) {
+      stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND ${col} IN (${marks(statuses)})`).bind(reporter, ...statuses));
+    }
+  }
+  if (handles.length) stmts.push(db.prepare(`DELETE FROM reports WHERE reporter = ? AND handle IN (${marks(handles)})`).bind(reporter, ...handles));
+  const res = await db.batch(stmts);
+  return json(200, { ok: true, removed: res.reduce((n, r) => n + Number(r.meta.changes), 0) });
 }
 
 async function postForget(db, env, request, body) {
@@ -510,23 +589,30 @@ async function postForget(db, env, request, body) {
   return json(200, { ok: true, removed: Number(res[0].meta.changes) });
 }
 
+// A removal request names a listed account. While it stands (EXPIRY_DAYS),
+// only Slop labels made on later UTC days count for that account, so it
+// leaves the list at the next build and returns only if readers label it
+// again. One request per account counts in any EXPIRY_DAYS. Only the handle
+// and the hour are kept.
 async function postRemoval(db, env, request, raw, now) {
   const form = (request.headers.get('content-type') || '').toLowerCase().includes('application/x-www-form-urlencoded');
-  let data;
+  let given;
   if (form) {
-    const p = new URLSearchParams(raw);
-    data = { handle: p.get('handle'), reason: p.get('reason'), contact: p.get('contact') };
+    given = new URLSearchParams(raw).get('handle');
   } else {
-    data = parseJson(raw);
+    const data = parseJson(raw);
     if (!data) return fail(400, 'bad body');
+    given = data.handle;
   }
-  const handle = typeof data.handle === 'string' ? data.handle.trim().replace(/^@/, '') : '';
+  const handle = typeof given === 'string' ? given.trim().replace(/^@/, '') : '';
   if (!HANDLE_RE.test(handle)) return fail(400, 'bad handle');
-  const opt = (v, max) => (v == null || v === '' ? null : typeof v === 'string' && v.length <= max ? v : false);
-  const reason = opt(data.reason, 1000);
-  const contact = opt(data.contact, 200);
-  if (reason === false) return fail(400, 'reason too long');
-  if (contact === false) return fail(400, 'contact too long');
+  const h = handle.toLowerCase();
+  const answer = (result) => (form ? html(200, removalPage(h, result)) : json(200, { ok: true, handle: h, ...result }));
+
+  const expCut = now - RULES.EXPIRY_DAYS * DAY;
+  const standing = await db.prepare('SELECT at FROM removals WHERE handle = ? AND at >= ?').bind(h, expCut).first();
+  if (standing) return answer({ state: 'standing', since: dayOf(Number(standing.at)) });
+  if (!(await db.prepare('SELECT 1 AS x FROM listed WHERE handle = ?').bind(h).first())) return answer({ state: 'unlisted' });
 
   const { net } = await identity(env, request, null);
   const day = dayOf(now);
@@ -534,11 +620,23 @@ async function postRemoval(db, env, request, raw, now) {
     await unbump(db, 'removal', net, day, 1).run();
     return fail(429, 'too many removal requests from this network today', { retryAfter: msToMidnight(now) });
   }
-  const res = await db.batch([
-    db.prepare('INSERT INTO removals (handle, reason, contact, net, at) VALUES (?, ?, ?, ?, ?)').bind(handle.toLowerCase(), reason, contact, net, hourFloor(now)),
-  ]);
-  if (form) return html(200, thanksPage());
-  return json(200, { ok: true, id: Number(res[0].meta.last_row_id) });
+  if ((await bump(db, 'removal_all', '*', day, 1)) > RULES.REMOVALS_PER_DAY) {
+    await db.batch([unbump(db, 'removal', net, day, 1), unbump(db, 'removal_all', '*', day, 1)]);
+    return fail(429, 'too many removal requests today', { retryAfter: msToMidnight(now) });
+  }
+  // A request past its days can still be stored until the next build prunes it.
+  const put = await db
+    .prepare('INSERT INTO removals (handle, at) VALUES (?, ?) ON CONFLICT(handle) DO UPDATE SET at = excluded.at WHERE removals.at < ?')
+    .bind(h, hourFloor(now), expCut)
+    .run();
+  if (Number(put.meta.changes) === 0) {
+    // A request for the same account, made at the same moment, was stored first:
+    // this one takes no place in the day's limits.
+    await db.batch([unbump(db, 'removal', net, day, 1), unbump(db, 'removal_all', '*', day, 1)]);
+    const first = await db.prepare('SELECT at FROM removals WHERE handle = ?').bind(h).first();
+    return answer({ state: 'standing', since: dayOf(Number(first ? first.at : now)) });
+  }
+  return answer({ state: 'taken' });
 }
 
 // ---------- admin ----------
@@ -547,29 +645,28 @@ async function adminCandidates(db, url, now) {
   let limit = parseInt(url.searchParams.get('limit') ?? '', 10);
   if (!Number.isFinite(limit)) limit = 50;
   limit = Math.min(500, Math.max(1, limit));
-  const addCut = now - RULES.ADD_WAIT_HOURS * HOUR;
-  const expCut = now - RULES.EXPIRY_DAYS * DAY;
-  const ageCut = now - RULES.AGE_DAYS * DAY;
-  const { results } = await db
-    .prepare(
-      `SELECT r.handle AS handle,
-         COUNT(DISTINCT CASE WHEN r.label = 'slop' AND r.at <= ? AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ?) THEN r.reporter END) AS slop_reporters,
-         COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN r.reporter END) AS slop_reporters_all,
-         COUNT(DISTINCT CASE WHEN r.label = 'not_slop' AND r.at <= ? AND r.reporter IN (SELECT id FROM reporters WHERE first_seen <= ?) THEN r.reporter END) AS not_slop_reporters,
-         COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN COALESCE(r.thread, r.status) END) AS threads,
-         COUNT(DISTINCT CASE WHEN r.label = 'slop' THEN r.net END) AS nets,
-         MAX(CASE WHEN r.label = 'slop' THEN r.at END) AS newest,
+  const c = cuts(now);
+  const slop = slopSide(c);
+  const st = stood(c);
+  const { results } = await prep(
+    db,
+    sql`SELECT r.handle AS handle,
+         COUNT(CASE WHEN ${slop} AND ${st} THEN 1 END) AS slop_reporters,
+         COUNT(CASE WHEN r.label = 'slop' THEN 1 END) AS slop_reporters_all,
+         COUNT(CASE WHEN r.label = 'not_slop' AND ${st} THEN 1 END) AS not_slop_reporters,
+         COUNT(DISTINCT CASE WHEN ${slop} AND ${st} THEN COALESCE(r.thread, r.status) END) AS threads,
+         COUNT(DISTINCT CASE WHEN ${slop} AND ${st} THEN r.net END) AS nets,
+         MAX(CASE WHEN r.label = 'slop' THEN r.labeled END) AS newest,
          EXISTS (SELECT 1 FROM listed l WHERE l.handle = r.handle) AS listed,
-         (SELECT o.action FROM overrides o WHERE o.handle = r.handle) AS override
+         (SELECT o.action FROM overrides o WHERE o.handle = r.handle) AS override,
+         (SELECT q.at FROM removals q WHERE q.handle = r.handle AND q.at >= ${c.expCut}) AS removal_requested
        FROM reports r
-       WHERE r.at >= ?
+       WHERE ${inWindow(c)}
        GROUP BY r.handle
        HAVING slop_reporters_all > 0
        ORDER BY slop_reporters DESC, slop_reporters_all DESC, r.handle
-       LIMIT ?`,
-    )
-    .bind(addCut, ageCut, addCut, ageCut, expCut, limit)
-    .all();
+       LIMIT ${limit}`,
+  ).all();
   return json(200, {
     ok: true,
     candidates: results.map((r) => ({
@@ -582,18 +679,13 @@ async function adminCandidates(db, url, now) {
       newest: r.newest == null ? null : Number(r.newest),
       listed: !!Number(r.listed),
       override: r.override ?? null,
+      removal_requested: r.removal_requested == null ? null : Number(r.removal_requested),
     })),
   });
 }
 
 async function adminRoute(db, env, request, url, path, now) {
   const m = request.method;
-  if (path === '/v1/admin/removals' && m === 'GET') {
-    const status = url.searchParams.get('status') || 'open';
-    if (!['open', 'done', 'rejected'].includes(status)) return fail(400, 'bad status');
-    const { results } = await db.prepare('SELECT id, handle, reason, contact, at, status, note FROM removals WHERE status = ? ORDER BY id LIMIT 500').bind(status).all();
-    return json(200, { ok: true, removals: results });
-  }
   if (path === '/v1/admin/candidates' && m === 'GET') return adminCandidates(db, url, now);
   if (m !== 'POST') return null;
   if (path === '/v1/admin/rebuild') {
@@ -602,27 +694,23 @@ async function adminRoute(db, env, request, url, path, now) {
     if (cache) await cache.delete(listCacheKey(request.url));
     return json(200, { ok: true, ...stats });
   }
-  if (path === '/v1/admin/removal' || path === '/v1/admin/override') {
+  if (path === '/v1/admin/override') {
     const { text, tooBig } = await readBody(request);
     if (tooBig) return fail(413, 'body too large');
     const b = parseJson(text);
     if (!b) return fail(400, 'bad body');
     const note = typeof b.note === 'string' ? b.note.slice(0, 1000) : null;
-    if (path === '/v1/admin/removal') {
-      if (!Number.isInteger(b.id) || !['done', 'rejected'].includes(b.status)) return fail(400, 'bad id or status');
-      const r = await db.prepare('UPDATE removals SET status = ?, note = ? WHERE id = ?').bind(b.status, note, b.id).run();
-      return Number(r.meta.changes) ? json(200, { ok: true }) : fail(404, 'no such removal');
-    }
     const handle = typeof b.handle === 'string' ? b.handle.trim().replace(/^@/, '').toLowerCase() : '';
     if (!HANDLE_RE.test(handle)) return fail(400, 'bad handle');
     if (b.action === 'clear') {
       await db.prepare('DELETE FROM overrides WHERE handle = ?').bind(handle).run();
-    } else if (b.action === 'delist' || b.action === 'list') {
+    } else if (b.action === 'delist') {
       await db
-        .prepare('INSERT INTO overrides (handle, action, note, at) VALUES (?, ?, ?, ?) ON CONFLICT(handle) DO UPDATE SET action = excluded.action, note = excluded.note, at = excluded.at')
-        .bind(handle, b.action, note, now)
+        .prepare("INSERT INTO overrides (handle, action, note, at) VALUES (?, 'delist', ?, ?) ON CONFLICT(handle) DO UPDATE SET action = excluded.action, note = excluded.note, at = excluded.at")
+        .bind(handle, note, now)
         .run();
     } else {
+      // Every listed account is listed by readers, so there is no "list" override.
       return fail(400, 'bad action');
     }
     const stats = await build(db, env, now);

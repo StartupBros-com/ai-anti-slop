@@ -2,9 +2,9 @@
 // uses and refuses what D1 refuses (BEGIN/COMMIT, numbered parameters,
 // undefined bindings, more than 100 bound parameters).
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
-const MIGRATION = new URL('../migrations/0001_init.sql', import.meta.url);
+const MIGRATIONS = new URL('../migrations/', import.meta.url);
 
 function check(sql, params) {
   if (/^\s*(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b/i.test(sql)) throw new Error('D1 refuses transaction statements: ' + sql.slice(0, 20));
@@ -45,9 +45,14 @@ class Statement {
   }
 }
 
-export function makeDb() {
+// Every migration in name order, as `wrangler d1 migrations apply` runs them.
+// `upTo` stops after the named file, for tests of a migration itself.
+export function makeDb({ upTo } = {}) {
   const raw = new DatabaseSync(':memory:');
-  raw.exec(readFileSync(MIGRATION, 'utf8'));
+  for (const name of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) {
+    raw.exec(readFileSync(new URL(name, MIGRATIONS), 'utf8'));
+    if (name === upTo) break;
+  }
   return {
     raw,
     prepare: (sql) => new Statement(raw, sql),
@@ -65,3 +70,5 @@ export function makeDb() {
     },
   };
 }
+
+export const migrationText = (name) => readFileSync(new URL(name, MIGRATIONS), 'utf8');

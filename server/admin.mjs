@@ -10,12 +10,11 @@ const USAGE = `usage: node admin.mjs [--base URL] <command>
 
   status                          public counts, no token needed
   candidates [--limit N]          accounts with Slop reports, most reported first
-  removals [--status open|done|rejected]
-  resolve <id> done|rejected [note]
   delist <handle> [note]          always remove the account from the list
-  list <handle> [note]            always put the account on the list
   clear <handle>                  drop the override, back to the rule
   rebuild                         rebuild the list now
+
+Removal requests need no command: each one delists its account at the next build.
 
 Token: env ANTISLOP_ADMIN_TOKEN, else the file ~/.config/ai-anti-slop/admin-token.
 Default base: https://ai-anti-slop.startupbros.com`;
@@ -30,7 +29,7 @@ function parse(argv) {
   const pos = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--base' || a === '--limit' || a === '--status') {
+    if (a === '--base' || a === '--limit') {
       if (i + 1 >= argv.length) die(`${a} needs a value`);
       flags[a.slice(2)] = argv[++i];
     } else if (a === '-h' || a === '--help') {
@@ -91,17 +90,9 @@ switch (cmd) {
     await call(base, 'GET', '/v1/admin/candidates' + limit);
     break;
   }
-  case 'removals':
-    await call(base, 'GET', '/v1/admin/removals?status=' + encodeURIComponent(flags.status || 'open'));
-    break;
-  case 'resolve':
-    if (!a || !/^\d+$/.test(a) || !['done', 'rejected'].includes(b)) die('usage: resolve <id> done|rejected [note]');
-    await call(base, 'POST', '/v1/admin/removal', { body: { id: Number(a), status: b, note: note(...rest) } });
-    break;
   case 'delist':
-  case 'list':
-    if (!a) die(`usage: ${cmd} <handle> [note]`);
-    await call(base, 'POST', '/v1/admin/override', { body: { handle: a, action: cmd, note: note(b, ...rest) } });
+    if (!a) die('usage: delist <handle> [note]');
+    await call(base, 'POST', '/v1/admin/override', { body: { handle: a, action: 'delist', note: note(b, ...rest) } });
     break;
   case 'clear':
     if (!a) die('usage: clear <handle>');
