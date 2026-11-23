@@ -770,6 +770,52 @@ The same day, on the same code, the run under
 `scripts/store-screenshots.mjs` made the store images again (1,350 accounts on
 2 lists), which were looked at by eye.
 
+## Updating to 0.11.0, in Chromium
+
+On 2026-11-22 the 0.11.0 release branch (b7952ab) was loaded over an older
+version in headless Chromium 157 through playwright-core 1.65.1, each time in a
+fresh profile, by the same steps as the update from 0.8.0 above: the old
+version's files, state given through its own worker code, the browser closed,
+the profile's Service Worker cache deleted, the folder's files replaced, and the
+browser started again.
+
+**From 0.10.0** (the v0.10.0 release's extension files), with x.com, clankwall,
+levelsio and `ai-anti-slop.startupbros.com` answered by a local server, so
+nothing reached the real hosts: 28 of 28 checks passed, in two profiles.
+
+- Sharing on: 0.10.0 sent one label's report, with its hash, and the browser
+  was closed with two more queued, each with a hash. After the update the
+  extension kept its id, its permissions and hosts, every label and the
+  sharing code. One `/v1/retract` named the two queued accounts, then their
+  reports went as label, handle, post and page, with no hash and no day, as
+  `text/plain` with no cookie, and the queue emptied. No request carried a hash
+  or a post's words. A Hide as slop click after the update saved its label,
+  showed no sharing card, and its report had five fields, with its day.
+- Sharing never turned on: the label was kept, sharing stayed off with no
+  code, the next saved label showed the card, and nothing was posted.
+- Neither profile had page errors, worker errors or a request to another host.
+
+**From 0.8.0** (the v0.8.0 release's extension files, which the store served
+byte for byte except for its `update_url` line), against the real lists, with
+x.com mapped to a closed port: labels on, two `slop` labels and one `not_slop`
+label saved by 0.8.0's `saveLabel`, muting on as an account, and three mute
+entries. After the update the extension kept its id; the three labels, the
+label count, Also hide, Always show, the muting switch and account, and the
+mute record read back exactly. Recommended fetched 1,397 accounts: clankwall
+785, levelsio 613 and the readers' list 0. The granted permissions were the
+same, the only hosts asked were the three lists, with GETs, and there were no
+errors. The popup read "Muting as @…", "Today (UTC): 0 of 25 mutes, 0 of 50
+visits" and "On · 3 saved". The same run with muting switched on and no
+account named also kept everything, and its popup showed muting off.
+
+The same day `scripts/store-screenshots.mjs` made the store images again from
+that branch. The labels shot first came out with the sharing card over the
+thread, since it saves a label while sharing is unanswered; the script now
+answers the card before that shot. After that, every image was byte-identical
+to the committed one except the popup shot, which differs only in the list
+count (1,397 accounts where the committed image has 1,350), so the committed
+images stay.
+
 ## The hidden-post note and the sharing card in Chromium
 
 On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
@@ -925,9 +971,9 @@ shrink guard refusing an update of All flags or an added list over the network
 x.com, and a refresh of it after the first fetch. For Recommended: any of it in
 Brave or on real x.com, a real store update (the update above was made by hand
 in a scratch profile), a refresh after the first fetch, and its per-file
-guards over the network (the unit tests cover them). For the update from 0.8.0:
-the store's own update (files were swapped in one folder), a visit after it
-reaching x.com (the one above could not), and the userscript with the new lists
+guards over the network (the unit tests cover them). For the updates from 0.8.0
+and to 0.11.0: the store's own update (files were swapped in one folder), a
+visit after it reaching x.com (the one above could not), and the userscript with the new lists
 in a userscript manager. For the hidden-post note and the sharing card (after
 0.10.0): the loaded extension on real x.com (there the scripts were injected,
 and the loaded extension ran on fixtures), Brave, X's light and Dim themes (the
