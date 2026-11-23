@@ -411,6 +411,22 @@ test('Share and Not now send the choice and close the card; Details opens the se
   assert.deepEqual(e.consents, [], 'Escape answers nothing');
 });
 
+test('Share refused because the answer is already recorded says so, and any other refusal gives its reason', async () => {
+  const t = consentRun({ consent: () => ({ ok: false, reason: 'already answered' }) });
+  await settle();
+  await hideClick(t, '2');
+  click(t, card(t).querySelector('[data-xsh-consent-act="share"]'));
+  await settle();
+  assert.equal(card(t), null);
+  assert.equal(toastText(t), 'You have already answered this. Sharing can be turned on or off in settings.');
+  const o = consentRun({ consent: () => ({ ok: false, reason: 'Delete what I shared is running' }) });
+  await settle();
+  await hideClick(o, '2');
+  click(o, card(o).querySelector('[data-xsh-consent-act="share"]'));
+  await settle();
+  assert.equal(toastText(o), 'Sharing was not turned on: Delete what I shared is running');
+});
+
 test('a worker that does not ask gets no card; neither does the userscript or a mute job\'s tab', async () => {
   const quiet = runContent(page(CELLS()), { pathname: PAGE, state: stateWith([], { labeling: true }), labels: {}, clock: true });
   await settle();

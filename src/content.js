@@ -860,7 +860,7 @@
       return n;
     };
     el.appendChild(add('p', 'Share your labels with other readers?', { 'data-xsh-consent-title': '' }));
-    el.appendChild(add('p', 'Your slop labels can help build the readers\' list. Nothing is sent unless you press Share, and then only labels you make from now on.'));
+    el.appendChild(add('p', 'Your labels can help build the readers\' list. Nothing is sent unless you press Share, and then only labels you make from now on.'));
     for (const sec of L.shareDisclosure(host)) {
       el.appendChild(add('h3', sec.heading));
       const ul = document.createElement('ul');
@@ -903,7 +903,14 @@
         consentBusy = false;
         closeConsent();
         if (act === 'share') {
-          showToast(res && res.ok ? 'Sharing is on for labels you make from now on. Turn it off any time in settings.' : `Sharing was not turned on: ${(res && res.reason) || 'no answer'}`, false);
+          // 'already answered': another tab's card or the settings page got there first.
+          const why = (res && res.reason) || 'no answer';
+          const text = res && res.ok
+            ? 'Sharing is on for labels you make from now on. Turn it off any time in settings.'
+            : why === 'already answered'
+              ? 'You have already answered this. Sharing can be turned on or off in settings.'
+              : `Sharing was not turned on: ${why}`;
+          showToast(text, false);
         }
       });
   }

@@ -4810,11 +4810,23 @@ test('consent: the answer carries askShare only for a Slop label, with sharing o
   const done = fromPopup(forgetting, { type: 'xsh:share-forget' });
   await settleLong();
   // The record's answer is kept through a delete, so even a finished one does not ask again; here it has not ended.
-  const forgetStore = { ...forgetting.chrome.store['xsh:share'], asked: false };
+  const forgetStore = { ...forgetting.chrome.store['xsh:share'], asked: false, key: null };
   forgetting.chrome.store['xsh:share'] = forgetStore;
   assert.equal('askShare' in (await reply(send(forgetting, LABEL_MSG, 7))), false);
   release();
   await reply(done);
+});
+
+test('consent (planted negative): a 0.10.0 record with a code and sharing off counts as answered: no card, and the card\'s Share is refused', async () => {
+  // As 0.10.0 left it after sharing was turned on, used and turned off: a code, a sent count, no answer kept.
+  const old = { on: false, key: SKEY, queue: [], seq: 4, sent: 3, lastSentAt: 1, lastError: null, retryAt: null, fails: 0 };
+  const bg = shareBackground({ store: { 'xsh:share': old }, answer: takeAll });
+  assert.equal('askShare' in (await reply(send(bg, LABEL_MSG, 7))), false);
+  const before = structuredClone(bg.chrome.store);
+  assert.deepEqual(await reply(fromTab(bg, consent('share'))), { ok: false, reason: 'already answered' });
+  assert.deepEqual(bg.chrome.store, before);
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost), []);
 });
 
 test('consent: Not now records the answer and keeps sharing off; asking stops; a second consent message after an answer is refused', async () => {
@@ -4861,10 +4873,10 @@ test('consent: refused with no label saved, while sharing is on, for another cho
   }
   const sharing = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
   await reply(send(sharing, LABEL_MSG, 7));
-  const key = sharing.chrome.store['xsh:share'];
+  const kept = structuredClone(sharing.chrome.store);
   assert.equal((await reply(fromTab(sharing, consent('share')))).ok, false);
-  assert.notEqual(sharing.chrome.store['xsh:share'].asked, true);
-  assert.equal(sharing.chrome.store['xsh:share'].key, key.key);
+  assert.deepEqual(sharing.chrome.store, kept);
+  assert.equal(sharing.chrome.store['xsh:share'].key, SKEY);
 });
 
 test('consent: share-start, share-stop and share-forget stay own-pages-only: an x.com tab cannot send them', async () => {

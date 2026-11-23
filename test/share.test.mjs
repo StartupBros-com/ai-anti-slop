@@ -92,6 +92,9 @@ test('the stored record is read defensively: a bad key, a bad item or a bad numb
   // asked is true only when it is exactly true.
   for (const v of ['true', 1, {}, null, undefined, false]) assert.equal(L.shareState({ asked: v }).asked, false, String(v));
   assert.equal(L.shareState({ asked: true }).asked, true);
+  // A code means sharing was turned on once (0.10.0 kept no answer): answered.
+  assert.equal(L.shareState({ key: KEY, sent: 3 }).asked, true);
+  assert.equal(L.shareState({ key: 'not a key' }).asked, false);
   // Queueing keeps it.
   assert.equal(L.enqueueShare({ asked: true, key: KEY, on: true }, report('9')).asked, true);
 });

@@ -641,7 +641,7 @@ under it; the posts above it, which it replies to, get one like any other.
 
 ### The note
 
-A reply by an account that is on a list you have switched on does not vanish.
+A post by an account that is on a list you have switched on does not vanish.
 In its place the extension draws one line, about 32 px high: **Hidden: on**
 and the name of the first list that holds the account (for Recommended, the
 file that does: clankwall's AI flags, levelsio's list or the readers' list),

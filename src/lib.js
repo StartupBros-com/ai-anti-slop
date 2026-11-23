@@ -1467,8 +1467,10 @@
       held: key ? heldOf(s.held) : {},
       legacy: !!key && (s.legacy === true || (!hadHeld && int(s.sent) > 0)),
       // True once the user has answered the consent card, or turned sharing on
-      // or off on the settings page: they are not asked again.
-      asked: s.asked === true,
+      // or off on the settings page: they are not asked again. A code means
+      // sharing was turned on once, so a record from 0.10.0, which kept no
+      // answer, counts as answered.
+      asked: s.asked === true || key !== null,
     };
   }
 
