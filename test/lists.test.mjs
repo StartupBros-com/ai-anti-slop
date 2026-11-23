@@ -48,12 +48,17 @@ test('subscriptions: settings.lists overrides each built-in, and malformed lists
 });
 
 test('subscriptions: the AI list is locked on while muting is on, whatever lists says', () => {
-  const [, ai] = L.subscriptions({ muteEnabled: true, lists: { 'clankwall-ai': false } });
+  const [, ai] = L.subscriptions({ muteEnabled: true, muteAccount: 'reader', lists: { 'clankwall-ai': false } });
   assert.deepEqual([ai.on, ai.locked], [true, true]);
   const [, off] = L.subscriptions({ muteEnabled: false, lists: { 'clankwall-ai': false } });
   assert.deepEqual([off.on, off.locked], [false, false]);
-  const [, lockedDefault] = L.subscriptions({ muteEnabled: true });
+  const [, lockedDefault] = L.subscriptions({ muteEnabled: true, muteAccount: 'reader' });
   assert.deepEqual([lockedDefault.on, lockedDefault.locked], [true, true]);
+});
+
+test('subscriptions: an enabled mute flag without an account leaves the AI list unlocked', () => {
+  const [, ai] = L.subscriptions({ muteEnabled: true, lists: { 'clankwall-ai': false } });
+  assert.deepEqual([ai.on, ai.locked], [false, false]);
 });
 
 test('subscriptions: feedUrl is the AI list address', () => {
@@ -246,13 +251,19 @@ test('listOnPatch: built-ins write settings.lists, added lists their own entry',
 });
 
 test('listOnPatch: the AI list cannot be switched off while muting is on', () => {
-  const r = L.listOnPatch({ muteEnabled: true }, 'clankwall-ai', false);
+  const r = L.listOnPatch({ muteEnabled: true, muteAccount: 'reader' }, 'clankwall-ai', false);
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'Muting uses this list, so it stays on while muting is on.');
   assert.equal(r.patch, undefined);
-  assert.equal(L.listOnPatch({ muteEnabled: true }, 'clankwall-ai', true).ok, true);
-  assert.equal(L.listOnPatch({ muteEnabled: true }, 'clankwall-all', false).ok, true);
+  assert.equal(L.listOnPatch({ muteEnabled: true, muteAccount: 'reader' }, 'clankwall-ai', true).ok, true);
+  assert.equal(L.listOnPatch({ muteEnabled: true, muteAccount: 'reader' }, 'clankwall-all', false).ok, true);
   assert.equal(L.listOnPatch({ muteEnabled: false }, 'clankwall-ai', false).ok, true);
+});
+
+test('listOnPatch: the AI list can be switched off when the mute account is unset', () => {
+  assert.deepEqual(L.listOnPatch({ muteEnabled: true }, 'clankwall-ai', false), {
+    ok: true, patch: { lists: { 'clankwall-ai': false } },
+  });
 });
 
 test('listChanges: names the lists to fetch and the added lists that went', () => {
@@ -270,8 +281,8 @@ test('listChanges: names the lists to fetch and the added lists that went', () =
   assert.deepEqual(L.listChanges({ customLists: [u1] }, { customLists: [{ ...u1, on: false }] }), { on: [], gone: [] });
   assert.deepEqual(L.listChanges({ customLists: [{ ...u1, on: false }] }, { customLists: [u1] }), { on: ['u1'], gone: [] });
   // Muting turned on keeps the AI list on: nothing to fetch.
-  assert.deepEqual(L.listChanges({}, { muteEnabled: true }), { on: [], gone: [] });
-  assert.deepEqual(L.listChanges({ lists: { 'clankwall-ai': false } }, { muteEnabled: true }), { on: ['clankwall-ai'], gone: [] });
+  assert.deepEqual(L.listChanges({}, { muteEnabled: true, muteAccount: 'reader' }), { on: [], gone: [] });
+  assert.deepEqual(L.listChanges({ lists: { 'clankwall-ai': false } }, { muteEnabled: true, muteAccount: 'reader' }), { on: ['clankwall-ai'], gone: [] });
 });
 
 // --------------------------------------------------------------- NDJSON
