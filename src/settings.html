@@ -179,6 +179,9 @@
   .shareErr { margin-top: 6px; font-size: 13px; color: var(--bad); overflow-wrap: anywhere; text-wrap: pretty; }
   .backfill { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; font-size: 13px; cursor: pointer; }
   .backfill input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--fg); flex: none; }
+  .check { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; font-size: 13px; cursor: pointer; }
+  .check input { margin: 2px 0 0; width: 16px; height: 16px; accent-color: var(--fg); flex: none; }
+  .check + .hint { margin-left: 24px; }
   .shareLink { margin-top: 14px; font-size: 13px; }
   .shareLink a { display: inline-flex; align-items: center; gap: 4px; }
   button.armed { border-color: var(--bad); color: var(--bad); }
@@ -212,6 +215,8 @@
     <h3 class="group" id="ownH">Added by you</h3>
     <ul class="rows" id="ownRows" hidden></ul>
   </div>
+  <label class="check" for="hideFully"><input type="checkbox" id="hideFully"><span>Hide listed posts completely, with no note</span></label>
+  <p class="hint" id="hideFullyHint">Without this, a post by an account on a list that is on leaves a one-line note with Show and Not slop. Posts you hid yourself, and posts that tag a hidden bot, are always hidden completely.</p>
   <div class="add">
     <button type="button" class="text" id="addOpen" aria-expanded="false" aria-controls="addForm"><svg class="ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true" focusable="false"><path d="M12 5v14M5 12h14"/></svg>Add a list by address</button>
     <form id="addForm" hidden novalidate>
@@ -228,7 +233,7 @@
 
 <section id="share" aria-labelledby="shareH">
   <h2 id="shareH">Share your labels</h2>
-  <p class="lede">Your slop labels can help build the readers' list, one of Recommended's sources. An account goes on it once three or more readers, on two or more networks, have labelled its replies slop in two or more threads. A report counts a day after it is sent, from a browser whose first report reached the server a week or more before. Off unless you turn it on.</p>
+  <p class="lede">Your labels can help build the readers' list, one of Recommended's sources. An account goes on it once three or more readers, on two or more networks, have labelled its replies slop in two or more threads. A report counts a day after it is sent, from a browser whose first report reached the server a week or more before. Off unless you turn it on.</p>
   <div id="shareBody"></div>
   <div role="status"><p id="shareMsg" class="msg" hidden></p></div>
 </section>

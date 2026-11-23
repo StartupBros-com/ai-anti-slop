@@ -60,6 +60,7 @@ AI Anti-Slop hides posts on x.com by accounts on its Recommended list: clankwall
 
 HIDING
 - A post is hidden when its author is on a list you have switched on, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
+- A post hidden because its author is on a list leaves a one-line note, "Hidden: on" and the list's name, with Show (that post, this page only, nothing stored) and Not slop (labels it not slop and adds the account to Always show, with 6 seconds to undo). Posts you hid yourself, and posts that tag a hidden bot, are hidden completely. A setting on the settings page hides listed posts completely, with no note.
 - On an x.com tab, the popup counts what that tab hid. Pause hiding shows every post again.
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
@@ -67,7 +68,7 @@ LABELS
 - A Hide as slop icon sits in the header of each post, beside X's More menu, on the home timeline, search, profiles, lists and post pages. Posts by the account whose page is open have none, nor do your own once X shows who is logged in. The icon is on by default; turn it off in the popup under Label posts.
 - A click hides the post and adds the account to Also hide, with 6 seconds to undo. An undone click is never saved. A click on a filled icon removes the label.
 - A saved label keeps the post's text and link in this browser. Export labels saves them to a file.
-- Sharing is off until you turn it on in settings. While it is on, each label is sent to AI Anti-Slop's server as the author's handle, the post's id, the id of the post page it was on and the day it was made, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
+- Sharing is off until you turn it on in settings, or press Share on the card that appears once after your first saved Hide as slop. The card turns it on for labels you make from then on only. While it is on, each label is sent to AI Anti-Slop's server as the author's handle, the post's id, the id of the post page it was on and the day it was made, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
 
 SETTINGS FILES
 - Export your Always show and Also hide accounts, bot choices and tag setting to a file, or Also hide alone as a list of handles to share.

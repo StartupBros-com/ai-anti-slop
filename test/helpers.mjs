@@ -114,6 +114,8 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
   };
   const confirms = [];
   const saves = [];
+  const consents = [];
+  const opened = [];
   let labelSub = null;
   let presentFn = null;
   if (labels) {
@@ -131,6 +133,15 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     adapter.getLabels = (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, stored[id] || null])));
     adapter.subscribeLabels = (cb) => {
       labelSub = cb;
+    };
+    // The extension's own adapter has these two too; the userscript's has neither.
+    adapter.shareConsent = (choice) => {
+      consents.push(choice);
+      return Promise.resolve(labels.consent ? labels.consent(choice) : { ok: true });
+    };
+    adapter.openSettings = () => {
+      opened.push('settings');
+      return Promise.resolve({ ok: true });
     };
   }
   if (present) {
@@ -154,6 +165,8 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     MutationObserver: TestObserver,
     ...(chrome ? { chrome } : { XSlopHideAdapter: adapter }),
     console,
+    // Every page has URL; lib.js needs it to read a list added by address.
+    URL,
     setTimeout: fake ? fake.setTimeout : setTimeout,
     clearTimeout: fake ? fake.clearTimeout : clearTimeout,
     ...(styles ? { getComputedStyle: styles } : {}),
@@ -179,6 +192,8 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
     confirms,
     done,
     saves,
+    consents,
+    opened,
     labelChange: (id, label) => labelSub(id, label),
     present: () => presentFn(),
     window,
@@ -260,6 +275,8 @@ export function postWithCaret(opts) {
   return post(opts).replace('</article>', '<button data-testid="caret" aria-label="More">⋯</button></article>');
 }
 
-export function stateWith(handles, settings = {}) {
-  return { list: { handles, fetchedAt: 1 }, settings };
+// `names` maps a handle to the name of the list holding it, as the extension's
+// own adapter reads it (list.names).
+export function stateWith(handles, settings = {}, names = null) {
+  return { list: { handles, fetchedAt: 1, ...(names ? { names } : {}) }, settings };
 }

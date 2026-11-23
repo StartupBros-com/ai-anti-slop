@@ -1314,14 +1314,14 @@ test('background: a label is refused while labelling is off, and nothing is writ
 
 test('background: labels are on by default, so settings that never had the switch save one', async () => {
   const bg = labelBackground({ settings: {} });
-  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList', askShare: true });
   assert.equal(bg.chrome.store['xsh:label:2'].label, 'slop');
 });
 
 test('background: Slop saves the record and adds the account to Also hide once; Not slop adds it to Always show; clearing changes neither box', async () => {
   const bg = labelBackground({ settings: { labeling: true, allowlist: 'friend' } });
   const before = Date.now();
-  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList', askShare: true });
   const rec = bg.chrome.store['xsh:label:2'];
   assert.ok(rec.at >= before && rec.at <= Date.now());
   assert.deepEqual(
@@ -1343,7 +1343,7 @@ test('background: Slop saves the record and adds the account to Also hide once; 
   assert.equal(bg.chrome.store['xsh:labelCount'], 1);
   assert.deepEqual(bg.chrome.store['xsh:settings'], { labeling: true, allowlist: 'friend', extraList: 'reply_a' });
   // The same label from another tab adds and counts nothing more.
-  assert.deepEqual(await reply(send(bg, LABEL_MSG, 8)), { ok: true, label: 'slop', added: null });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 8)), { ok: true, label: 'slop', added: null, askShare: true });
   assert.equal(bg.chrome.store['xsh:labelCount'], 1);
   assert.equal(bg.chrome.store['xsh:settings'].extraList, 'reply_a');
   // Not slop: into Always show, and still in Also hide.
@@ -2957,7 +2957,7 @@ test('lists, fetching: a label, an Also hide edit, a bot row or muting on start 
     },
   });
   await startup(bg);
-  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList', askShare: true });
   await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], extraList: 'x1\nx2' } });
   await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], bots: { grok: 'show' } } });
   await bg.chrome.storage.local.set({ 'xsh:settings': { ...bg.chrome.store['xsh:settings'], muteEnabled: true, muteAccount: ME } });
@@ -4010,7 +4010,7 @@ test('Recommended: a label names the host of the file that holds the account, an
     source: AI_URL,
     store: { [REC_KEY]: recRecord(['aionly'], ['reply_a', 'lv_b']) },
   });
-  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList' });
+  assert.deepEqual(await reply(send(bg, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList', askShare: true });
   const rec = bg.chrome.store['xsh:label:2'];
   assert.deepEqual([rec.list, rec.lists, rec.hidden], ['blockedforaireply.levels.io', ['recommended'], true]);
   // An account in clankwall's file names clankwall, under both lists that hold it.
@@ -4729,4 +4729,227 @@ test('settings: Report a problem links to the issue chooser with the version and
   assert.equal(href, `${CHOOSER}?version=${VERSION}&browser=Brave%20158%20on%20Windows`);
   assert.ok(!href.includes('startupbros') && !href.includes(SHARE_KEY), 'no Muting as account and no sharing code');
   assert.equal(s.$('feedback').textContent, 'Report a problem or suggest something');
+});
+
+// ------------------------------------------------- consent, asked in place
+
+// A message from a content script in an x.com tab, as Chrome gives it: the
+// tab and the address of the frame.
+const fromTab = (bg, msg, url = 'https://x.com/op/status/1') =>
+  new Promise((resolve) => {
+    const keep = bg.chrome.runtime.onMessage.fire(msg, { tab: { id: 7 }, url }, resolve);
+    if (!keep.includes(true)) resolve(undefined);
+  });
+const consent = (choice) => ({ type: 'xsh:share-consent', choice });
+
+test('consent (planted negative): share from an x.com tab with sharing off and a label saved turns sharing on with an empty queue; the same message from anywhere else changes nothing', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  assert.equal((await reply(send(bg, LABEL_MSG, 7))).ok, true);
+  assert.equal(bg.chrome.store['xsh:share'], undefined);
+  assert.deepEqual(await reply(fromTab(bg, consent('share'))), { ok: true });
+  await settleLong();
+  const st = bg.chrome.store['xsh:share'];
+  assert.match(st.key, /^[0-9a-f]{32}$/);
+  assert.deepEqual([st.on, st.asked, st.queue], [true, true, []]);
+  // The label saved before the answer is not sent.
+  assert.deepEqual(bg.requests.filter(isPost), []);
+
+  const other = shareBackground({ answer: takeAll });
+  await reply(send(other, LABEL_MSG, 7));
+  const before = structuredClone(other.chrome.store);
+  const senders = [
+    { tab: { id: 7 }, url: 'https://example.com/x.com/' },
+    { tab: { id: 7 }, url: 'https://x.com.evil.example/home' },
+    { tab: { id: 7 }, url: 'http://x.com/home' },
+    { tab: { id: 7 } },
+    { tab: { id: 7 }, url: null },
+    { url: 'https://x.com/home' },
+    { id: EXT_ID, url: POPUP_URL },
+    {},
+  ];
+  for (const sender of senders) {
+    const got = await new Promise((resolve) => {
+      const keep = other.chrome.runtime.onMessage.fire(consent('share'), sender, resolve);
+      if (!keep.includes(true)) resolve(undefined);
+    });
+    assert.equal(got, undefined, JSON.stringify(sender));
+  }
+  await settleLong();
+  assert.deepEqual(other.chrome.store, before);
+  assert.deepEqual(other.requests.filter(isPost), []);
+  // Both x.com and twitter.com tabs are accepted.
+  for (const url of ['https://twitter.com/home', 'https://mobile.x.com/home', 'https://mobile.twitter.com/home']) {
+    const b = shareBackground({ answer: takeAll });
+    await reply(send(b, LABEL_MSG, 7));
+    assert.deepEqual(await reply(fromTab(b, consent('share'), url)), { ok: true }, url);
+  }
+});
+
+test('consent: the answer carries askShare only for a Slop label, with sharing off, no answer recorded and no delete running', async () => {
+  const slop = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(send(slop, LABEL_MSG, 7)), { ok: true, label: 'slop', added: 'extraList', askShare: true });
+  // Not slop, and clearing a label, do not ask.
+  assert.equal('askShare' in (await reply(send(slop, OTHER_MSG, 7))), false);
+  assert.equal('askShare' in (await reply(send(slop, { ...LABEL_MSG, label: null }, 7))), false);
+  // Sharing on.
+  const sharing = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  assert.equal('askShare' in (await reply(send(sharing, LABEL_MSG, 7))), false);
+  // An answer already recorded.
+  const asked = shareBackground({ store: { 'xsh:share': { on: false, asked: true } }, answer: takeAll });
+  assert.equal('askShare' in (await reply(send(asked, LABEL_MSG, 7))), false);
+  // Delete what I shared running.
+  let release;
+  const held = new Promise((r) => (release = r));
+  const forgetting = shareBackground({
+    store: { 'xsh:share': { on: true, key: SKEY, asked: true } },
+    answer: async (path) => {
+      await held;
+      return json(200, { ok: true, removed: 0 });
+    },
+  });
+  const done = fromPopup(forgetting, { type: 'xsh:share-forget' });
+  await settleLong();
+  // The record's answer is kept through a delete, so even a finished one does not ask again; here it has not ended.
+  const forgetStore = { ...forgetting.chrome.store['xsh:share'], asked: false, key: null };
+  forgetting.chrome.store['xsh:share'] = forgetStore;
+  assert.equal('askShare' in (await reply(send(forgetting, LABEL_MSG, 7))), false);
+  release();
+  await reply(done);
+});
+
+test('consent (planted negative): a 0.10.0 record with a code and sharing off counts as answered: no card, and the card\'s Share is refused', async () => {
+  // As 0.10.0 left it after sharing was turned on, used and turned off: a code, a sent count, no answer kept.
+  const old = { on: false, key: SKEY, queue: [], seq: 4, sent: 3, lastSentAt: 1, lastError: null, retryAt: null, fails: 0 };
+  const bg = shareBackground({ store: { 'xsh:share': old }, answer: takeAll });
+  assert.equal('askShare' in (await reply(send(bg, LABEL_MSG, 7))), false);
+  const before = structuredClone(bg.chrome.store);
+  assert.deepEqual(await reply(fromTab(bg, consent('share'))), { ok: false, reason: 'already answered' });
+  assert.deepEqual(bg.chrome.store, before);
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost), []);
+});
+
+test('consent: Not now records the answer and keeps sharing off; asking stops; a second consent message after an answer is refused', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  await reply(send(bg, LABEL_MSG, 7));
+  assert.deepEqual(await reply(fromTab(bg, consent('not-now'))), { ok: true });
+  const st = bg.chrome.store['xsh:share'];
+  assert.deepEqual([st.on, st.asked, st.key, st.queue], [false, true, null, []]);
+  assert.equal('askShare' in (await reply(send(bg, labelMsg('slop', '5', 'reply_b'), 7))), false);
+  const after = structuredClone(bg.chrome.store);
+  const refused = await reply(fromTab(bg, consent('share')));
+  assert.equal(refused.ok, false);
+  assert.deepEqual(bg.chrome.store, after);
+  assert.equal((await reply(fromTab(bg, consent('not-now')))).ok, false);
+  await settleLong();
+  assert.deepEqual(bg.requests.filter(isPost), []);
+  // After Share, a second message is refused too, and sharing stays as it was.
+  const on = shareBackground({ answer: takeAll });
+  await reply(send(on, LABEL_MSG, 7));
+  await reply(fromTab(on, consent('share')));
+  const key = on.chrome.store['xsh:share'].key;
+  assert.equal((await reply(fromTab(on, consent('share')))).ok, false);
+  assert.equal((await reply(fromTab(on, consent('not-now')))).ok, false);
+  assert.deepEqual([on.chrome.store['xsh:share'].on, on.chrome.store['xsh:share'].key], [true, key]);
+});
+
+test('consent: refused with no label saved, while sharing is on, for another choice, or while Delete what I shared runs; nothing changes', async () => {
+  const none = shareBackground({ answer: takeAll });
+  assert.equal((await reply(fromTab(none, consent('share')))).ok, false);
+  assert.equal(none.chrome.store['xsh:share'], undefined);
+  const labelled = shareBackground({ answer: takeAll });
+  await reply(send(labelled, LABEL_MSG, 7));
+  for (const msg of [consent('maybe'), consent(undefined), consent('SHARE'), consent(true), { type: 'xsh:share-consent' }, { ...consent('share'), backfill: true }]) {
+    const before = structuredClone(labelled.chrome.store);
+    const got = await reply(fromTab(labelled, msg));
+    if (msg.backfill) {
+      // Extra fields do not widen it: the labels already saved are still not queued.
+      assert.equal(got.ok, true);
+      assert.deepEqual(labelled.chrome.store['xsh:share'].queue, []);
+      break;
+    }
+    assert.equal(got.ok, false, JSON.stringify(msg));
+    assert.deepEqual(labelled.chrome.store, before);
+  }
+  const sharing = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(sharing, LABEL_MSG, 7));
+  const kept = structuredClone(sharing.chrome.store);
+  assert.equal((await reply(fromTab(sharing, consent('share')))).ok, false);
+  assert.deepEqual(sharing.chrome.store, kept);
+  assert.equal(sharing.chrome.store['xsh:share'].key, SKEY);
+});
+
+test('consent: share-start, share-stop and share-forget stay own-pages-only: an x.com tab cannot send them', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  await reply(send(bg, LABEL_MSG, 7));
+  const before = structuredClone(bg.chrome.store);
+  for (const type of ['xsh:share-start', 'xsh:share-stop', 'xsh:share-forget']) {
+    assert.equal(await fromTab(bg, { type, backfill: true }), undefined, type);
+  }
+  assert.deepEqual(bg.chrome.store, before);
+  assert.deepEqual(bg.requests.filter(isPost), []);
+});
+
+test('consent: turning sharing on or off from the settings page records that the user answered', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  assert.equal(bg.chrome.store['xsh:share'].asked, true);
+  const off = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(fromPopup(off, { type: 'xsh:share-stop' })), { ok: true });
+  assert.equal(off.chrome.store['xsh:share'].asked, true);
+  assert.equal('askShare' in (await reply(send(off, LABEL_MSG, 7))), false);
+  // Delete what I shared keeps the answer: the user is not asked again.
+  const gone = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY, asked: true } }, answer: takeAll });
+  assert.deepEqual(await reply(fromPopup(gone, { type: 'xsh:share-forget' })), { ok: true, removed: 0 });
+  assert.deepEqual([gone.chrome.store['xsh:share'].key, gone.chrome.store['xsh:share'].asked], [null, true]);
+});
+
+test('consent: Details opens the settings page at #share from an x.com tab only, and the manifest asks for no new permission', async () => {
+  const bg = shareBackground({ answer: takeAll });
+  assert.deepEqual(await reply(fromTab(bg, { type: 'xsh:open-settings' })), { ok: true });
+  assert.deepEqual(bg.chrome.tabs.opened.map((t) => t.url), [`chrome-extension://${EXT_ID}/src/settings.html#share`]);
+  for (const sender of [{ tab: { id: 7 }, url: 'https://example.com/' }, { tab: { id: 7 } }, { id: EXT_ID, url: POPUP_URL }, {}]) {
+    const got = await new Promise((resolve) => {
+      const keep = bg.chrome.runtime.onMessage.fire({ type: 'xsh:open-settings' }, sender, resolve);
+      if (!keep.includes(true)) resolve(undefined);
+    });
+    assert.equal(got, undefined, JSON.stringify(sender));
+  }
+  assert.equal(bg.chrome.tabs.opened.length, 1);
+  const manifest = JSON.parse(src('manifest.json'));
+  assert.deepEqual(manifest.permissions, ['storage', 'alarms']);
+  assert.deepEqual(manifest.host_permissions, ['https://clankwall.vogel.dev/*']);
+});
+
+test('userscript: a listed post is hidden completely, with no note, no Not slop button and no consent card', async () => {
+  const us = loadUserscript({ respond: gmOk('known_slop\n'), cells: [post({ author: 'known_slop', status: '1' }), post({ author: 'realhuman', status: '2' })] });
+  await settle();
+  const cell = us.document.querySelector('[data-fixture="1"]');
+  assert.equal(cell.hasAttribute('data-xsh-hidden'), true);
+  assert.equal(cell.hasAttribute('data-xsh-collapsed'), false);
+  for (const sel of ['[data-xsh-hidenote]', '[data-xsh-note-act]', '[data-xsh-consent]', '[data-xsh-label]', '[data-xsh-toast]', '#xsh-note-style', '#xsh-consent-style']) {
+    assert.equal(us.document.querySelector(sel), null, sel);
+  }
+  assert.equal(us.document.getElementById('xsh-style').textContent, '[data-xsh-hidden]{display:none!important}');
+});
+
+test('settings page: the hide-completely box shows what is stored, saves only itself, and stays out of the settings file', async () => {
+  const p = loadSettings({ 'xsh:list': LIST, 'xsh:settings': { allowlist: 'pal', hideFully: true } });
+  await settle();
+  assert.equal(p.$('hideFully').checked, true);
+  assert.match(p.document.querySelector('label[for="hideFully"]').textContent, /^Hide listed posts completely, with no note$/);
+  p.$('hideFully').checked = false;
+  p.$('hideFully').dispatchEvent(new p.document.defaultView.Event('change'));
+  await settle();
+  assert.deepEqual(p.chrome.store['xsh:settings'], { allowlist: 'pal', hideFully: false });
+  p.$('hideFully').checked = true;
+  p.$('hideFully').dispatchEvent(new p.document.defaultView.Event('change'));
+  await settle();
+  assert.deepEqual(p.chrome.store['xsh:settings'], { allowlist: 'pal', hideFully: true });
+  // Not part of a settings file.
+  assert.equal('hideFully' in lib.settingsExport(p.chrome.store['xsh:settings'], Date.now()), false);
+  assert.deepEqual([...lib.IMPORT_KEYS], ['allowlist', 'extraList', 'bots', 'hideBotMentions']);
+  const unset = loadSettings({ 'xsh:list': LIST, 'xsh:settings': {} });
+  await settle();
+  assert.equal(unset.$('hideFully').checked, false);
 });

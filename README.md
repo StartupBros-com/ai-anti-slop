@@ -212,6 +212,11 @@ userscript has no counter.
   listed accounts replying there are still hidden.
 - Handles in **Always show these accounts** are never hidden, and
   **Pause hiding** shows every post until you untick it.
+- In the extension, a post hidden because its author is on a list that is on
+  leaves a one-line note in its place (see [The note](#the-note)). Posts you
+  hid yourself with **Hide as slop**, accounts in **Also hide these accounts**
+  and posts that tag a hidden bot are hidden completely. The userscript has no
+  note; it hides completely.
 
 ### Bots
 
@@ -620,10 +625,10 @@ under it; the posts above it, which it replies to, get one like any other.
 - A hidden post's button is hidden with it, so a click moves keyboard focus
   to **Undo**. To label a hidden post, or remove its label, tick **Pause
   hiding** first.
-- Versions before 0.9.0 also drew a **Not slop** button, which added the
-  account to **Always show these accounts**. To always see an account now, add
-  it to Always show under **Your accounts**. Labels saved as Not slop are kept,
-  counted and exported; on such a post the button is drawn empty, and
+- Versions before 0.9.0 drew a **Not slop** button beside each post's
+  **Hide as slop**. 0.11.0 brings **Not slop** back in one place only, on the
+  note (see [The note](#the-note)). Labels saved as Not slop are kept, counted
+  and exported; on such a post the **Hide as slop** button is drawn empty, and
   clicking it labels the post slop. The account stays in Always show, where
   the Not slop click put it, so the post still shows, and the notice says so,
   until you take it out of that box.
@@ -633,6 +638,47 @@ under it; the posts above it, which it replies to, get one like any other.
   your own included, and a click on any of them saves nothing and says "Not
   saved: x.com has not shown who is logged in yet. Try again in a moment."
   That way your own handle never goes into Also hide.
+
+### The note
+
+A post by an account that is on a list you have switched on does not vanish.
+In its place the extension draws one line, about 32 px high: **Hidden: on**
+and the name of the first list that holds the account (for Recommended, the
+file that does: clankwall's AI flags, levelsio's list or the readers' list),
+then two buttons. A list you added by address is named "a list you added",
+never by its address, since the note is part of x.com's page. The note never
+says how many readers reported an account.
+
+- **Show** shows that one post, on this page only. Nothing is stored: when you
+  open another page, or reload, the post is hidden again.
+- **Not slop** (only while labels are on) labels the post not slop and adds the
+  account to **Always show these accounts**, so the post shows at once. It has
+  the same notice and 6 seconds to **Undo** as **Hide as slop**; **Undo** puts
+  the note back and saves nothing. With sharing on, a Not slop label is sent as
+  a report like any other (see [Sharing labels](#sharing-labels)).
+- Both are real buttons you can reach with the keyboard, and they ignore a
+  click made by a page's own script. After either one, focus moves to the
+  post's **Hide as slop** button, or to **Undo**.
+
+A post gets no note, and is hidden completely, when you tick **Hide listed
+posts completely, with no note** on the settings page, under **Lists** (it
+stays on this browser and is not part of a settings file); when hiding is
+paused (nothing is hidden then); in the userscript, which cannot save a label;
+in the tab the extension opens to mute; and when the account is in **Also
+hide** or its hide comes from a bot's row or a tag of a bot. The note changes
+none of the counts in the popup.
+
+### The first time you share
+
+The first time you save a **Hide as slop** click while sharing is off and you
+have not answered before, a card appears at the bottom right of the page. It
+lists what sharing sends and what it never sends, with three buttons.
+**Share** turns sharing on for labels you make from now on, and sends none of
+the labels already saved. **Not now** keeps it off and does not ask again.
+**Details** opens the sharing section of the settings page. **Esc** closes the
+card without an answer. The card is not modal, shows once per tab, and never
+appears in the userscript or in a tab opened to mute. Turning sharing on or off
+on the settings page counts as an answer too.
 
 Each post has one label record, keyed by its post id; the latest click wins.
 A record holds:
@@ -659,7 +705,9 @@ more") while saved ones can still be changed.
 ### Sharing labels
 
 Sharing is off unless you turn it on under **Share your labels** on the
-settings page, which the popup's **Share your labels** button opens. While it
+settings page, which the popup's **Share your labels** button opens, or by
+pressing **Share** on the card that appears after your first saved **Hide as
+slop** (see [The first time you share](#the-first-time-you-share)). While it
 is on, each label you save is sent to AI Anti-Slop's server at
 `ai-anti-slop.startupbros.com`, where enough agreeing labels put an account on
 the [readers' list](#lists). Turning it on offers to send the labels already

@@ -770,6 +770,93 @@ The same day, on the same code, the run under
 `scripts/store-screenshots.mjs` made the store images again (1,350 accounts on
 2 lists), which were looked at by eye.
 
+## The hidden-post note and the sharing card in Chromium
+
+On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
+as 4f84145, again from c28d086 after the card moved to the bottom right, and
+from f1bacdd after the review fixes (manifest 0.10.0), ran in headless
+Chromium 157.0.8103.50 through
+playwright-core 1.65.1, in a fresh profile, with real clicks. A local HTTPS
+server answered x.com, clankwall, levelsio and `ai-anti-slop.startupbros.com`
+with fixtures: clankwall's file held one account, levelsio's one confirmed
+account with evidence, and the readers' list one row. The thread fixture had a
+post and five replies, one by each listed account and two by accounts on no
+list. Nothing reached the real hosts. Each tree passed all 33 checks at 900
+by 900 pixels and at 360 by 640, with the same results.
+
+| Step | Result |
+|---|---|
+| Install | Recommended stored its three parts, one account in each |
+| The thread | Each listed post was replaced by a 32 px note naming the source that holds its account: "Hidden: on clankwall's AI flags", "Hidden: on levelsio's list" and "Hidden: on the readers' list". The posts themselves were not rendered. The posts on no list showed, each with its Hide as slop button |
+| Show | The post showed and its note went. Focus was on that post's Hide as slop button. Nothing was stored |
+| Not slop, sharing off | After the Undo window a `not_slop` label was saved, the account was added to Always show, and the post showed. Nothing was posted |
+| Hide as slop on a post on no list | The label was saved, then the card appeared: 560 px high (448 px at 360 by 640), inside the window, its text scrolling and its three buttons reachable |
+| Details | Opened `src/settings.html#share` in a new tab. The card stayed, and no answer was stored |
+| The card's two messages, sent from the settings page instead of x.com | Neither was answered. The share record was unchanged and no tab opened |
+| Share | Sharing was on with the answer stored (`"on":true,"asked":true`) and nothing queued, so the label made before Share was not shared. The notice read "Sharing is on for labels you make from now on. Turn it off any time in settings." |
+| Not slop on the readers'-list post, sharing on | One POST to `/v1/reports`, 36 s after the click, as `text/plain` with no cookie. Its report was `{"label":"not_slop","handle":"xsh_demo_rl","status":"3003","thread":"3000","day":"2026-11-23"}`: five fields, no hash and none of the post's words. The share record counted 1 sent with nothing waiting |
+| Hide listed posts completely | Ticking the box on the settings page took the open page's notes away at once. In a new tab the listed post was hidden with no note, and the two accounts on Always show showed |
+| Page errors, and requests outside the four hosts | None |
+
+## The hidden-post note and the sharing card on x.com
+
+On 2026-11-22 `src/lib.js` and `src/content.js` from c28d086 were injected
+through the DevTools protocol into a tab of Chrome 158.0.8127.42 on Windows,
+logged in to X, in X's dark theme. A stand-in for the extension's worker put a
+few accounts picked from the page on a list, and recorded saves and card
+answers instead of storing them. Every click was real mouse input, made after
+checking that the point was on our own button. The run went through the home
+timeline and a reply thread (51 cells, then 74 after scrolling into more
+replies) three times: at the window's own 2,559 by 1,358 pixels, and at 1,366
+by 768 and 1,920 by 1,080, each set before x.com loaded. All 32 checks passed
+each time. From f1bacdd, after the review fixes, the run at the window's own
+size passed all 32 again. An earlier tree, 4f84145, passed the 31 checks it
+had then at all three sizes, with the card at the bottom left.
+
+- Each listed post on screen got a one-line note naming its list, and the post
+  itself was not rendered. No cell overlapped another after the notes were
+  drawn, after Show, after Not slop, or after scrolling down and back.
+- The note's text took the post's own text colour, rgb(231, 233, 234) on black.
+- Show brought the post back, and X re-measured its cell. Focus stayed on the
+  post's Hide as slop button; a separate run found the same after Enter, 1.2 s
+  later. X fills in a revealed post's header icons a moment after Show, and
+  before the fix in 8f80627, moving the button into them sent focus to the
+  page.
+- Not slop's notice named the account and Always show, and one `not_slop`
+  label was saved after the window.
+- The card appeared after a saved Hide as slop. Before 8f80627 its buttons sat
+  below its 560 px fold. The row of buttons is now sticky, and since 4f84145 no
+  text shows under it. Every button was reachable.
+- The card covered none of X's own controls and none of the timeline column at
+  any of the three sizes; at 1,366 and 1,920 it lay over the sidebar.
+- With the card open, a second Hide as slop click landed on our button, and
+  the notice's Undo was on top and undid it, with nothing more saved. Details
+  asked for the settings page and left the card; Not now answered and closed
+  it.
+- No exception came from the injected scripts.
+
+The card first sat at the bottom left. Before it moved, the same day, x.com's
+home page was measured at seven window sizes, with nothing injected: how much
+of the timeline column's width a card of its size (380 px wide, at most 70% of
+the window's height or 560 px) would cover in each bottom corner, 16 px from
+the edges.
+
+| Window | Bottom left | Bottom right |
+|---|---|---|
+| 1,024 by 768 | 307 px | 61 px |
+| 1,280 by 720 | 121 px | 0 |
+| 1,366 by 768 | 78 px | 0 |
+| 1,440 by 900 | 41 px | 0 |
+| 1,536 by 864 | 0 | 0 |
+| 1,920 by 1,080 | 0 | 0 |
+| 2,559 by 1,358 | 0 | 0 |
+
+At the bottom left, the card also covered X's Post button and account menu at
+every size but the widest. At the bottom right it covered the sidebar's news,
+trends and who-to-follow, and no fixed control of X's: the only fixed parts of
+the page there were the left column and a layer the size of the window. So the
+card moved to the bottom right in c28d086.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -841,4 +928,11 @@ in a scratch profile), a refresh after the first fetch, and its per-file
 guards over the network (the unit tests cover them). For the update from 0.8.0:
 the store's own update (files were swapped in one folder), a visit after it
 reaching x.com (the one above could not), and the userscript with the new lists
-in a userscript manager.
+in a userscript manager. For the hidden-post note and the sharing card (after
+0.10.0): the loaded extension on real x.com (there the scripts were injected,
+and the loaded extension ran on fixtures), Brave, X's light and Dim themes (the
+note takes the post's text colour, read only on dark), X in other languages,
+x.com at phone widths (360 pixels was fixtures only), x.com in a right-to-left
+language (if X mirrors its layout there, its column with the Post button would
+be the one under the card), and the card's
+Share through the extension's own worker on real x.com.
