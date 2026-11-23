@@ -773,8 +773,9 @@ The same day, on the same code, the run under
 ## The hidden-post note and the sharing card in Chromium
 
 On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
-as 4f84145, and again from c28d086 after the card moved to the bottom right
-(manifest 0.10.0), ran in headless Chromium 157.0.8103.50 through
+as 4f84145, again from c28d086 after the card moved to the bottom right, and
+from f1bacdd after the review fixes (manifest 0.10.0), ran in headless
+Chromium 157.0.8103.50 through
 playwright-core 1.65.1, in a fresh profile, with real clicks. A local HTTPS
 server answered x.com, clankwall, levelsio and `ai-anti-slop.startupbros.com`
 with fixtures: clankwall's file held one account, levelsio's one confirmed
@@ -808,8 +809,9 @@ checking that the point was on our own button. The run went through the home
 timeline and a reply thread (51 cells, then 74 after scrolling into more
 replies) three times: at the window's own 2,559 by 1,358 pixels, and at 1,366
 by 768 and 1,920 by 1,080, each set before x.com loaded. All 32 checks passed
-each time. An earlier tree, 4f84145, passed the 31 checks it had then at all
-three sizes, with the card at the bottom left.
+each time. From f1bacdd, after the review fixes, the run at the window's own
+size passed all 32 again. An earlier tree, 4f84145, passed the 31 checks it
+had then at all three sizes, with the card at the bottom left.
 
 - Each listed post on screen got a one-line note naming its list, and the post
   itself was not rendered. No cell overlapped another after the notes were
