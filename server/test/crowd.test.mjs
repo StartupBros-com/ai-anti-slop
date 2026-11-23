@@ -58,8 +58,8 @@ test('3. planted negative: 50 reporters from one net never list; the 11th new in
 test('4. planted negative: third slop report at 23 h does not list, at 24 h it does', async () => {
   const w = world();
   await slopFrom(w, 'late', [1, 2], { when: OLD, nets: 2 });
-  await w.report(3, [{ label: 'slop', handle: 'late', status: '1003', thread: '503' }], { now: OLD, ip: '10.0.7.5' });
-  // Re-report (upsert) puts the third report's time at T0 - 23h.
+  // Install 3 is aged (it reported another account at OLD); its report on this one arrives at T0 - 23h.
+  await w.report(3, [{ label: 'slop', handle: 'other', status: '3003', thread: '3' }], { now: OLD, ip: '10.0.7.5' });
   await w.report(3, [{ label: 'slop', handle: 'late', status: '1003', thread: '503' }], { now: T0 - 23 * HOUR, ip: '10.0.7.5' });
   await w.buildAt();
   assert.deepEqual(await listed(w), []);
@@ -84,7 +84,7 @@ test('6. not slop counts like slop: 3 slop and 1 not slop lists; a second not sl
   await w.buildAt();
   assert.deepEqual(await listed(w), ['mixed']);
   // A fresh not_slop report from an aged install does not count until it is ADD_WAIT_HOURS old.
-  await w.report(5, [{ label: 'not_slop', handle: 'mixed', status: '9005', thread: '9' }], { now: OLD, ip: '10.9.9.8' });
+  await w.report(5, [{ label: 'slop', handle: 'other', status: '3005', thread: '9' }], { now: OLD, ip: '10.9.9.8' });
   const later = T0 + HOUR;
   await w.report(5, [{ label: 'not_slop', handle: 'mixed', status: '9005', thread: '9' }], { now: later, ip: '10.9.9.8' });
   await w.buildAt(later);
@@ -129,19 +129,17 @@ test('8. reports past 90 days are deleted at the build and stop counting', async
   assert.equal(w.count('SELECT COUNT(*) AS c FROM reports'), 0);
 });
 
-test('9. delist override removes at once via admin; list override adds; clear restores the rule', async () => {
+test('9. delist override removes at once via admin; a normal build keeps it; clear restores the rule', async () => {
   const w = world();
   await slopFrom(w, 'rule', [1, 2, 3], { when: OLD, nets: 2 });
   await w.buildAt();
   assert.deepEqual(await listed(w), ['rule']);
   assert.equal((await w.admin('POST', '/v1/admin/override', { handle: 'Rule', action: 'delist', note: 'checked' })).status, 200);
   assert.deepEqual(await listed(w), []);
-  assert.equal((await w.admin('POST', '/v1/admin/override', { handle: 'manual', action: 'list' })).status, 200);
-  assert.deepEqual(await listed(w), ['manual']);
-  await w.buildAt(T0 + HOUR); // a normal cron build keeps both overrides
-  assert.deepEqual(await listed(w, T0 + HOUR), ['manual']);
+  await w.buildAt(T0 + HOUR); // a normal cron build keeps the override
+  assert.deepEqual(await listed(w, T0 + HOUR), []);
+  assert.deepEqual(w.db.raw.prepare('SELECT handle, action, note FROM overrides').all().map((r) => ({ ...r })), [{ handle: 'rule', action: 'delist', note: 'checked' }]);
   await w.admin('POST', '/v1/admin/override', { handle: 'rule', action: 'clear' });
-  await w.admin('POST', '/v1/admin/override', { handle: 'manual', action: 'clear' });
   assert.deepEqual(await listed(w), ['rule']);
 });
 
@@ -248,7 +246,6 @@ test('14. admin auth and unconfigured secrets', async () => {
   assert.equal((await w.req('GET', '/v1/admin/candidates', { headers: { authorization: 'Bearer wrong' } })).status, 401);
   assert.equal((await w.req('POST', '/v1/admin/rebuild', { headers: { authorization: 'Basic ' + 'x' } })).status, 401);
   assert.equal((await w.admin('GET', '/v1/admin/candidates')).status, 200);
-  assert.equal((await w.admin('GET', '/v1/admin/removals?status=open')).status, 200);
   assert.equal((await w.admin('POST', '/v1/admin/rebuild')).status, 200);
 
   const noAdmin = world({ ADMIN_TOKEN: undefined });
@@ -307,25 +304,22 @@ test('16. list body is sorted, one JSON object per line, ends with a newline', a
   assert.equal((await w.req('GET', '/v1/list.ndjson', { headers: { 'if-none-match': etag } })).status, 304);
 });
 
-test('removal: JSON gets an id and is stored open; form gets HTML; sixth in a day is 429; limits enforced', async () => {
+test('removal: bad bodies and handles are 400; a request for a listed account delists it at the next build', async () => {
   const w = world();
-  const j = await w.req('POST', '/v1/removal', { body: { handle: '@Someone', reason: 'wrong', contact: 'me' }, ip: '192.0.2.1' });
-  assert.equal(j.status, 200);
-  assert.equal(j.json.id, 1);
-  const f = await w.req('POST', '/v1/removal', { raw: 'handle=other&reason=r&contact=', headers: { 'content-type': 'application/x-www-form-urlencoded' }, ip: '192.0.2.1' });
+  assert.equal((await w.req('POST', '/v1/removal', { raw: 'not json' })).status, 400);
+  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'bad handle' } })).status, 400);
+  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'waytoolonghandle1' } })).status, 400);
+  assert.equal((await w.req('POST', '/v1/removal', { body: {} })).status, 400);
+  await slopFrom(w, 'someone', [1, 2, 3], { when: OLD, nets: 2 });
+  await w.buildAt();
+  assert.deepEqual(await listed(w), ['someone']);
+  const f = await w.req('POST', '/v1/removal', { raw: 'handle=%40Someone&reason=r&contact=', headers: { 'content-type': 'application/x-www-form-urlencoded' }, ip: '192.0.2.1', now: T0 + HOUR });
   assert.equal(f.status, 200);
   assert.match(f.res.headers.get('content-type'), /text\/html/);
-  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'x', reason: 'r'.repeat(1001) } })).status, 400);
-  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'bad handle' } })).status, 400);
-  for (let i = 0; i < 3; i++) await w.req('POST', '/v1/removal', { body: { handle: 'n' + i }, ip: '192.0.2.200' });
-  assert.equal((await w.req('POST', '/v1/removal', { body: { handle: 'n9' }, ip: '192.0.2.99' })).status, 429);
-  const open = await w.admin('GET', '/v1/admin/removals?status=open');
-  assert.equal(open.json.removals.length, 5);
-  assert.equal(open.json.removals[0].handle, 'someone');
-  assert.equal((await w.admin('POST', '/v1/admin/removal', { id: 1, status: 'done', note: 'ok' })).status, 200);
-  assert.equal((await w.admin('GET', '/v1/admin/removals?status=done')).json.removals.length, 1);
-  assert.equal((await w.admin('POST', '/v1/admin/removal', { id: 999, status: 'done' })).status, 404);
-  assert.equal(w.count("SELECT COUNT(*) AS c FROM listed"), 0, 'a removal request never delists by itself');
+  assert.ok(f.text.includes('<h1>Request received</h1>'));
+  assert.deepEqual(await listed(w), ['someone'], 'the published list changes at the next build, not at once');
+  await w.buildAt(T0 + 2 * HOUR);
+  assert.deepEqual(await listed(w, T0 + 2 * HOUR), []);
 });
 
 test('pages, status and candidates', async () => {
@@ -335,7 +329,9 @@ test('pages, status and candidates', async () => {
   assert.match(home.res.headers.get('content-type'), /text\/html/);
   assert.match(home.text, /action="\/v1\/removal"/);
   assert.match(home.text, /rebuilt every six hours/);
-  assert.ok(home.text.includes('<li>Each install is at least 7 days old, and each report, Slop or Not slop, is at least 24 hours old.</li>'));
+  assert.ok(home.text.includes('<li>Each install is at least 7 days old, and each install\'s side, Slop or Not slop, has stood for at least 24 hours.</li>'));
+  assert.ok(home.text.includes('<input id="handle" name="handle"'));
+  assert.equal(/name="(reason|contact)"/.test(home.text), false, 'the form asks for the handle only');
   assert.equal(home.text.includes('http://') || /src=["']https?:/.test(home.text), false);
   assert.ok(home.text.includes('are open source. Their code, and the place to report a problem with either, are on <a href="https://github.com/StartupBros-com/ai-anti-slop">GitHub</a>.'), 'the page says where the code is');
   await slopFrom(w, 'cand', [1, 2], { when: OLD, nets: 2 });

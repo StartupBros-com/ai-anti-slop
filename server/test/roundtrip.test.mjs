@@ -45,12 +45,16 @@ test('round trip: reports the extension builds are taken whole, then retracted, 
   assert.equal(r.status, 200);
   assert.deepEqual([r.json.accepted, r.json.rejected, r.json.deferred], [['2', '3'], [], []]);
   assert.deepEqual([next.queue, next.sent, next.lastError, next.retryAt], [[], 2, null, null]);
-  const rows = w.db.raw.prepare('SELECT handle, status, thread, hash FROM reports ORDER BY status').all().map((x) => ({ ...x }));
+  const rows = w.db.raw.prepare('SELECT handle, status, thread FROM reports ORDER BY status').all().map((x) => ({ ...x }));
   assert.deepEqual(rows, [
-    { handle: 'reply_a', status: '2', thread: '1', hash: await L.textHash('great point, totally agree') },
-    { handle: 'reply_b', status: '3', thread: null, hash: null },
+    { handle: 'reply_a', status: '2', thread: '1' },
+    { handle: 'reply_b', status: '3', thread: null },
   ]);
-  assert.equal(JSON.stringify(w.db.raw.prepare('SELECT * FROM reports').all()).includes('great point'), false);
+  // The lib still sends a hash of the words; the server checks it and keeps neither.
+  assert.ok(next.sent && (await L.textHash('great point, totally agree')));
+  const kept = JSON.stringify(w.db.raw.prepare('SELECT * FROM reports').all());
+  assert.equal(kept.includes('great point'), false);
+  assert.equal(kept.includes(await L.textHash('great point, totally agree')), false);
   // Clearing the label sends a retraction, which the server applies and the lib drops.
   const back = await send(w, L.enqueueShare(next, { retract: '2' }));
   assert.deepEqual([back.r.status, back.r.json.ok, back.r.json.removed, back.next.queue], [200, true, 1, []]);
@@ -91,7 +95,7 @@ test('round trip: forget, in the body the background sends, removes what that in
   const w = world();
   let st = L.shareState({ key: KEY });
   st = await queued(st, label('reply_a', '2', '1'));
-  st = await queued(st, label('reply_a', '3', '4'));
+  st = await queued(st, label('reply_b', '3', '4'));
   await send(w, st);
   const r = await w.req('POST', '/v1/forget', { raw: JSON.stringify({ v: 1, key: KEY }), headers: { 'content-type': 'text/plain;charset=UTF-8' } });
   assert.deepEqual([r.status, r.json.ok, r.json.removed], [200, true, 2]);
