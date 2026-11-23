@@ -772,7 +772,7 @@ The same day, on the same code, the run under
 
 ## Updating to 0.11.0, in Chromium
 
-On 2026-11-22 the 0.11.0 release branch (b7952ab) was loaded over an older
+On 2026-11-22 (2026-11-23 UTC) the 0.11.0 release branch (b7952ab) was loaded over an older
 version in headless Chromium 157 through playwright-core 1.65.1, each time in a
 fresh profile, by the same steps as the update from 0.8.0 above: the old
 version's files, state given through its own worker code, the browser closed,
@@ -816,6 +816,17 @@ to the committed one except the popup shot, which differs only in the list
 count (1,397 accounts where the committed image has 1,350), so the committed
 images stay.
 
+On 2026-11-23 (UTC), for the 0.11.0 submit, screenshots 1 and 2 were made
+again to show the note. The script no longer puts the example's three spam
+accounts in Also hide, which hides a post completely: its local server answers
+the readers' list's address (`https://ai-anti-slop.startupbros.com/v1/list.ndjson`)
+with those three accounts, so each of their posts leaves the note "Hidden: on
+the readers' list" with Show and Not slop, and the captions say they were put
+on the readers' list for the picture. clankwall's and levelsio's files were
+the real ones (785 and 613 accounts), and the popup read "1400 accounts on 2
+lists". Screenshots 3 and 4 and the tile came out byte-identical to the
+committed ones; the labels shot is taken with hiding paused.
+
 ## The hidden-post note and the sharing card in Chromium
 
 On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
@@ -846,7 +857,7 @@ by 900 pixels and at 360 by 640, with the same results.
 
 ## The hidden-post note and the sharing card on x.com
 
-On 2026-11-22 `src/lib.js` and `src/content.js` from c28d086 were injected
+On 2026-11-22 (2026-11-23 UTC) `src/lib.js` and `src/content.js` from c28d086 were injected
 through the DevTools protocol into a tab of Chrome 158.0.8127.42 on Windows,
 logged in to X, in X's dark theme. A stand-in for the extension's worker put a
 few accounts picked from the page on a list, and recorded saves and card

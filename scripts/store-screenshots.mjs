@@ -11,9 +11,13 @@
 // - x.com is answered by a local HTTPS server with example threads by made-up
 //   accounts (every handle starts with xsh_demo_). The page keeps the markup the
 //   content script reads but is styled plainly, without X's look or logo.
-// - The list is the real one: the extension downloads it from
-//   clankwall.vogel.dev, as it does after any install, so the popup shows the
-//   real count. The example's spam accounts are put in Also hide.
+// - Recommended is on, as after any install. Two of its three files are the
+//   real ones, downloaded from clankwall.vogel.dev and
+//   blockedforaireply.levels.io. The third, the readers' list at
+//   ai-anti-slop.startupbros.com, is answered by the same local server with
+//   the example's three spam accounts, so their posts leave the note a listed
+//   post leaves ("Hidden: on the readers' list"). The popup's count is the
+//   real files' count plus those three.
 // - Opened as a page, the popup is its own active tab, so its "This tab" line
 //   is pointed at the example x.com tab. The numbers in it are the content
 //   script's own.
@@ -61,6 +65,9 @@ const PEOPLE = {
   xsh_demo_bot4: ['Elena | daily wins', '#9333ea'],
 };
 const SPAM = ['xsh_demo_bot1', 'xsh_demo_bot2', 'xsh_demo_bot3'];
+const CROWD_HOST = 'ai-anti-slop.startupbros.com';
+// The readers' list's address, as Recommended names the file it came from.
+const CROWD_LIST = `https://${CROWD_HOST}/v1/list.ndjson`;
 const OP_TEXT = 'Shipped my first browser extension this weekend. Two days from idea to a working build.';
 const THREADS = {
   // The hiding shots: three spam replies among three real ones.
@@ -232,6 +239,12 @@ try {
 
   server = https.createServer({ key: readFileSync(join(stage, 'key.pem')), cert: readFileSync(join(stage, 'cert.pem')) }, (req, res) => {
     const path = new URL(req.url, 'https://x.com').pathname;
+    if (String(req.headers.host || '').split(':')[0] === CROWD_HOST) {
+      // The readers' list, in the server's own line format.
+      if (path !== '/v1/list.ndjson') return void res.writeHead(404, { 'content-type': 'text/plain' }).end('Not part of the example.');
+      const body = SPAM.map((h) => JSON.stringify({ username: h, reporters: 3, since: '2026-11-20' })).join('\n') + '\n';
+      return void res.writeHead(200, { 'content-type': 'application/x-ndjson; charset=utf-8', 'access-control-allow-origin': '*' }).end(body);
+    }
     const id = Object.keys(THREADS).find((k) => threadPath(k) === path);
     if (id) res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }).end(threadPage(id));
     else res.writeHead(404, { 'content-type': 'text/plain' }).end('Not part of the example.');
@@ -272,8 +285,9 @@ try {
   ctx = await launch(udd, [
     `--disable-extensions-except=${ext}`,
     `--load-extension=${ext}`,
-    // Only x.com and twitter.com are answered locally; the list host is real.
-    `--host-resolver-rules=MAP x.com 127.0.0.1:${port}, MAP twitter.com 127.0.0.1:${port}`,
+    // x.com, twitter.com and the readers' list are answered locally; the
+    // clankwall and levelsio hosts are real.
+    `--host-resolver-rules=MAP x.com 127.0.0.1:${port}, MAP twitter.com 127.0.0.1:${port}, MAP ${CROWD_HOST} 127.0.0.1:${port}`,
     '--ignore-certificate-errors',
   ]);
   const page = ctx.pages()[0] || (await ctx.newPage());
@@ -296,7 +310,16 @@ try {
   if (!list.handles.length) throw new Error(`the list did not download: ${list.lastError}`);
   if (SPAM.concat('xsh_demo_bot4').some((h) => list.handles.includes(h))) throw new Error('an example handle is on the real list; pick others');
   console.log(`list: ${list.handles.length} handles from ${list.source}`);
-  await setSettings({ extraList: SPAM.join('\n') });
+  // Recommended, with the readers' list holding the example's spam accounts.
+  const rec = await until(async () => {
+    const r = (await local('xsh:list:recommended'))['xsh:list:recommended'];
+    const crowd = r && Array.isArray(r.parts) && r.parts.find((p) => p && p.source === CROWD_LIST);
+    return crowd && SPAM.every((h) => crowd.handles.includes(h)) ? r : null;
+  }, 30000, "Recommended with the example's readers' list");
+  for (const p of rec.parts) {
+    if (p.source !== CROWD_LIST && SPAM.concat('xsh_demo_bot4').some((h) => p.handles.includes(h))) throw new Error(`an example handle is on ${p.source}; pick others`);
+    console.log(`recommended part: ${p.handles.length} handles from ${p.source}`);
+  }
 
   // ---- 1. the same thread paused and hiding
   const x = await ctx.newPage();
@@ -304,6 +327,8 @@ try {
   await x.goto(`https://x.com${threadPath(1000)}`);
   const hiddenNow = (n) => x.waitForFunction((k) => document.querySelectorAll('[data-xsh-hidden]').length === k, n, { timeout: 15000 });
   await hiddenNow(SPAM.length);
+  // Each listed post leaves its one-line note.
+  await x.waitForFunction((k) => document.querySelectorAll('[data-xsh-hidenote]').length === k, SPAM.length, { timeout: 15000 });
   await sleep(300);
   const on = await x.screenshot();
   await setSettings({ paused: true });
@@ -404,13 +429,13 @@ try {
   };
   await shoot(
     'screenshot-1-hide.png',
-    frame('Hide AI spam accounts on X', 'Posts by accounts on the Recommended list, or by accounts you add, are hidden from the page.', 'Example thread with made-up accounts.', panel(paused, 40, 580, ['Paused', '#d97706']) + panel(on, 660, 580, ['Hiding on', '#e11d48'])),
+    frame('Hide AI spam accounts on X', 'A post by an account on the Recommended list folds into a one-line note, with Show and Not slop.', "Example thread with made-up accounts, put on the readers' list for this picture.", panel(paused, 40, 580, ['Paused', '#d97706']) + panel(on, 660, 580, ['Hiding on', '#e11d48'])),
     1280,
     800,
   );
   await shoot(
     'screenshot-2-popup.png',
-    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. Lists refresh every 6 hours, or when you click the arrow.', 'Example thread with made-up accounts.', panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
+    frame('See what was hidden, pause any time', 'The popup counts what this tab hid. Lists refresh every 6 hours, or when you click the arrow.', "Example thread with made-up accounts, put on the readers' list for this picture.", panel(on, 40, 580) + popupTop(top, 660, 580, 1.4)),
     1280,
     800,
   );
