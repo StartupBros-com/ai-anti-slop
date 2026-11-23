@@ -287,13 +287,25 @@ test('posts that tag a hidden bot are hidden only while hideBotMentions is on', 
 });
 
 test('a mention hide is not a sighting and does not count the author as hidden', async () => {
-  const t = runContent(mentionPage(), { state: stateWith(LIST, { muteEnabled: true, hideBotMentions: true }) });
+  const t = runContent(mentionPage(), { state: stateWith(LIST, { muteEnabled: true, muteAccount: 'startupbros', hideBotMentions: true }) });
   await tick();
   const s = t.content.stats();
   assert.equal(s.hiddenMentions, 2, 'posts 1 and 4: friend is not on the allowlist here');
   assert.equal(s.hiddenPosts, 1, 'post 6, by @grok');
   assert.deepEqual(Array.from(s.hiddenAuthors), ['grok']);
   assert.deepEqual(t.sightings, ['grok'], "only @grok's own post; the background decides whether it may be muted");
+});
+
+// Muting is on only with an account named (L.mutingOn): switched on with none
+// set, the page notes no sighting for the background to mute.
+test('no sighting is noted while muting is switched on with no account named', async () => {
+  const none = runContent(mentionPage(), { state: stateWith(LIST, { muteEnabled: true, hideBotMentions: true }) });
+  await tick();
+  assert.deepEqual(none.sightings, []);
+  assert.deepEqual(Array.from(none.content.stats().hiddenAuthors), ['grok'], 'the post is still hidden');
+  const named = runContent(mentionPage(), { state: stateWith(LIST, { muteEnabled: true, muteAccount: 'startupbros', hideBotMentions: true }) });
+  await tick();
+  assert.deepEqual(named.sightings, ['grok']);
 });
 
 // Planted negative: before the sidebar shows who is logged in, the user's own

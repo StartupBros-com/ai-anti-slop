@@ -504,7 +504,7 @@ function watchShown(t, status) {
 }
 
 test('Slop hides the account at once; nothing is saved, counted or sighted until its 6 s end; then it is saved as before and sighted once', async () => {
-  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true }), labels: { worker: true }, clock: true });
+  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true, muteAccount: 'startupbros' }), labels: { worker: true }, clock: true });
   await settle();
   const before = snapshot(t);
   click(t, button(t, '2', 'slop'));
@@ -540,7 +540,7 @@ test('Slop hides the account at once; nothing is saved, counted or sighted until
 });
 
 test("the storage change may arrive before the worker's answer: the reply stays hidden and is sighted once", async () => {
-  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true }), labels: { worker: true }, clock: true });
+  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true, muteAccount: 'startupbros' }), labels: { worker: true }, clock: true });
   await settle();
   click(t, button(t, '2', 'slop'));
   const shown = watchShown(t, '2');
@@ -556,7 +556,7 @@ test("the storage change may arrive before the worker's answer: the reply stays 
 });
 
 test('Undo puts the page back as it was, and nothing is ever saved or sighted; a scripted click on Undo is ignored and nothing in the notice reaches X', async () => {
-  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true }), labels: { worker: true }, clock: true });
+  const t = runContent(page(UNDO_THREAD), { pathname: PAGE, state: on({ muteEnabled: true, muteAccount: 'startupbros' }), labels: { worker: true }, clock: true });
   await settle();
   const before = snapshot(t);
   const types = ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup'];

@@ -296,12 +296,13 @@ seconds after.
   install, until you switch it off. AI flags is on too, so its file is
   downloaded once for each list.
 - **The readers' list** is the part of Recommended that AI Anti-Slop's server
-  builds from the labels readers chose to [share](#sharing-labels). An account
-  is on it once three or more installs, on two or more networks, have labelled
-  its posts slop in two or more threads, and at least three times as many
-  installs labelled it slop as not slop, counting only reports a day old or
-  more from installs whose first report reached the server a week or more
-  before. It is empty until that first happens. It is not a list of its own on the settings page, so
+  builds from the labels readers chose to [share](#sharing-labels). Each
+  install counts once per account, by its newest label on any of the account's
+  posts. An account is on it once three or more installs, on two or more
+  networks, say slop about posts in two or more threads, and at least three
+  times as many installs say slop as not slop, counting only installs that have
+  said so for a day or more and whose first report reached the server a week or
+  more before. It is empty until that first happens. It is not a list of its own on the settings page, so
   switching Recommended off stops its download too.
 - **AI flags** is the list AI Anti-Slop has always used, with 787 accounts on
   2026-11-19. Muting uses it alone, so it stays switched on while muting is
@@ -662,26 +663,40 @@ settings page, which the popup's **Share your labels** button opens. While it
 is on, each label you save is sent to AI Anti-Slop's server at
 `ai-anti-slop.startupbros.com`, where enough agreeing labels put an account on
 the [readers' list](#lists). Turning it on offers to send the labels already
-saved too (**Also share the N labels already saved**), unticked.
+saved too (**Also share the newest saved label for N accounts**), unticked.
 
 - A report holds the label, the author's handle, the post's id, the id of the
   post page it was labelled on (none on other pages; the server then counts
-  the post as its own thread) and a hash of the post's words. The words
+  the post as its own thread) and the UTC day it was labelled. Version 0.10.0
+  also sent a hash of the post's words; 0.11.0 does not. The words
   themselves, the label's other fields, your settings and your X handle are
   never sent. With them goes a random code made when you first turn sharing
   on, so the server can count one install once and delete its reports. The
   settings page lists all of it before the button.
-- Labels go about 30 seconds after they are saved, up to 50 in a request.
-  While sharing is on, clearing a label, or **Delete all labels**, takes its
-  report back; with sharing off, reports already sent stay. When the
-  server cannot be reached, the request waits 30 minutes; when it asks to
-  wait (past 100 reports from one install in a UTC day, say), it waits as long
-  as it is told, up to 26 hours. At most 4,000 reports wait at once; past
-  that the oldest are dropped.
+- Labels go about 30 seconds after they are saved, up to 50 in a request,
+  the newest day first. The server keeps one entry for each account you
+  labelled, your newest label on it. Turning sharing on with **Also share**
+  ticked sends one report for each account, its newest label, from the last 88
+  days. While sharing is on, clearing a label takes back what the server keeps
+  for that account and sends your newest remaining label on it, if there is
+  one; **Delete all labels** takes back each account once. The extension
+  remembers, for each account, the side and day the server last confirmed;
+  when a label is about to go and the server may hold the other side, it takes
+  the account back first, so the newest label is what the server keeps even
+  after sharing was off while you changed a label. A code made by 0.10.0 kept
+  no such record, so each account is taken back once before its first label
+  from 0.11.0. With sharing off, reports already sent stay. When the server
+  cannot be reached or answers with an error, the request waits 30 minutes,
+  then twice as long for each failure in a row, up to 6 hours, each wait made
+  up to 25% shorter or longer at random; when it asks to wait (past 100 reports
+  from one install in a UTC day, say), it waits at least as long as it is told,
+  up to 26 hours, plus up to an hour at random. At most 4,000 reports wait at
+  once; past that the reports of the oldest days are dropped first.
 - The popup says whether sharing is on and how many reports it has sent.
 - **Turn off sharing** stops sending and drops what is waiting. **Delete what
   I shared** also deletes, on the server, every report from this install, and
-  then the random code. Reports left on the server are deleted after 90 days.
+  then the random code. What is left on the server about an account is
+  deleted 90 days after this install's newest label on it.
 
 The server's code is in [`server/`](server/), with its rules and what it
 stores in [server/README.md](server/README.md). What it keeps is in
@@ -744,14 +759,16 @@ The removal routes for the first two are those sites' own, below.
 
 The readers' list is this project's. Its server builds it from shared labels
 by the rule under [Lists](#lists), every six hours, and drops an account
-once too few of its reports are left: a report is deleted after 90 days.
-Its maintainers can also add an account or take one off by hand, and each
-build that adds or removes an account is published at
+once too few readers' labels on it are left: an install's say on an account is
+deleted 90 days after its newest label there. Its maintainers can take an
+account off by hand, nobody can add one by hand, and each build that adds or
+removes an account is published at
 `https://ai-anti-slop.startupbros.com/v1/changes`. If you think an account is
-on it by mistake, the form on `https://ai-anti-slop.startupbros.com/` sends a
-removal request, which a maintainer reads; sending one does not remove the
-account by itself. An entry means readers reported the account, not that it
-posts AI replies.
+on it by mistake, the form on `https://ai-anti-slop.startupbros.com/` takes it
+off at the next build, within six hours, with nobody reading the request; for
+90 days after, only labels made on later days count for it, so it comes back
+only if readers keep labelling its posts slop. An entry means readers reported
+the account, not that it posts AI replies.
 
 The AI flags list is clankwall's, not this project's. clankwall's homepage says "Flags
 aren’t proof of AI use." and states no licence or uptime terms. AI Anti-Slop
@@ -844,7 +861,8 @@ The privacy policy, with what each storage key holds, is
   **Export labels**, and, only while sharing is on, as reports without the
   post's text. Removing the extension deletes them, but not reports already
   shared; **Delete what I shared** does that. Sharing's own record (its random
-  code and the reports waiting to go) is `xsh:share`.
+  code, the reports waiting to go and the side the server confirmed for each
+  account) is `xsh:share`.
 - **Report a problem**, in the popup, and **Report a problem or suggest
   something**, on the settings page, open GitHub's new-issue page in a new tab
   when you click one, with the extension's version and your browser's name,
@@ -1043,8 +1061,8 @@ userscript manager. Hiding leaves nothing to undo. Removing the extension
 deletes your labels and settings, so export them first if you want them
 (**Export labels**, and **Export settings** under **Export or import**). It
 does not delete labels you shared from AI Anti-Slop's server: click **Delete
-what I shared** on the settings page first, or they are deleted 90 days after
-they were sent. The mutes
+what I shared** on the settings page first, or what the server keeps about
+each account is deleted 90 days after your newest label on it. The mutes
 AI Anti-Slop made stay on your X account; unmute them on X at
 `x.com/settings/muted/all`. To see
 which accounts it muted, read the record before removing the extension: click
