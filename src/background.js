@@ -851,14 +851,16 @@ async function saveLabel(msg) {
     n = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith(L.LABEL_PREFIX)).length;
     if (n >= max) return { ok: false, reason: `${max} labels saved: export and delete them to add more` };
   }
-  // The account's labels as stored before this one, to tell whether it changes
-  // the side the account is on.
-  const before = sharing ? L.labelsFrom(await chrome.storage.local.get(null)) : null;
   const writes = { [key]: r.record, [K.labelCount]: had ? n : n + 1 };
   const patch = L.labelPatch(s, r.handle, r.label);
   if (patch) writes[K.settings] = Object.assign({}, s, patch);
   await chrome.storage.local.set(writes);
-  if (sharing) await queueShare(L.shareItemsOnSave(before, r.record));
+  // Its report replaces any queued for the account; if the server holds the
+  // other side, the send takes the account back first (L.shareBatch).
+  if (sharing) {
+    const report = L.reportOf(r.record);
+    if (report) await queueShare([report]);
+  }
   return { ok: true, label: r.label, added: patch ? Object.keys(patch)[0] : null };
 }
 

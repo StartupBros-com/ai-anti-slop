@@ -679,9 +679,13 @@ saved too (**Also share the newest saved label for N accounts**), unticked.
   ticked sends one report for each account, its newest label, from the last 88
   days. While sharing is on, clearing a label takes back what the server keeps
   for that account and sends your newest remaining label on it, if there is
-  one; a label that changes the account from slop to not slop, or the reverse,
-  does the same before it is sent; **Delete all labels** takes back each
-  account once. With sharing off, reports already sent stay. When the server
+  one; **Delete all labels** takes back each account once. The extension
+  remembers, for each account, the side and day the server last confirmed;
+  when a label is about to go and the server may hold the other side, it takes
+  the account back first, so the newest label is what the server keeps even
+  after sharing was off while you changed a label. A code made by 0.10.0 kept
+  no such record, so each account is taken back once before its first label
+  from 0.11.0. With sharing off, reports already sent stay. When the server
   cannot be reached or answers with an error, the request waits 30 minutes,
   then twice as long for each failure in a row, up to 6 hours, each wait made
   up to 25% shorter or longer at random; when it asks to wait (past 100 reports
@@ -857,7 +861,8 @@ The privacy policy, with what each storage key holds, is
   **Export labels**, and, only while sharing is on, as reports without the
   post's text. Removing the extension deletes them, but not reports already
   shared; **Delete what I shared** does that. Sharing's own record (its random
-  code and the reports waiting to go) is `xsh:share`.
+  code, the reports waiting to go and the side the server confirmed for each
+  account) is `xsh:share`.
 - **Report a problem**, in the popup, and **Report a problem or suggest
   something**, on the settings page, open GitHub's new-issue page in a new tab
   when you click one, with the extension's version and your browser's name,

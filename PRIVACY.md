@@ -64,7 +64,7 @@ Sync does not copy it to other devices.
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post. Labels are on unless you turn them off; nothing is saved until you click. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
-| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code; **Delete what I shared** removes the code once the server confirms the delete. |
+| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), for each account a report went for, the side and day the server last confirmed (or that it holds nothing, or that this is not known), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code and the confirmed sides; **Delete what I shared** removes them once the server confirms the delete. |
 
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
 the account being visited, the handle muting runs as, and the id of the tab it
@@ -212,9 +212,12 @@ made close together go in one request of up to 50, the newest day first. When
 you turn sharing on, the labels already saved are sent too only if you tick
 **Also share the newest saved label for N accounts**: one report for each
 account, its newest label, from the last 88 days (the server takes none more
-than 90 days old). While sharing is on, a new label on the other side than your
-newest label on that account (slop after not slop, or the reverse) first takes
-back what the server keeps for the account, then sends the new one. Clearing a
+than 90 days old). The extension keeps, for each account, the side and day the
+server last confirmed for it; when a label is about to be sent and the server
+may hold the other side (slop where the label says not slop, or the reverse),
+or what it holds is not known, the account is first taken back, then the label
+sent. A code made by 0.10.0 kept no such record, so each of its accounts is
+taken back once before its first label from 0.11.0. Clearing a
 label takes back what the server keeps for that account, then sends your newest
 remaining label on it, if there is one from the last 88 days. **Delete all
 labels** takes back each account once. A retraction names the account's

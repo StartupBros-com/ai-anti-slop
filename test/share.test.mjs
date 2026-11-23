@@ -51,7 +51,7 @@ test('a label makes a report of its label, account, post id, the id of the post 
 });
 
 test('the stored record is read defensively: a bad key, a bad item or a bad number is dropped', () => {
-  assert.deepEqual(L.shareState(null), { on: false, key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null, fails: 0 });
+  assert.deepEqual(L.shareState(null), { on: false, key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null, fails: 0, held: {}, legacy: false });
   const st = L.shareState({
     on: 'true',
     key: KEY.toUpperCase(),
@@ -83,6 +83,8 @@ test('the stored record is read defensively: a bad key, a bad item or a bad numb
     lastError: null,
     retryAt: null,
     fails: 0,
+    held: {},
+    legacy: false,
   });
   assert.equal(L.shareState({ fails: 3 }).fails, 3);
   assert.equal(L.shareState({ fails: 1.5 }).fails, 0);
@@ -107,18 +109,25 @@ test('a 0.10.0 queue item (a hash, no day) survives the update and is sent with 
   assert.deepEqual([next.queue, next.sent, next.fails], [[], 3, 0]);
 });
 
-test('the queue keeps one item per post, the last word on it: a retraction replaces a report and a report a retraction', () => {
+test('the queue keeps one item per post, the last word on it: a retraction replaces a report and a report a retraction; and one report per account', () => {
   let st = L.shareState({ key: KEY });
   st = L.enqueueShare(st, report('2'));
   // A hash in the item is not kept: 0.11.0 sends none.
-  st = L.enqueueShare(st, report('3', { label: 'not_slop', thread: null, day: '2026-11-20', hash: 'a'.repeat(16) }));
+  st = L.enqueueShare(st, report('3', { handle: 'reply_b', label: 'not_slop', thread: null, day: '2026-11-20', hash: 'a'.repeat(16) }));
   st = L.enqueueShare(st, { retract: '2' });
   assert.deepEqual(st.queue, [
-    { op: 'report', label: 'not_slop', handle: 'reply_a', status: '3', thread: null, day: '2026-11-20', seq: 2 },
+    { op: 'report', label: 'not_slop', handle: 'reply_b', status: '3', thread: null, day: '2026-11-20', seq: 2 },
     { op: 'retract', status: '2', seq: 3 },
   ]);
   st = L.enqueueShare(st, report('2', { label: 'not_slop' }));
   assert.deepEqual(st.queue.map((i) => [i.op, i.status, i.label, i.seq]), [['report', '3', 'not_slop', 2], ['report', '2', 'not_slop', 4]]);
+  // The server keeps one verdict per account, so a report replaces the one
+  // queued for the same account, whichever post it was about.
+  st = L.enqueueShare(st, report('7', { handle: 'reply_b', label: 'slop' }));
+  assert.deepEqual(st.queue.map((i) => [i.op, i.handle, i.status, i.label]), [['report', 'reply_a', '2', 'not_slop'], ['report', 'reply_b', '7', 'slop']]);
+  // A retraction of a post leaves the account's report on another post.
+  st = L.enqueueShare(st, { retract: '3' });
+  assert.deepEqual(st.queue.map((i) => [i.op, i.status]), [['report', '2'], ['report', '7'], ['retract', '3']]);
   // Anything that is not a report the server takes is not queued.
   for (const bad of [report('x'), report('4', { label: 'meh' }), report('4', { handle: 'not a handle' }), report('4', { day: '2026-13-01' }), report('4', { day: 'today' }), report('4', { thread: 'p' }), { retract: 'p' }, { retractHandle: 'not a handle' }, { retractHandle: '' }, null]) {
     assert.deepEqual(L.enqueueShare(st, bad), st);
@@ -137,7 +146,7 @@ test('a request holds up to 50 retractions while any are queued, else up to 50 r
   assert.equal(L.shareBatch(L.shareState({})), null, 'no key, nothing to send');
   let st = L.shareState({ key: KEY });
   assert.equal(L.shareBatch(st), null, 'nothing queued');
-  for (let i = 1; i <= 60; i++) st = L.enqueueShare(st, report(String(i)));
+  for (let i = 1; i <= 60; i++) st = L.enqueueShare(st, report(String(i), { handle: `acct_${i}` }));
   st = L.enqueueShare(st, { retract: '99' });
   const r = L.shareBatch(st);
   assert.deepEqual([r.path, r.key, r.body], ['/v1/retract', KEY, { v: 1, key: KEY, statuses: ['99'] }]);
@@ -148,7 +157,7 @@ test('a request holds up to 50 retractions while any are queued, else up to 50 r
   const b = L.shareBatch(st);
   assert.equal(b.path, '/v1/reports');
   assert.equal(b.body.reports.length, 50);
-  assert.deepEqual(b.body.reports[0], { label: 'slop', handle: 'reply_a', status: '1', thread: '1' }, 'an undated report sends no day');
+  assert.deepEqual(b.body.reports[0], { label: 'slop', handle: 'acct_1', status: '1', thread: '1' }, 'an undated report sends no day');
   assert.deepEqual(Object.keys(b.body).sort(), ['key', 'reports', 'v']);
   assert.equal(L.DEFAULTS.shareBatch, 50);
 });
@@ -161,7 +170,7 @@ test('the time to UTC midnight', () => {
 test('an answer of 200: taken and malformed items leave, put-off items stay until the time given, "#n" names the nth item', () => {
   const NOW = Date.UTC(2026, 10, 21, 12, 0, 0);
   let st = L.shareState({ key: KEY });
-  for (const s of ['1', '2', '3', '4']) st = L.enqueueShare(st, report(s));
+  for (const s of ['1', '2', '3', '4']) st = L.enqueueShare(st, report(s, { handle: `acct_${s}` }));
   const batch = L.shareBatch(st);
   const next = L.shareResult(st, batch, { status: 200, body: { ok: true, accepted: ['1'], rejected: ['#1'], deferred: ['3'], retryAfter: 5000 } }, NOW, R0);
   // '4' was not named at all: it is not kept for ever.
@@ -309,11 +318,9 @@ test('a request holds at most 50 post retractions and 50 account retractions', (
 
 test('reports go newest day first, the undated (0.10.0) after the dated, ties in the order queued', () => {
   let st = L.shareState({ key: KEY });
-  st = L.enqueueShare(st, report('1', { day: '2026-11-01' }));
-  st = L.enqueueShare(st, report('2', { day: null }));
-  st = L.enqueueShare(st, report('3', { day: '2026-11-20' }));
-  st = L.enqueueShare(st, report('4', { day: '2026-11-01' }));
-  st = L.enqueueShare(st, report('5', { day: '2026-11-10' }));
+  for (const [id, day] of [['1', '2026-11-01'], ['2', null], ['3', '2026-11-20'], ['4', '2026-11-01'], ['5', '2026-11-10']]) {
+    st = L.enqueueShare(st, report(id, { handle: `acct_${id}`, day }));
+  }
   assert.deepEqual(L.shareBatch(st).items.map((i) => i.status), ['3', '5', '1', '4', '2']);
   assert.deepEqual(L.shareBatch(st).body.reports.map((r) => r.day), ['2026-11-20', '2026-11-10', '2026-11-01', '2026-11-01', undefined]);
 });
@@ -329,22 +336,22 @@ test('past shareQueueMax the reports of the oldest days go first, undated ones b
   const isoDay = (ms) => new Date(ms).toISOString().slice(0, 10);
   // Reports on days from 2026-01-02 on (a later number, a later day), the first one undated.
   const dayN = (i) => isoDay(Date.UTC(2026, 0, 1) + i * 86400000);
-  let st = full((i) => report(String(i), { day: i === 1 ? null : dayN(i) }));
-  st = L.enqueueShare(st, report('90000', { day: '2030-12-31' }));
+  let st = full((i) => report(String(i), { handle: `acct_${i}`, day: i === 1 ? null : dayN(i) }));
+  st = L.enqueueShare(st, report('90000', { handle: 'acct_90000', day: '2030-12-31' }));
   assert.equal(st.queue.length, max);
   assert.equal(st.queue.some((i) => i.status === '1'), false, 'the undated one went first');
   assert.equal(st.queue.some((i) => i.status === '90000'), true, 'the newest stays');
-  st = L.enqueueShare(st, report('90001', { day: '2030-12-30' }));
+  st = L.enqueueShare(st, report('90001', { handle: 'acct_90001', day: '2030-12-30' }));
   assert.equal(st.queue.some((i) => i.status === '2'), false, 'then the oldest day');
   assert.equal(st.queue.some((i) => i.status === '3'), true);
   // A backfill past the cap, newest first, keeps its first ones: the newest labels are never the ones dropped.
   let bf = L.shareState({ key: KEY });
-  for (let i = 0; i < max + 5; i++) bf = L.enqueueShare(bf, report(String(1000 + i), { day: isoDay(Date.UTC(2026, 10, 22) - i * 86400000) }));
+  for (let i = 0; i < max + 5; i++) bf = L.enqueueShare(bf, report(String(1000 + i), { handle: `acct_${1000 + i}`, day: isoDay(Date.UTC(2026, 10, 22) - i * 86400000) }));
   assert.equal(bf.queue.length, max);
   assert.equal(bf.queue.some((i) => i.status === '1000'), true);
   assert.equal(bf.queue.some((i) => i.status === String(1000 + max + 4)), false);
   // Retractions stay while a report is there to drop.
-  let mixed = full((i) => (i % 2 ? report(String(i), { day: '2026-11-01' }) : { retract: String(i) }));
+  let mixed = full((i) => (i % 2 ? report(String(i), { handle: `acct_${i}`, day: '2026-11-01' }) : { retract: String(i) }));
   mixed = L.enqueueShare(mixed, { retractHandle: 'acct_x' });
   assert.equal(mixed.queue.filter((i) => i.op !== 'report').length, max / 2 + 1);
   // Retractions only: the one queued first goes.
@@ -408,7 +415,7 @@ test('a 429 or a put-off report never comes back before the time the server gave
   assert.equal(L.shareResult(st, b, { status: 429, body: { retryAfter: 1e15 } }, NOW11, () => 1).retryAt, NOW11 + 26 * 3600000 + 3600000);
 });
 
-test('backfill: one report per account; the latest day wins, a tie on the day goes to Not slop, then the later time; the newest come first', () => {
+test('backfill: one report per account, the one labelled last (Not slop only when made at the same moment); the newest come first', () => {
   const t = (d, h) => Date.UTC(2026, 10, d, h, 0, 0);
   const recs = [
     post('acct_a', '1', { at: t(10, 9) }),
@@ -419,12 +426,20 @@ test('backfill: one report per account; the latest day wins, a tie on the day go
     post('acct_c', '6', { at: t(15, 1), label: 'not_slop' }),
     post('acct_c', '7', { at: t(15, 3), label: 'not_slop' }),
     post('acct_c', '8', { at: t(14, 23) }),
+    // Not slop in the morning, Slop later the same day: Slop is the newer.
+    post('acct_d', '9', { at: t(11, 8), label: 'not_slop' }),
+    post('acct_d', '10', { at: t(11, 10) }),
+    // Made at the same moment: Not slop.
+    post('acct_e', '11', { at: t(9, 7) }),
+    post('acct_e', '12', { at: t(9, 7), label: 'not_slop' }),
   ];
   const reps = L.backfillReports(recs, NOW11);
   assert.deepEqual(reps.map((r) => [r.handle, r.status, r.label, r.day]), [
     ['acct_c', '7', 'not_slop', '2026-11-15'],
     ['acct_b', '5', 'slop', '2026-11-12'],
+    ['acct_d', '10', 'slop', '2026-11-11'],
     ['acct_a', '2', 'not_slop', '2026-11-10'],
+    ['acct_e', '12', 'not_slop', '2026-11-09'],
   ]);
   // The same answer whatever the order the records come in.
   assert.deepEqual(L.backfillReports([...recs].reverse(), NOW11), reps);
@@ -441,27 +456,125 @@ test('backfill leaves out a label more than shareBackfillDays (88) before today,
   assert.deepEqual(L.backfillReports([post('acct_e', '6', { at: undefined })], NOW11), []);
 });
 
-test('saving a label: the report alone when the account stays on one side, a retraction of the account first when it changes side', () => {
-  const t = (d) => Date.UTC(2026, 10, d, 9, 0, 0);
-  const slop1 = post('acct_a', '1', { at: t(10) });
-  const notSlop2 = post('acct_a', '2', { at: t(12), label: 'not_slop' });
-  const rep = (rec) => L.reportOf(rec);
-  // The first label on an account: nothing to take back.
-  assert.deepEqual(L.shareItemsOnSave([], slop1), [rep(slop1)]);
-  assert.deepEqual(L.shareItemsOnSave([post('other_b', '9', { at: t(11), label: 'not_slop' })], slop1), [rep(slop1)], 'another account does not count');
-  // The same side as the newest label: the report alone.
-  const third = post('acct_a', '3', { at: t(14) });
-  assert.deepEqual(L.shareItemsOnSave([slop1], third), [rep(third)]);
-  // The other side than the newest label: the account's verdict is taken back first.
-  assert.deepEqual(L.shareItemsOnSave([slop1, notSlop2], third), [{ retractHandle: 'acct_a' }, rep(third)]);
-  // What counts is the newest label, not the oldest or the post's own: Slop, then Not slop (newest), then Slop on the first post again.
-  const again = post('acct_a', '1', { at: t(14) });
-  assert.deepEqual(L.shareItemsOnSave([slop1, notSlop2], again), [{ retractHandle: 'acct_a' }, rep(again)]);
-  // The post's own earlier label on the other side is the newest: a change of side.
-  const redo = post('acct_a', '1', { at: t(14), label: 'not_slop' });
-  assert.deepEqual(L.shareItemsOnSave([slop1], redo), [{ retractHandle: 'acct_a' }, rep(redo)]);
-  // Not a label: nothing.
-  assert.deepEqual(L.shareItemsOnSave([slop1], { label: 'meh' }), []);
+test('sending: an account is taken back first only when the server may hold the other side or what it holds is unknown', () => {
+  const NOW = Date.UTC(2026, 10, 22, 12, 0, 0);
+  const D21 = Date.UTC(2026, 10, 21);
+  const held = { acct_s: { s: 'slop', l: Date.UTC(2026, 10, 19) }, acct_n: { s: 'not_slop', l: D21 }, acct_u: 'unknown', acct_g: 'none' };
+  let st = L.shareState({ key: KEY, held });
+  assert.deepEqual(st.held, held);
+  for (const [h, label] of [['acct_s', 'slop'], ['acct_n', 'slop'], ['acct_u', 'slop'], ['acct_g', 'not_slop'], ['acct_new', 'not_slop']]) {
+    st = L.enqueueShare(st, report(`1${st.seq}`, { handle: h, label, day: '2026-11-21' }));
+  }
+  // acct_n is held on the other side and acct_u is unknown; the rest go alone.
+  const first = L.shareBatch(st);
+  assert.deepEqual([first.path, first.items, first.handles, first.body], ['/v1/retract', [], ['acct_n', 'acct_u'], { v: 1, key: KEY, statuses: [], handles: ['acct_n', 'acct_u'] }]);
+  st = L.shareResult(st, first, { status: 200, body: { ok: true, removed: 2 } }, NOW);
+  assert.equal(st.queue.length, 5, 'taking back sends no report, so all stay queued');
+  assert.deepEqual(Object.keys(st.held).sort(), ['acct_g', 'acct_s'], 'what was taken back holds nothing');
+  const reports = L.shareBatch(st);
+  assert.equal(reports.path, '/v1/reports');
+  assert.deepEqual(reports.body.reports.map((r) => r.handle), ['acct_s', 'acct_n', 'acct_u', 'acct_g', 'acct_new']);
+  st = L.shareResult(st, reports, { status: 200, body: { ok: true, accepted: reports.items.map((i) => i.status), rejected: [], deferred: [] } }, NOW);
+  assert.deepEqual(st.held, {
+    acct_s: { s: 'slop', l: D21 },
+    acct_g: { s: 'not_slop', l: D21 },
+    acct_n: { s: 'slop', l: D21 },
+    acct_u: { s: 'slop', l: D21 },
+    acct_new: { s: 'not_slop', l: D21 },
+  });
+  assert.equal(L.shareBatch(st), null);
+  // Next time, a change of side on acct_s is taken back first; a same-side report on acct_n is not.
+  st = L.enqueueShare(st, report('31', { handle: 'acct_s', label: 'not_slop', day: '2026-11-22' }));
+  st = L.enqueueShare(st, report('32', { handle: 'acct_n', label: 'slop', day: '2026-11-22' }));
+  assert.deepEqual(L.shareBatch(st).handles, ['acct_s']);
+});
+
+test('sending: held is kept for each report the server may have taken, whatever the answer, and never for one it put off or refused', () => {
+  const NOW = Date.UTC(2026, 10, 22, 12, 0, 0);
+  const D20 = Date.UTC(2026, 10, 20);
+  const queued = () => {
+    let st = L.shareState({ key: KEY });
+    for (const h of ['acct_a', 'acct_b', 'acct_c']) st = L.enqueueShare(st, report(`2${st.seq}`, { handle: h, day: '2026-11-20' }));
+    return st;
+  };
+  const st = queued();
+  const b = L.shareBatch(st);
+  // No answer, a 5xx, a 429, a 200 that is not ok: the server may have taken them all.
+  for (const res of [{ status: 0 }, { status: 503, body: null }, { status: 429, body: { retryAfter: 60000 } }, { status: 200, body: { ok: false } }]) {
+    const next = L.shareResult(st, b, res, NOW, R0);
+    assert.equal(next.queue.length, 3, JSON.stringify(res));
+    assert.deepEqual(Object.keys(next.held), ['acct_a', 'acct_b', 'acct_c'], JSON.stringify(res));
+    // So a change of side queued after it is taken back first.
+    const turned = L.enqueueShare(next, report('29', { handle: 'acct_b', label: 'not_slop', day: '2026-11-22' }));
+    assert.deepEqual(L.shareBatch(turned).handles, ['acct_b'], JSON.stringify(res));
+  }
+  // A 200: put off and refused ones (by status or "#n") are not on the server.
+  const part = L.shareResult(st, b, { status: 200, body: { ok: true, accepted: ['20'], rejected: ['#1'], deferred: ['22'] } }, NOW, R0);
+  assert.deepEqual(part.held, { acct_a: { s: 'slop', l: D20 } });
+  // A taking-back the server refuses drops those accounts' reports, so it is not planned again and again.
+  const turned = L.enqueueShare(L.shareState({ key: KEY, held: { acct_a: { s: 'not_slop', l: D20 } } }), report('40', { handle: 'acct_a' }));
+  const plan = L.shareBatch(turned);
+  assert.deepEqual(plan.handles, ['acct_a']);
+  const refused = L.shareResult(turned, plan, { status: 400, body: { ok: false, reason: 'bad key' } }, NOW);
+  assert.deepEqual([refused.queue, refused.lastError, L.shareBatch(refused)], [[], 'the server refused 1 (400: bad key)', null]);
+  // A taking-back with no answer is tried again: held stays as it was.
+  const lost = L.shareResult(turned, plan, { status: 0 }, NOW, R0);
+  assert.deepEqual([lost.queue.length, lost.held, L.shareBatch({ ...lost, retryAt: null }).handles], [1, { acct_a: { s: 'not_slop', l: D20 } }, ['acct_a']]);
+});
+
+test('sending: a key 0.10.0 sent with takes each account back once, before its first report, and then never again', () => {
+  const NOW = Date.UTC(2026, 10, 22, 12, 0, 0);
+  // A 0.10.0 record: a key and a count sent, no held.
+  let st = L.shareState({ key: KEY, sent: 4 });
+  assert.equal(st.legacy, true);
+  assert.equal(L.shareState({ key: KEY, sent: 0 }).legacy, false, 'a key that sent nothing holds nothing');
+  assert.equal(L.shareState({ key: KEY, sent: 4, held: {} }).legacy, false, 'a 0.11.0 record');
+  assert.equal(L.shareState({ sent: 4 }).legacy, false, 'no key');
+  st = L.enqueueShare(st, report('51', { handle: 'acct_a', day: '2026-11-21' }));
+  const b1 = L.shareBatch(st);
+  assert.deepEqual(b1.handles, ['acct_a']);
+  st = L.shareResult(st, b1, { status: 200, body: { ok: true, removed: 1 } }, NOW);
+  assert.deepEqual(st.held, { acct_a: 'none' });
+  // Stored and read back, it is still a 0.10.0 key, and acct_a holds nothing.
+  st = L.shareState(JSON.parse(JSON.stringify(st)));
+  assert.deepEqual([st.legacy, st.held], [true, { acct_a: 'none' }]);
+  const b2 = L.shareBatch(st);
+  assert.equal(b2.path, '/v1/reports');
+  st = L.shareResult(st, b2, { status: 200, body: { ok: true, accepted: ['51'], rejected: [], deferred: [] } }, NOW);
+  assert.deepEqual(st.held, { acct_a: { s: 'slop', l: Date.UTC(2026, 10, 21) } });
+  // The same side again goes alone; another account is taken back once.
+  st = L.enqueueShare(st, report('52', { handle: 'acct_a', day: '2026-11-22' }));
+  st = L.enqueueShare(st, report('53', { handle: 'acct_b', day: '2026-11-22' }));
+  assert.deepEqual(L.shareBatch(st).handles, ['acct_b']);
+  // What the server can no longer hold (dated more than 92 days back) holds nothing: 'none' for a 0.10.0 key.
+  const old = L.shareState({ key: KEY, sent: 4, held: {}, legacy: true, queue: [], seq: 9 });
+  old.held.acct_z = { s: 'slop', l: NOW - 93 * 86400000 };
+  old.held.acct_y = { s: 'slop', l: NOW - 91 * 86400000 };
+  let q = L.enqueueShare(old, report('60', { handle: 'acct_x', day: '2026-11-22' }));
+  q.held.acct_x = 'none';
+  const sent = L.shareResult(q, L.shareBatch(q), { status: 200, body: { ok: true, accepted: ['60'], rejected: [], deferred: [] } }, NOW);
+  assert.deepEqual([sent.held.acct_z, sent.held.acct_y.s], ['none', 'slop']);
+  const fresh = L.shareState({ key: KEY, held: { acct_z: { s: 'slop', l: NOW - 93 * 86400000 } } });
+  const f = L.enqueueShare(fresh, report('61', { handle: 'acct_x', day: '2026-11-22' }));
+  assert.equal(Object.prototype.hasOwnProperty.call(L.shareResult(f, L.shareBatch(f), { status: 200, body: { ok: true, accepted: ['61'], rejected: [], deferred: [] } }, NOW).held, 'acct_z'), false);
+});
+
+test('held is read defensively, and an account named __proto__ is an account like any other', () => {
+  const st = L.shareState({ key: KEY, held: { acct_a: { s: 'slop', l: 5 }, acct_b: { s: 'meh', l: 5 }, acct_c: { s: 'slop' }, acct_d: 'maybe', 'not a handle': 'none', acct_e: 'unknown', Acct_F: 'none' } });
+  assert.deepEqual(st.held, { acct_a: { s: 'slop', l: 5 }, acct_e: 'unknown' });
+  for (const bad of [null, 'x', [], 3]) assert.deepEqual(L.shareState({ key: KEY, held: bad }).held, {});
+  assert.deepEqual(L.shareState({ held: { acct_a: 'none' } }).held, {}, 'no key: nothing held');
+  // JSON.parse makes "__proto__" an own key; it stays one through every step.
+  let p = L.shareState(JSON.parse('{"key":"' + KEY + '","held":{"__proto__":{"s":"not_slop","l":5}}}'));
+  assert.deepEqual(Object.keys(p.held), ['__proto__']);
+  p = L.enqueueShare(p, report('70', { handle: '__proto__' }));
+  const b = L.shareBatch(p);
+  assert.deepEqual(b.handles, ['__proto__']);
+  p = L.shareResult(p, b, { status: 200, body: { ok: true, removed: 1 } }, NOW11);
+  assert.deepEqual(Object.keys(p.held), []);
+  p = L.shareResult(p, L.shareBatch(p), { status: 200, body: { ok: true, accepted: ['70'], rejected: [], deferred: [] } }, NOW11);
+  assert.equal(Object.getPrototypeOf(p.held), Object.prototype);
+  assert.deepEqual(JSON.parse(JSON.stringify(p.held)), JSON.parse('{"__proto__":{"s":"slop","l":' + Math.floor(NOW11 / 3600000) * 3600000 + '}}'));
 });
 
 test('clearing a label: the account is taken back and its newest remaining label, if any and not too old, is sent again', () => {
@@ -472,6 +585,9 @@ test('clearing a label: the account is taken back and its newest remaining label
   const rep = (rec) => L.reportOf(rec);
   assert.deepEqual(L.shareItemsOnClear([a, b], a, NOW11), [{ retractHandle: 'acct_a' }, rep(b)]);
   assert.deepEqual(L.shareItemsOnClear([a, b, c], b, NOW11), [{ retractHandle: 'acct_a' }, rep(c)], 'the newest of those left');
+  // planted negative 1 (the same day): Slop at 08:00, Not slop at 09:00, Slop at 10:00; clearing the first sends the 10:00 Slop, the newest.
+  const h = (hr, id, label = 'slop') => post('acct_a', id, { at: Date.UTC(2026, 10, 21, hr, 0, 0), label });
+  assert.deepEqual(L.shareItemsOnClear([h(8, '1'), h(9, '2', 'not_slop'), h(10, '3')], h(8, '1'), NOW11), [{ retractHandle: 'acct_a' }, rep(h(10, '3'))]);
   assert.deepEqual(L.shareItemsOnClear([a], a, NOW11), [{ retractHandle: 'acct_a' }], 'the last label on the account: only the retraction');
   assert.deepEqual(L.shareItemsOnClear([a, post('other_b', '9', { at: t(13) })], a, NOW11), [{ retractHandle: 'acct_a' }], 'another account is not this one');
   const old = post('acct_a', '4', { at: Date.UTC(2026, 7, 1) });

@@ -4282,22 +4282,61 @@ test('sharing: clearing a label that is not the account\'s last takes back the a
   assert.deepEqual(queueOf(bg), [['retract', '2', null]]);
 });
 
-test('sharing: a label on the other side than the account\'s newest takes the account back first; on the same side it is the report alone', async () => {
+test('sharing: a label queues its report alone, replacing the account\'s queued one; the send takes the account back first only when the server may hold the other side', async () => {
   const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
   await reply(send(bg, labelMsg('slop', '2'), 7));
   await reply(send(bg, labelMsg('slop', '5'), 7));
-  assert.deepEqual(queueOf(bg), [['report', '2', 'slop'], ['report', '5', 'slop']], 'the same side: no retraction');
-  // The other side: the queued reports for the account are replaced by the retraction and the new report.
-  await reply(send(bg, labelMsg('not_slop', '6'), 7));
-  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'not_slop']]);
+  assert.deepEqual(queueOf(bg), [['report', '5', 'slop']], 'one report for the account, its newest');
   await fireShare(bg);
-  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/retract', '/v1/reports']);
-  // Changing a post's own label to the other side is a change of side too.
-  await reply(send(bg, labelMsg('slop', '6'), 7));
-  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'slop']]);
-  // Another account's label is not affected by this account's.
-  await reply(send(bg, labelMsg('not_slop', '9', 'other'), 7));
-  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'slop'], ['report', '9', 'not_slop']]);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/reports']);
+  // The other side than the server holds: taken back first, then the report.
+  await reply(send(bg, labelMsg('not_slop', '6'), 7));
+  assert.deepEqual(queueOf(bg), [['report', '6', 'not_slop']]);
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/reports', '/v1/retract', '/v1/reports']);
+  assert.deepEqual(bodies(bg)[1][1], { v: 1, key: SKEY, statuses: [], handles: ['reply_a'] });
+  // The same side as the server now holds, and another account: the reports alone.
+  await reply(send(bg, labelMsg('not_slop', '8'), 7));
+  await reply(send(bg, labelMsg('slop', '9', 'other'), 7));
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path).slice(3), ['/v1/reports']);
+  assert.deepEqual(bodies(bg)[3][1].reports.map((r) => r.status).sort(), ['8', '9']);
+  // What the server confirmed is kept with the sharing record, so it outlives sharing being turned off.
+  const day = bodies(bg)[3][1].reports[0].day;
+  assert.deepEqual(bg.chrome.store['xsh:share'].held, { reply_a: { s: 'not_slop', l: Date.parse(`${day}T00:00:00Z`) }, other: { s: 'slop', l: Date.parse(`${day}T00:00:00Z`) } });
+});
+
+test('sharing (planted negative): Not slop sent, sharing turned off, the label changed to Slop, on again with the saved labels: the account is taken back before the Slop goes', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, labelMsg('not_slop', '2'), 7));
+  await fireShare(bg);
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-stop' })), { ok: true });
+  // While sharing is off the same post is labelled Slop: nothing is queued.
+  await reply(send(bg, labelMsg('slop', '2'), 7));
+  assert.deepEqual(queueOf(bg), []);
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start', backfill: true })), { ok: true, queued: 1 });
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/reports', '/v1/retract', '/v1/reports']);
+  assert.deepEqual(bodies(bg)[1][1], { v: 1, key: SKEY, statuses: [], handles: ['reply_a'] });
+  assert.deepEqual(bodies(bg)[2][1].reports.map((r) => [r.status, r.label]), [['2', 'slop']]);
+});
+
+test('sharing (planted negative): Not slop sent, sharing turned off, the label changed to Slop, on again without the saved labels, then Slop on another post: the account is taken back first', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, labelMsg('not_slop', '2'), 7));
+  await fireShare(bg);
+  await reply(fromPopup(bg, { type: 'xsh:share-stop' }));
+  await reply(send(bg, labelMsg('slop', '2'), 7));
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start' })), { ok: true, queued: 0 });
+  // Slop on another post: the same side as the account's newest saved label.
+  await reply(send(bg, labelMsg('slop', '5'), 7));
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/reports', '/v1/retract', '/v1/reports']);
+  assert.deepEqual(bodies(bg)[2][1].reports.map((r) => [r.status, r.label]), [['5', 'slop']]);
+  // Delete what I shared starts over: a new code holds nothing.
+  assert.equal((await reply(fromPopup(bg, { type: 'xsh:share-forget' }))).ok, true);
+  await settleLong();
+  assert.deepEqual([bg.chrome.store['xsh:share'].held, bg.chrome.store['xsh:share'].legacy], [{}, false]);
 });
 
 test('sharing: Delete all labels takes back each account once, not each label', async () => {

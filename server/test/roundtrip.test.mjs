@@ -12,8 +12,9 @@ const L = createRequire(import.meta.url)('../../src/lib.js');
 const CROWD_URL = `${L.DEFAULTS.crowdBase}/v1/list.ndjson`;
 const KEY = 'c0ffee00c0ffee00c0ffee00c0ffee00';
 
-// What saveLabel queues for a label record: its report (label, account, post,
-// page and day; never the words).
+// What saveLabel queues for a label record: its report alone (label, account,
+// post, page and day; never the words). The send takes the account back first
+// when the server may hold the other side.
 function queued(st, rec) {
   const r = L.reportOf(rec);
   assert.ok(r, `a report for ${rec.url}`);
@@ -153,9 +154,9 @@ test('planted negative 3: clearing the first of two labels on an account leaves 
   const b = rec('acct_z', '32', { at: when(31) });
   let st = L.shareState({ key: KEY });
   const stored = [];
-  // Each label saved goes through the plan the background makes for a save.
+  // Each label saved goes through what the background queues for a save.
   for (const rec of [a, b]) {
-    for (const it of L.shareItemsOnSave(stored, rec)) st = L.enqueueShare(st, it);
+    st = queued(st, rec);
     stored.push(rec);
     st = await sendAll(w, st);
   }
@@ -170,14 +171,131 @@ test('planted negative 4: Not slop on one post, then Slop on another post of the
   const w = world();
   const a = rec('acct_y', '41', { label: 'not_slop', at: when(31, 8) });
   const b = rec('acct_y', '42', { label: 'slop', at: when(31, 10) });
-  let st = L.shareState({ key: KEY });
-  for (const it of L.shareItemsOnSave([], a)) st = L.enqueueShare(st, it);
-  st = await sendAll(w, st);
+  let st = await sendAll(w, queued(L.shareState({ key: KEY }), a));
   assert.equal(verdicts(w)[0].label, 'not_slop');
-  // The reader then labels post B Slop: the plan the background makes for a save.
-  for (const it of L.shareItemsOnSave([a], b)) st = L.enqueueShare(st, it);
-  st = await sendAll(w, st);
+  // The reader then labels post B Slop: what the background queues for a save.
+  st = await sendAll(w, queued(st, b));
   assert.deepEqual(verdicts(w).map((v) => [v.handle, v.status, v.label]), [['acct_y', '42', 'slop']]);
+});
+
+// Sharing turned off and on again as the background does it: off empties the
+// queue and keeps the key (and what the server confirmed); on keeps them.
+const off = (st) => L.shareState({ ...st, on: false, queue: [], retryAt: null });
+const on = (st) => L.shareState({ ...st, on: true });
+
+test('planted negative 5: Slop at 08:00, Not slop at 09:00 and Slop at 10:00 on one account the same UTC day; clearing the first leaves the server holding Slop', async () => {
+  const w = world();
+  const a = rec('acct_p', '71', { at: when(31, 8) });
+  const b = rec('acct_p', '72', { at: when(31, 9), label: 'not_slop' });
+  const c = rec('acct_p', '73', { at: when(31, 10) });
+  // The server holds the account's newest label, C.
+  let st = await sendAll(w, queued(L.shareState({ key: KEY }), c));
+  assert.deepEqual(verdicts(w).map((v) => [v.status, v.label]), [['73', 'slop']]);
+  // The reader clears A: the plan the background makes for a clear.
+  for (const it of L.shareItemsOnClear([a, b, c], a, T0)) st = L.enqueueShare(st, it);
+  st = await sendAll(w, st);
+  assert.deepEqual(verdicts(w).map((v) => [v.handle, v.label]), [['acct_p', 'slop']]);
+});
+
+test('planted negative 6: Not slop shared, sharing off, the label changed to Slop the same day, on again with the saved labels: the server ends on Slop', async () => {
+  const w = world();
+  let st = await sendAll(w, queued(L.shareState({ key: KEY, on: true }), rec('acct_q', '81', { at: when(31, 9), label: 'not_slop' })));
+  assert.deepEqual(verdicts(w).map((v) => v.label), ['not_slop']);
+  st = off(st);
+  // While sharing is off the reader changes the label to Slop: nothing is queued.
+  const changed = rec('acct_q', '81', { at: when(31, 10) });
+  // On again with "Also share" ticked: each account's newest label.
+  st = on(st);
+  for (const r of L.backfillReports([changed], T0)) st = L.enqueueShare(st, r);
+  st = await sendAll(w, st);
+  assert.deepEqual(verdicts(w).map((v) => [v.handle, v.status, v.label]), [['acct_q', '81', 'slop']]);
+});
+
+test('planted negative 7: Not slop shared, sharing off, changed to Slop the same day, on again without the saved labels, then Slop on another post: the server ends on Slop', async () => {
+  const w = world();
+  let st = await sendAll(w, queued(L.shareState({ key: KEY, on: true }), rec('acct_r', '91', { at: when(31, 9), label: 'not_slop' })));
+  // Off; the label is changed to Slop; on again without "Also share".
+  st = on(off(st));
+  // Slop on another post of the account: the same side as its newest saved
+  // label (the changed one), so the save queues its report alone.
+  st = await sendAll(w, queued(st, rec('acct_r', '92', { at: when(31, 11) })));
+  assert.deepEqual(verdicts(w).map((v) => [v.handle, v.label]), [['acct_r', 'slop']]);
+});
+
+test('round trip: a change of side queued, sharing turned off before it went, on again, then another label on that side: the server ends on that side', async () => {
+  const w = world();
+  let st = await sendAll(w, queued(L.shareState({ key: KEY, on: true }), rec('acct_s', '101', { at: when(31, 8), label: 'not_slop' })));
+  // Slop on another post is queued, but sharing goes off before it is sent.
+  st = off(queued(st, rec('acct_s', '102', { at: when(31, 9) })));
+  st = await sendAll(w, queued(on(st), rec('acct_s', '103', { at: when(31, 10) })));
+  assert.deepEqual(verdicts(w).map((v) => [v.status, v.label]), [['103', 'slop']]);
+});
+
+test('round trip: a report queued by 0.10.0 (dated by the hour it arrives), then the other side the same day, either way round, ends on the newer side', async () => {
+  for (const [first, then] of [['slop', 'not_slop'], ['not_slop', 'slop']]) {
+    const w = world();
+    const legacy = { op: 'report', label: first, handle: 'acct_l', status: '111', thread: '1', hash: 'a'.repeat(16), seq: 1 };
+    let st = await sendAll(w, L.shareState({ key: KEY, queue: [legacy], seq: 1 }));
+    assert.deepEqual(verdicts(w).map((v) => [v.label, v.labeled]), [[first, T0]]);
+    // Dated by its day, the next label is earlier than the hour the first was:
+    // the server would keep the first, unless the account is taken back.
+    st = await sendAll(w, queued(st, rec('acct_l', '112', { at: T0 + HOUR, label: then })));
+    assert.deepEqual(verdicts(w).map((v) => v.label), [then], `${first} then ${then}`);
+  }
+});
+
+test('round trip: a key 0.10.0 sent with takes each account back once before its first 0.11.0 report, then sends reports alone', async () => {
+  const w = world();
+  // 0.10.0 sent Not slop (dated by the hour it arrived); its record kept no held.
+  let st = await sendAll(w, L.shareState({ key: KEY, queue: [{ op: 'report', label: 'not_slop', handle: 'acct_m', status: '121', thread: '1', hash: 'b'.repeat(16), seq: 1 }], seq: 1 }));
+  st = L.shareState({ key: st.key, on: true, sent: st.sent, seq: st.seq });
+  assert.equal(st.legacy, true);
+  const paths = [];
+  const go = async (cur) => {
+    for (let i = 0; i < 6 && L.shareBatch(cur); i++) {
+      const r = await send(w, cur);
+      paths.push(r.batch.path);
+      cur = r.next;
+    }
+    return cur;
+  };
+  st = await go(queued(st, rec('acct_m', '122', { at: T0 + HOUR })));
+  assert.deepEqual(paths, ['/v1/retract', '/v1/reports']);
+  assert.deepEqual(verdicts(w).map((v) => [v.status, v.label]), [['122', 'slop']]);
+  st = await go(queued(st, rec('acct_m', '123', { at: T0 + 2 * HOUR })));
+  assert.deepEqual(paths, ['/v1/retract', '/v1/reports', '/v1/reports']);
+});
+
+test('round trip: sharing on again with the saved labels takes nothing back where the server holds the same side, and no verdict is lost on the way', async () => {
+  const w = world();
+  const recs = Array.from({ length: 150 }, (_, i) => rec(`acct_${i}`, String(1000 + i), { at: when(20), label: i % 3 ? 'slop' : 'not_slop' }));
+  const want = recs.map((r) => [r.handle, r.label]).sort();
+  const held = () => verdicts(w).map((v) => [v.handle, v.label]).sort();
+  const paths = [];
+  // Sent over days, as the server takes 100 reports from an install a day.
+  const go = async (cur, day) => {
+    for (let i = 0; i < 6 && L.shareBatch(cur); i++) {
+      const r = await send(w, cur, { now: T0 + day * DAY });
+      paths.push(r.batch.path);
+      cur = r.next;
+      if (cur.retryAt) break;
+    }
+    return cur;
+  };
+  let st = L.shareState({ key: KEY, on: true });
+  for (const r of recs) st = queued(st, r);
+  st = await go(st, 0);
+  st = await go(st, 1);
+  assert.deepEqual(held(), want);
+  st = on(off(st));
+  for (const r of L.backfillReports(recs, T0 + 2 * DAY)) st = L.enqueueShare(st, r);
+  assert.equal(st.queue.length, 150);
+  for (const day of [2, 3]) {
+    st = await go(st, day);
+    assert.deepEqual(held(), want, `day ${day}`);
+  }
+  assert.equal(st.queue.length, 0);
+  assert.equal(paths.includes('/v1/retract'), false, paths.join(' '));
 });
 
 test('round trip: a backfill of old labels is taken whole by the server, the oldest day it sends being inside the days the server takes', async () => {

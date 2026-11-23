@@ -1385,16 +1385,41 @@
     );
   };
 
+  // held maps an account to what the server last confirmed this install's
+  // verdict on it to be: { s: its label, l: the day it is dated, in ms, as the
+  // server dates it, or later }, 'none' when the server was told to take it back,
+  // or 'unknown' when an answer left it uncertain. A plain object read with
+  // hasOwnProperty and written with defineProperty, since '__proto__' is a
+  // valid handle.
+  const heldGet = (held, h) => (Object.prototype.hasOwnProperty.call(held, h) ? held[h] : undefined);
+  const heldSet = (held, h, v) => Object.defineProperty(held, h, { value: v, enumerable: true, writable: true, configurable: true });
+  function heldOf(raw) {
+    const out = {};
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
+    for (const k of Object.keys(raw)) {
+      const v = raw[k];
+      if (normalizeHandle(k) !== k) continue;
+      if (v === 'none' || v === 'unknown') heldSet(out, k, v);
+      else if (v && typeof v === 'object' && LABELS.includes(v.s) && Number.isFinite(v.l) && v.l > 0) heldSet(out, k, { s: v.s, l: v.l });
+    }
+    return out;
+  }
+
   // The stored sharing record, read defensively: { on, key, queue, seq, sent,
-  // lastSentAt, lastError, retryAt, fails }. on is true only while sharing is
-  // on. key is null until sharing is first turned on, and again after Delete
-  // what I shared. fails counts the sends in a row that failed.
+  // lastSentAt, lastError, retryAt, fails, held, legacy }. on is true only
+  // while sharing is on. key is null until sharing is first turned on, and
+  // again after Delete what I shared. fails counts the sends in a row that
+  // failed. held is described above; an account missing from it holds
+  // nothing, unless legacy is true: the key sent reports with 0.10.0, which
+  // kept no held, so an account not confirmed since then is unknown.
   function shareState(raw) {
     const s = raw && typeof raw === 'object' ? raw : {};
     const int = (v) => (Number.isInteger(v) && v >= 0 ? v : 0);
+    const key = typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null;
+    const hadHeld = !!(s.held && typeof s.held === 'object');
     return {
       on: s.on === true,
-      key: typeof s.key === 'string' && SHARE_KEY_RE.test(s.key) ? s.key : null,
+      key,
       queue: Array.isArray(s.queue) ? s.queue.filter(shareItemOk) : [],
       seq: int(s.seq),
       sent: int(s.sent),
@@ -1402,15 +1427,19 @@
       lastError: typeof s.lastError === 'string' && s.lastError ? s.lastError : null,
       retryAt: int(s.retryAt) || null,
       fails: int(s.fails),
+      held: key ? heldOf(s.held) : {},
+      legacy: !!key && (s.legacy === true || (!hadHeld && int(s.sent) > 0)),
     };
   }
 
   // Queue a report ({ label, handle, status, thread, day }), a retraction of
   // one post ({ retract: status }) or a retraction of the install's verdict on
   // an account ({ retractHandle: handle }). A report or a retraction of a post
-  // replaces whatever was queued for that post; a retraction of an account
-  // replaces what was queued for that account (its reports and an earlier
-  // retraction of it), so only the last word is sent. Each item gets a number
+  // replaces whatever was queued for that post, and a report also replaces any
+  // report queued for the same account, since the server keeps one verdict for
+  // each install and account; a retraction of an account replaces what was
+  // queued for that account (its reports and an earlier retraction of it), so
+  // only the last word is sent. Each item gets a number
   // of its own, so a send that finishes after the item was replaced leaves the
   // new one queued. Past shareQueueMax the reports of the oldest days go
   // first (an undated 0.10.0 report counts as oldest), and a retraction goes
@@ -1437,7 +1466,9 @@
     const queue =
       next.op === 'retract-handle'
         ? st.queue.filter((i) => i.handle !== next.handle)
-        : st.queue.filter((i) => i.op === 'retract-handle' || i.status !== next.status);
+        : st.queue.filter(
+            (i) => i.op === 'retract-handle' || (i.status !== next.status && !(next.op === 'report' && i.op === 'report' && i.handle === next.handle)),
+          );
     queue.push(next);
     const dayOf = (i) => i.day || '';
     while (queue.length > DEFAULTS.shareQueueMax) {
@@ -1473,6 +1504,14 @@
       .sort((a, b) => (dayOf(a) === dayOf(b) ? a.seq - b.seq : dayOf(a) < dayOf(b) ? 1 : -1))
       .slice(0, n);
     if (!reports.length) return null;
+    // First, the accounts among them whose verdict on the server is on the
+    // other side, or unknown, are taken back: the server keeps a verdict
+    // against a report of the other side unless the report's day is later
+    // (or the same day, for Not slop), so the report alone would not always
+    // replace it. handles names them; items is empty, since nothing leaves
+    // the queue when it is done.
+    const first = [...new Set(reports.filter((i) => retractFirst(st, i)).map((i) => i.handle))];
+    if (first.length) return { path: '/v1/retract', key: st.key, items: [], handles: first, body: { v: 1, key: st.key, statuses: [], handles: first } };
     return {
       path: '/v1/reports',
       key: st.key,
@@ -1487,6 +1526,47 @@
         }),
       },
     };
+  }
+
+  // Whether a queued report must wait for its account to be taken back: the
+  // server may hold the other side, or what it holds is unknown. The server
+  // keeps a verdict against a report of the other side unless the report's day
+  // is later (or the same day, for Not slop), so a report alone would not
+  // always replace it; after a taking-back, any report does.
+  function retractFirst(st, item) {
+    const v = heldGet(st.held, item.handle);
+    if (v === undefined) return st.legacy;
+    if (v === 'none') return false;
+    if (v === 'unknown') return true;
+    return v.s !== item.label;
+  }
+
+  // What held says once a report may have reached the server: its side, dated
+  // by its day (a 0.10.0 report has none: the hour), when the server held
+  // nothing or the same side; unknown otherwise. It is written whenever the
+  // server may have taken the report, so it says more than the server holds,
+  // which costs at most one taking-back more. Only a browser closed between
+  // the server taking a report and its answer being stored leaves it out, until
+  // that report is sent again or replaced.
+  function heldAfter(st, item, now) {
+    const l = item.day ? Date.parse(`${item.day}T00:00:00Z`) : Math.floor(now / 3600000) * 3600000;
+    const v = heldGet(st.held, item.handle);
+    let next = 'unknown';
+    if (v === 'none' || (v === undefined && !st.legacy)) next = { s: item.label, l };
+    else if (v && typeof v === 'object' && v.s === item.label) next = { s: v.s, l: Math.max(v.l, l) };
+    heldSet(st.held, item.handle, next);
+  }
+
+  // An account dated more than 92 days back holds nothing: the server deletes
+  // a verdict 90 days after its day.
+  function pruneHeld(st, now) {
+    const cut = now - 92 * DAY_MS;
+    for (const h of Object.keys(st.held)) {
+      const v = st.held[h];
+      if (!v || typeof v !== 'object' || v.l >= cut) continue;
+      if (st.legacy) heldSet(st.held, h, 'none');
+      else delete st.held[h];
+    }
   }
 
   // Milliseconds from now to the next UTC midnight, when the server's daily
@@ -1534,6 +1614,17 @@
       const base = Math.min(DEFAULTS.shareRetryMinutes * 2 ** (st.fails - 1), DEFAULTS.shareRetryMaxMinutes) * 60000;
       return Math.round(now + base * (0.75 + 0.5 * jitter()));
     };
+    // Reports the server may have taken go in held, whatever the answer (or
+    // none at all): only those a 200 answer names as put off or refused are
+    // surely not on the server.
+    if (batch.path === '/v1/reports') {
+      const ok = r.status === 200 && body.ok === true;
+      const not = new Set(ok ? [...(Array.isArray(body.deferred) ? body.deferred : []), ...(Array.isArray(body.rejected) ? body.rejected : [])].map(String) : []);
+      batch.items.forEach((i, n) => {
+        if (!not.has(i.status) && !not.has(`#${n}`)) heldAfter(st, i, now);
+      });
+      pruneHeld(st, now);
+    }
     if (!r.status) {
       st.lastError = `could not reach the server${r.error ? ` (${r.error})` : ''}`;
       st.retryAt = later();
@@ -1547,11 +1638,23 @@
       st.retryAt = later();
     } else if (r.status !== 200) {
       dropAll();
-      st.lastError = `the server refused ${batch.items.length} (${r.status}${why ? `: ${why}` : ''})`;
+      // A taking-back that comes before reports, refused, would be planned
+      // again and again: those accounts' reports are dropped instead.
+      const first = new Set(batch.handles || []);
+      if (first.size) st.queue = st.queue.filter((i) => !(i.op === 'report' && first.has(i.handle)));
+      st.lastError = `the server refused ${batch.items.length + first.size} (${r.status}${why ? `: ${why}` : ''})`;
       st.retryAt = null;
       st.fails = 0;
     } else if (batch.path === '/v1/retract') {
       dropAll();
+      // Each account taken back now holds nothing on the server. (A post's
+      // retraction names no account, so held stays as it was: at worst one
+      // more taking-back later, never one missed.)
+      const taken = [...batch.items.filter((i) => i.op === 'retract-handle').map((i) => i.handle), ...(batch.handles || [])];
+      for (const h of taken) {
+        if (st.legacy) heldSet(st.held, h, 'none');
+        else delete st.held[h];
+      }
       Object.assign(st, { lastSentAt: now, lastError: null, retryAt: null, fails: 0 });
     } else {
       const list = (k) => (Array.isArray(body[k]) ? body[k].map(String) : []);
@@ -1575,16 +1678,18 @@
     return st;
   }
 
-  // Which label is the newer, by the server's rule: the later UTC day, a tie
-  // on the day going to Not slop, then the later time. x and y are
-  // { rep, rec } (a report and the label record it came from); positive when
-  // x is newer.
+  // Which label is the newer: the one made later, to the millisecond, and
+  // Not slop only when both were made at the same moment. (The server can
+  // only compare days, so it gives a tie on the day to Not slop; shareBatch
+  // takes the account back first whenever that rule would keep the wrong
+  // side.) x and y are { rep, rec } (a report and the label record it came
+  // from); positive when x is newer.
   function newerLabel(x, y) {
-    const dx = x.rep.day || '';
-    const dy = y.rep.day || '';
-    if (dx !== dy) return dx > dy ? 1 : -1;
+    const ax = Number(x.rec.at) || 0;
+    const ay = Number(y.rec.at) || 0;
+    if (ax !== ay) return ax - ay;
     if (x.rep.label !== y.rep.label) return x.rep.label === 'not_slop' ? 1 : -1;
-    return (x.rec.at || 0) - (y.rec.at || 0);
+    return 0;
   }
 
   // The newest label (see newerLabel) on each account among the records.
@@ -1614,26 +1719,8 @@
   // first, none the server would refuse as too old.
   function backfillReports(records, now) {
     return newestLabels(records, { now })
-      .sort((a, b) => (a.rep.day === b.rep.day ? (b.rec.at || 0) - (a.rec.at || 0) : a.rep.day < b.rep.day ? 1 : -1))
+      .sort((a, b) => -newerLabel(a, b))
       .map((c) => c.rep);
-  }
-
-  // What to queue after a label was saved, given the label records stored
-  // before this save: its report; and first a retraction of the account when
-  // the label's side differs from the side of the account's newest stored
-  // label (that label may be this post's own earlier one). The server ignores
-  // a Slop label made the same UTC day as a Not slop verdict (a tie goes to
-  // Not slop), so without the retraction a change from Not slop to Slop would
-  // not stick.
-  function shareItemsOnSave(records, record) {
-    const rep = reportOf(record);
-    if (!rep) return [];
-    const same = (records || []).filter((r) => r && normalizeHandle(r.handle) === rep.handle);
-    const before = newestLabels(same)[0];
-    const items = [];
-    if (before && before.rep.label !== rep.label) items.push({ retractHandle: rep.handle });
-    items.push(rep);
-    return items;
   }
 
   // What to queue after a stored label was cleared, given the label records
@@ -1988,7 +2075,6 @@
     msToUtcMidnight,
     shareResult,
     backfillReports,
-    shareItemsOnSave,
     shareItemsOnClear,
     shareItemsOnClearAll,
     shareDisclosure,
