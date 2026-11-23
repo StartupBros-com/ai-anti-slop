@@ -156,7 +156,7 @@ function serial(fn) {
   return p;
 }
 
-const muting = (s) => !!(s.muteEnabled && s.muteAccount);
+const muting = (s) => L.mutingOn(s);
 
 async function ensureMuteAlarm() {
   const s = await settings();
@@ -596,7 +596,7 @@ async function startShare(backfill) {
   if (!st.key) st.key = L.newShareKey();
   let queued = 0;
   if (backfill) {
-    const reports = await L.backfillReports(L.labelsFrom(await chrome.storage.local.get(null)), (t) => L.textHash(t));
+    const reports = L.backfillReports(L.labelsFrom(await chrome.storage.local.get(null)), Date.now());
     for (const r of reports) st = L.enqueueShare(st, r);
     queued = reports.length;
   }
@@ -828,12 +828,21 @@ async function saveLabel(msg) {
   const had = !!got[key];
   let n = Number(got[K.labelCount]) || 0;
   if (r.label === null) {
+    // While sharing is on, the account's other labels decide what the server
+    // should hold once this one is gone (read before it is removed).
+    const kept = sharing && had ? L.labelsFrom(await chrome.storage.local.get(null)) : null;
     if (had) {
       await chrome.storage.local.remove(key);
       await chrome.storage.local.set({ [K.labelCount]: Math.max(0, n - 1) });
     }
-    // A report sent for this post is taken back (the server ignores one it never had).
-    if (sharing) await queueShare([{ retract: r.id }]);
+    // What the server keeps for the account is taken back and its newest
+    // remaining label sent. A label that was not stored may still have been
+    // reported by an earlier copy, so its post is retracted by id (the server
+    // ignores one it never had).
+    if (sharing) {
+      const items = had ? L.shareItemsOnClear(kept, got[key], Date.now()) : [];
+      await queueShare(items.length ? items : [{ retract: r.id }]);
+    }
     return { ok: true, label: null };
   }
   const max = L.DEFAULTS.labelMax;
@@ -842,23 +851,23 @@ async function saveLabel(msg) {
     n = Object.keys(await chrome.storage.local.get(null)).filter((k) => k.startsWith(L.LABEL_PREFIX)).length;
     if (n >= max) return { ok: false, reason: `${max} labels saved: export and delete them to add more` };
   }
+  // The account's labels as stored before this one, to tell whether it changes
+  // the side the account is on.
+  const before = sharing ? L.labelsFrom(await chrome.storage.local.get(null)) : null;
   const writes = { [key]: r.record, [K.labelCount]: had ? n : n + 1 };
   const patch = L.labelPatch(s, r.handle, r.label);
   if (patch) writes[K.settings] = Object.assign({}, s, patch);
   await chrome.storage.local.set(writes);
-  if (sharing) {
-    const report = L.reportOf(r.record);
-    if (report) await queueShare([Object.assign(report, { hash: await L.textHash(r.record.text) })]);
-  }
+  if (sharing) await queueShare(L.shareItemsOnSave(before, r.record));
   return { ok: true, label: r.label, added: patch ? Object.keys(patch)[0] : null };
 }
 
 // Delete every label and the count. The two boxes are left as they are.
-// While sharing is on, each label's report is taken back too.
+// While sharing is on, what the server keeps for each of their accounts is taken back too.
 async function clearLabels() {
   const all = await chrome.storage.local.get(null);
   const keys = Object.keys(all).filter((k) => k.startsWith(L.LABEL_PREFIX));
   await chrome.storage.local.remove([...keys, K.labelCount]);
-  if (keys.length && L.shareOn(L.shareState(all[K.share]))) await queueShare(keys.map((k) => ({ retract: k.slice(L.LABEL_PREFIX.length) })));
+  if (keys.length && L.shareOn(L.shareState(all[K.share]))) await queueShare(L.shareItemsOnClearAll(L.labelsFrom(all)));
   return { ok: true, removed: keys.length };
 }

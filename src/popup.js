@@ -52,7 +52,7 @@
   // waiting; while a run goes, the button stops it.
   let running = false;
   function renderRun(s, m, handles, run) {
-    const on = !!(s.muteEnabled && s.muteAccount);
+    const on = L.mutingOn(s);
     const b = L.muteBudget(m, L.utcDay(Date.now()), L.muteCap(s));
     const waiting = on ? L.runWaiting(handles, s, m) : 0;
     running = !!(on && run && run.account === s.muteAccount);
@@ -80,7 +80,7 @@
   // A day can go over its number with Run now (or a lower number picked
   // later that day): the line then gives the counts without "of".
   function renderMuting(s, m, run) {
-    const on = !!(s.muteEnabled && s.muteAccount);
+    const on = L.mutingOn(s);
     $('mute').checked = on;
     setHidden($('muteHint'), on);
     setHidden($('muteOn'), !on);

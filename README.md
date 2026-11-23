@@ -663,22 +663,31 @@ settings page, which the popup's **Share your labels** button opens. While it
 is on, each label you save is sent to AI Anti-Slop's server at
 `ai-anti-slop.startupbros.com`, where enough agreeing labels put an account on
 the [readers' list](#lists). Turning it on offers to send the labels already
-saved too (**Also share the N labels already saved**), unticked.
+saved too (**Also share the newest saved label for N accounts**), unticked.
 
 - A report holds the label, the author's handle, the post's id, the id of the
   post page it was labelled on (none on other pages; the server then counts
-  the post as its own thread) and a hash of the post's words, which the server
-  checks and does not keep. The words themselves, the label's other fields,
-  your settings and your X handle are never sent. With them goes a random code made when you first turn sharing
+  the post as its own thread) and the UTC day it was labelled. Version 0.10.0
+  also sent a hash of the post's words; 0.11.0 does not. The words
+  themselves, the label's other fields, your settings and your X handle are
+  never sent. With them goes a random code made when you first turn sharing
   on, so the server can count one install once and delete its reports. The
   settings page lists all of it before the button.
-- Labels go about 30 seconds after they are saved, up to 50 in a request.
-  While sharing is on, clearing a label, or **Delete all labels**, takes its
-  report back; with sharing off, reports already sent stay. When the
-  server cannot be reached, the request waits 30 minutes; when it asks to
-  wait (past 100 reports from one install in a UTC day, say), it waits as long
-  as it is told, up to 26 hours. At most 4,000 reports wait at once; past
-  that the oldest are dropped.
+- Labels go about 30 seconds after they are saved, up to 50 in a request,
+  the newest day first. The server keeps one entry for each account you
+  labelled, your newest label on it. Turning sharing on with **Also share**
+  ticked sends one report for each account, its newest label, from the last 88
+  days. While sharing is on, clearing a label takes back what the server keeps
+  for that account and sends your newest remaining label on it, if there is
+  one; a label that changes the account from slop to not slop, or the reverse,
+  does the same before it is sent; **Delete all labels** takes back each
+  account once. With sharing off, reports already sent stay. When the server
+  cannot be reached or answers with an error, the request waits 30 minutes,
+  then twice as long for each failure in a row, up to 6 hours, each wait made
+  up to 25% shorter or longer at random; when it asks to wait (past 100 reports
+  from one install in a UTC day, say), it waits at least as long as it is told,
+  up to 26 hours, plus up to an hour at random. At most 4,000 reports wait at
+  once; past that the reports of the oldest days are dropped first.
 - The popup says whether sharing is on and how many reports it has sent.
 - **Turn off sharing** stops sending and drops what is waiting. **Delete what
   I shared** also deletes, on the server, every report from this install, and

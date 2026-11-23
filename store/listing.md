@@ -67,7 +67,7 @@ LABELS
 - A Hide as slop icon sits in the header of each post, beside X's More menu, on the home timeline, search, profiles, lists and post pages. Posts by the account whose page is open have none, nor do your own once X shows who is logged in. The icon is on by default; turn it off in the popup under Label posts.
 - A click hides the post and adds the account to Also hide, with 6 seconds to undo. An undone click is never saved. A click on a filled icon removes the label.
 - A saved label keeps the post's text and link in this browser. Export labels saves them to a file.
-- Sharing is off until you turn it on in settings. While it is on, each label is sent to AI Anti-Slop's server as the author's handle, the post's id, the id of the post page it was on and a hash of its words, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
+- Sharing is off until you turn it on in settings. While it is on, each label is sent to AI Anti-Slop's server as the author's handle, the post's id, the id of the post page it was on and the day it was made, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
 
 SETTINGS FILES
 - Export your Always show and Also hide accounts, bot choices and tag setting to a file, or Also hide alone as a list of handles to share.
@@ -171,7 +171,7 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 | Box | Tick | Why |
 |---|---|---|
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
-| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, only a 16-character hash of that text is sent. |
+| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, the text is not sent. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. With sharing on, the two post ids are sent, with the hour, which says which post page the user was reading. |
 | User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
@@ -181,7 +181,7 @@ for each row. The stored fields are named by their keys in `PRIVACY.md`.
 The boxes would be ticked even with nothing leaving the browser, because
 Google's User Data FAQ asks "Does an extension need to disclose user data
 handling if the data is only processed or stored locally on a user's device?"
-and answers "Yes". With sharing on, the handle, the two post ids and the hash
+and answers "Yes". With sharing on, the handle, the two post ids and the day
 leave it, for AI Anti-Slop's server, which Cloudflare hosts.
 
 **Certifications:** tick every one. The docs show their wording only in a

@@ -9,7 +9,6 @@ import { src, root, post, page, tick, lib, meLink } from './helpers.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseHTML } from 'linkedom';
-import { createHash } from 'node:crypto';
 
 const many = (n) => Array.from({ length: n }, (_, i) => `h${i}`);
 
@@ -4176,6 +4175,10 @@ test('sharing: turned on from an extension page with the saved labels, it makes 
   const bg = shareBackground({ answer: takeAll });
   await reply(send(bg, LABEL_MSG, 7));
   await reply(send(bg, OTHER_MSG, 7));
+  // The two labels were made on different days, so the order they go in is the days', newest first.
+  const DAY = 86400000;
+  bg.chrome.store['xsh:label:2'].at = Date.now() - 2 * DAY;
+  const dayOf = (ms) => new Date(ms).toISOString().slice(0, 10);
   // A content script cannot turn it on.
   assert.equal(await send(bg, { type: 'xsh:share-start', backfill: true }, 7), undefined);
   assert.equal(bg.chrome.store['xsh:share'], undefined);
@@ -4194,12 +4197,13 @@ test('sharing: turned on from an extension page with the saved labels, it makes 
     v: 1,
     key: st.key,
     reports: [
-      { label: 'slop', handle: 'reply_a', status: '2', thread: '1', hash: createHash('sha256').update('hello').digest('hex').slice(0, 16) },
-      { label: 'not_slop', handle: 'other', status: '3', thread: null, hash: null },
+      { label: 'not_slop', handle: 'other', status: '3', thread: null, day: dayOf(bg.chrome.store['xsh:label:3'].at) },
+      { label: 'slop', handle: 'reply_a', status: '2', thread: '1', day: dayOf(Date.now() - 2 * DAY) },
     ],
   });
-  // The words of the post are not in what was sent.
+  // The words of the post are not in what was sent, nor a hash of them.
   assert.equal(init.body.includes('hello'), false);
+  assert.equal(init.body.includes('hash'), false);
   assert.deepEqual([st.queue, st.sent, st.lastError, st.retryAt], [[], 2, null, null]);
   // Without "Also share", the labels already saved stay unsent.
   const fresh = shareBackground({ answer: takeAll });
@@ -4223,7 +4227,8 @@ test('sharing: while it is on a label is queued and sent at the share alarm; cle
   bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
   await settleLong();
   let last = bg.requests.filter(isPost).at(-1);
-  assert.deepEqual([last.url, JSON.parse(last.init.body)], [`${CROWD}/v1/retract`, { v: 1, key: SKEY, statuses: ['2'] }]);
+  // The account's verdict is taken back (no other label on it is left to send).
+  assert.deepEqual([last.url, JSON.parse(last.init.body)], [`${CROWD}/v1/retract`, { v: 1, key: SKEY, statuses: [], handles: ['reply_a'] }]);
   // Two labels made, then Delete all labels before they went: only the retractions go.
   await reply(send(bg, LABEL_MSG, 7));
   await reply(send(bg, OTHER_MSG, 7));
@@ -4233,9 +4238,113 @@ test('sharing: while it is on a label is queued and sent at the share alarm; cle
   const posts = bg.requests.filter(isPost);
   assert.equal(posts.length, 3);
   last = posts.at(-1);
-  assert.deepEqual([last.url, JSON.parse(last.init.body).statuses.sort()], [`${CROWD}/v1/retract`, ['2', '3']]);
+  assert.deepEqual([last.url, JSON.parse(last.init.body).statuses, JSON.parse(last.init.body).handles.sort()], [`${CROWD}/v1/retract`, [], ['other', 'reply_a']], 'one retraction for each account, not each label');
   st = bg.chrome.store['xsh:share'];
   assert.deepEqual([st.queue, st.sent], [[], 1]);
+});
+
+const labelMsg = (label, id, handle = 'reply_a') => ({ type: 'xsh:label', label, handle, url: `/${handle}/status/${id}`, page: '/op/status/1', text: 'words ' + id });
+const queueOf = (bg) => bg.chrome.store['xsh:share'].queue.map((i) => [i.op, i.op === 'retract-handle' ? i.handle : i.status, i.label || null]);
+const fireShare = async (bg) => {
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
+  await settleLong();
+};
+const bodies = (bg) => bg.requests.filter(isPost).map((r) => [r.url.slice(CROWD.length), JSON.parse(r.init.body)]);
+const dayOfMs = (ms) => new Date(ms).toISOString().slice(0, 10);
+
+test('sharing: clearing a label that is not the account\'s last takes back the account and sends its newest remaining label', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, labelMsg('slop', '2'), 7));
+  await reply(send(bg, labelMsg('not_slop', '5'), 7));
+  await reply(send(bg, labelMsg('slop', '8', 'other'), 7));
+  await fireShare(bg);
+  const before = bg.requests.filter(isPost).length;
+  // Clearing post 5 leaves post 2 (Slop) as the account's newest label.
+  assert.deepEqual(await reply(send(bg, { ...labelMsg(null, '5') }, 7)), { ok: true, label: null });
+  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '2', 'slop']]);
+  await fireShare(bg);
+  const posts = bodies(bg).slice(before);
+  assert.deepEqual(
+    posts.map(([path]) => path),
+    ['/v1/retract', '/v1/reports'],
+  );
+  assert.deepEqual(posts[0][1], { v: 1, key: SKEY, statuses: [], handles: ['reply_a'] });
+  assert.deepEqual(posts[1][1].reports, [{ label: 'slop', handle: 'reply_a', status: '2', thread: '1', day: dayOfMs(bg.chrome.store['xsh:label:2'].at) }]);
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue, []);
+  // The other account was not touched.
+  assert.equal(JSON.stringify(posts).includes('other'), false);
+  // Clearing the last label on the account sends the retraction alone.
+  await reply(send(bg, labelMsg(null, '2'), 7));
+  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null]]);
+  // A label that was never stored (cleared twice) is retracted by its post, as before.
+  await fireShare(bg);
+  await reply(send(bg, labelMsg(null, '2'), 7));
+  assert.deepEqual(queueOf(bg), [['retract', '2', null]]);
+});
+
+test('sharing: a label on the other side than the account\'s newest takes the account back first; on the same side it is the report alone', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, labelMsg('slop', '2'), 7));
+  await reply(send(bg, labelMsg('slop', '5'), 7));
+  assert.deepEqual(queueOf(bg), [['report', '2', 'slop'], ['report', '5', 'slop']], 'the same side: no retraction');
+  // The other side: the queued reports for the account are replaced by the retraction and the new report.
+  await reply(send(bg, labelMsg('not_slop', '6'), 7));
+  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'not_slop']]);
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/retract', '/v1/reports']);
+  // Changing a post's own label to the other side is a change of side too.
+  await reply(send(bg, labelMsg('slop', '6'), 7));
+  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'slop']]);
+  // Another account's label is not affected by this account's.
+  await reply(send(bg, labelMsg('not_slop', '9', 'other'), 7));
+  assert.deepEqual(queueOf(bg), [['retract-handle', 'reply_a', null], ['report', '6', 'slop'], ['report', '9', 'not_slop']]);
+});
+
+test('sharing: Delete all labels takes back each account once, not each label', async () => {
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY } }, answer: takeAll });
+  await reply(send(bg, labelMsg('slop', '2'), 7));
+  await reply(send(bg, labelMsg('slop', '5'), 7));
+  await reply(send(bg, labelMsg('not_slop', '9', 'other'), 7));
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:labels-clear' })), { ok: true, removed: 3 });
+  assert.deepEqual(queueOf(bg).sort(), [['retract-handle', 'other', null], ['retract-handle', 'reply_a', null]]);
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/retract']);
+  assert.deepEqual(bodies(bg)[0][1].statuses, []);
+  assert.deepEqual(bodies(bg)[0][1].handles.slice().sort(), ['other', 'reply_a']);
+});
+
+test('sharing: turned on with the saved labels it queues the newest label of each account from the last 88 days, newest first', async () => {
+  const DAY = 86400000;
+  const now = Date.now();
+  const rec = (handle, id, daysAgo, label = 'slop') => ({ at: now - daysAgo * DAY, label, handle, url: `https://x.com/${handle}/status/${id}`, text: 'words', page: 'https://x.com/op/status/1' });
+  const bg = shareBackground({
+    answer: takeAll,
+    store: {
+      'xsh:label:11': rec('acct_a', '11', 10),
+      'xsh:label:12': rec('acct_a', '12', 5),
+      'xsh:label:13': rec('acct_a', '13', 2, 'not_slop'),
+      'xsh:label:21': rec('acct_b', '21', 100),
+      'xsh:label:31': rec('acct_c', '31', 20),
+    },
+  });
+  assert.deepEqual(await reply(fromPopup(bg, { type: 'xsh:share-start', backfill: true })), { ok: true, queued: 2 });
+  await settleLong();
+  assert.deepEqual(bodies(bg).map(([path]) => path), ['/v1/reports']);
+  assert.deepEqual(bodies(bg)[0][1].reports, [
+    { label: 'not_slop', handle: 'acct_a', status: '13', thread: '1', day: dayOfMs(now - 2 * DAY) },
+    { label: 'slop', handle: 'acct_c', status: '31', thread: '1', day: dayOfMs(now - 20 * DAY) },
+  ]);
+});
+
+test('sharing: a report queued by 0.10.0 is sent after the update with no hash and no day', async () => {
+  const legacy = { op: 'report', label: 'slop', handle: 'reply_a', status: '2', thread: '1', hash: 'b'.repeat(16), seq: 1 };
+  const bg = shareBackground({ store: { 'xsh:share': { on: true, key: SKEY, queue: [legacy], seq: 1 } }, answer: takeAll });
+  bg.chrome.runtime.onStartup.fire();
+  await settleLong();
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue, [legacy], 'kept as stored until it is sent');
+  await fireShare(bg);
+  assert.deepEqual(bodies(bg), [['/v1/reports', { v: 1, key: SKEY, reports: [{ label: 'slop', handle: 'reply_a', status: '2', thread: '1' }] }]]);
+  assert.deepEqual(bg.chrome.store['xsh:share'].queue, []);
 });
 
 test('sharing: a 429 or a put-off report waits for the time the server gives, no answer 30 minutes, and nothing is sent before then', async () => {
@@ -4254,7 +4363,8 @@ test('sharing: a 429 or a put-off report waits for the time the server gives, no
   await settleLong();
   let st = bg.chrome.store['xsh:share'];
   assert.deepEqual([st.queue.length, st.lastError], [1, 'the server asked to wait: too many new installs from this network today']);
-  assert.ok(st.retryAt >= t0 + 3600000 && st.retryAt <= Date.now() + 3600000);
+  // Never before the hour the server gave; the jitter adds up to an hour.
+  assert.ok(st.retryAt >= t0 + 3600000 && st.retryAt <= Date.now() + 2 * 3600000);
   assert.equal(bg.chrome.alarmTable['xsh-share'].when, st.retryAt);
   // The alarm firing early sends nothing.
   bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
@@ -4263,19 +4373,22 @@ test('sharing: a 429 or a put-off report waits for the time the server gives, no
   // Due, and put off by the daily cap.
   bg.chrome.store['xsh:share'] = { ...bg.chrome.store['xsh:share'], retryAt: Date.now() - 1 };
   mode = 'defer';
+  const t1 = Date.now();
   bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
   await settleLong();
   st = bg.chrome.store['xsh:share'];
-  assert.deepEqual([st.queue.length, st.lastError, bg.requests.filter(isPost).length], [1, null, 2]);
-  assert.ok(st.retryAt > Date.now() + 7100000 && st.retryAt <= Date.now() + 7200000);
+  assert.deepEqual([st.queue.length, st.lastError, bg.requests.filter(isPost).length, st.fails], [1, null, 2, 0]);
+  assert.ok(st.retryAt >= t1 + 7200000 && st.retryAt <= Date.now() + 7200000 + 3600000);
   // Due, and no answer.
   bg.chrome.store['xsh:share'] = { ...bg.chrome.store['xsh:share'], retryAt: Date.now() - 1 };
   mode = 'offline';
+  const t2 = Date.now();
   bg.chrome.alarms.onAlarm.fire({ name: 'xsh-share' });
   await settleLong();
   st = bg.chrome.store['xsh:share'];
-  assert.deepEqual([st.queue.length, st.lastError], [1, 'could not reach the server (Failed to fetch)']);
-  assert.ok(st.retryAt > Date.now() + 29 * 60000 && st.retryAt <= Date.now() + 30 * 60000);
+  assert.deepEqual([st.queue.length, st.lastError, st.fails], [1, 'could not reach the server (Failed to fetch)', 1]);
+  // 30 minutes, times 0.75 to 1.25 for the jitter.
+  assert.ok(st.retryAt >= t2 + 22.5 * 60000 && st.retryAt <= Date.now() + 37.5 * 60000);
 });
 
 test('sharing: Turn off drops what is waiting and sends nothing more; Delete what I shared posts the key to forget and then drops it; a failed delete keeps it', async () => {
@@ -4394,7 +4507,18 @@ test('sharing: a label made while a send is set for sooner keeps that time, so s
 });
 
 test('sharing: the settings page says what is sent before it is on, then turns it on, off and deletes through the background', async () => {
-  const s = loadSettings({ 'xsh:settings': {}, 'xsh:labelCount': 3 });
+  // Five labels on three accounts (one of them too old for the server to take) and one that is no label.
+  const made = (handle, id, daysAgo, o = {}) => ({ at: Date.now() - daysAgo * 86400000, label: 'slop', handle, url: `https://x.com/${handle}/status/${id}`, text: '', page: null, ...o });
+  const s = loadSettings({
+    'xsh:settings': {},
+    'xsh:labelCount': 5,
+    'xsh:label:11': made('acct_a', '11', 3),
+    'xsh:label:12': made('acct_a', '12', 5, { label: 'not_slop' }),
+    'xsh:label:13': made('acct_b', '13', 2),
+    'xsh:label:14': made('acct_c', '14', 1),
+    'xsh:label:15': made('acct_d', '15', 120),
+    'xsh:label:16': { label: 'meh' },
+  });
   const sent = [];
   const queued = (n) => Array.from({ length: n }, (_, i) => ({ op: 'report', label: 'slop', handle: 'a', status: String(i + 1), thread: null, hash: null, seq: i + 1 }));
   s.chrome.runtime.sendMessage = async (msg) => {
@@ -4414,14 +4538,14 @@ test('sharing: the settings page says what is sent before it is on, then turns i
   const all = (sel) => [...s.document.querySelectorAll(sel)].map((e) => e.textContent);
   assert.deepEqual(all('#shareBody h3'), ['What is sent', 'What is never sent', 'Where it goes']);
   assert.deepEqual(all('#shareBody .facts li'), [
-    "For each label: that it is slop (or not slop, for a label saved before version 0.9.0), the account's handle, the post's id, the id of the post whose page it was on, and a hash of the post's words: a short code that is the same for the same words. The words themselves are not sent.",
+    "For each label: that it is slop or not slop, the account's handle, the post's id, the id of the post whose page it was on, and the day you labelled it. The post's words are not sent.",
     'A random code made for this browser, so that you count as one reader and can delete what you sent. It is not your X account.',
     "The post's words, your X account, other pages you visit, your lists and your settings.",
-    'To ai-anti-slop.startupbros.com, run by AI Anti-Slop. It keeps each report for up to 90 days, with the hour it came (not the minute) and a keyed hash of the first part of your IP address (never the address), so that one network cannot count as many readers.',
-    'While sharing is on, clearing a label takes its report back. Delete what I shared removes every report from this browser. Turning sharing off stops sending and keeps what was sent.',
+    'To ai-anti-slop.startupbros.com, run by AI Anti-Slop. It keeps one entry for each account you labelled: whether your newest label says slop or not slop and its day, with the post and page ids, the hour and a keyed hash of the first part of your IP address (never the address) from the report that set that side, so that one network cannot count as many readers. An entry is deleted 90 days after your newest label on that account.',
+    'While sharing is on, clearing a label takes back what the server keeps for that account and sends your newest remaining label on it, if there is one. Delete what I shared removes everything from this browser. Turning sharing off stops sending and keeps what was sent.',
   ]);
   assert.equal(s.$('shareBackfill').checked, false, 'the labels already saved are shared only when ticked');
-  assert.equal(s.$('shareBackfill').closest('label').textContent, 'Also share the 3 labels already saved');
+  assert.equal(s.$('shareBackfill').closest('label').textContent, 'Also share the newest saved label for 3 accounts, from the last 88 days', 'the number is of accounts with a label the server would take, not of labels');
   assert.equal(s.$('shareForget'), null, 'nothing shared yet, nothing to delete');
   const link = s.document.querySelector('#shareBody .shareLink a');
   assert.deepEqual([link.getAttribute('href'), link.textContent], ['https://ai-anti-slop.startupbros.com/', "The readers' list and how it is made"]);
@@ -4430,7 +4554,7 @@ test('sharing: the settings page says what is sent before it is on, then turns i
   s.click('shareOn');
   await settle();
   assert.deepEqual(sent, [{ type: 'xsh:share-start', backfill: true }]);
-  assert.equal(s.$('shareMsg').textContent, 'Sharing is on. 3 labels are queued to send.');
+  assert.equal(s.$('shareMsg').textContent, 'Sharing is on. The newest label for 3 accounts is queued to send.');
   assert.equal(s.document.querySelector('#shareBody .shareState').textContent, 'Sharing is on. 0 reports sent · 3 waiting.');
   assert.equal(s.focused.at(-1), 'shareOff');
   s.click('shareOff');

@@ -64,7 +64,7 @@ Sync does not copy it to other devices.
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post. Labels are on unless you turn them off; nothing is saved until you click. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
-| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (each the label, the author's handle, the post's id, the id of the post page it was labelled on and the hash of its words; at most 4,000), how many reports were sent, when a send last went through, the last error and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code; **Delete what I shared** removes the code once the server confirms the delete. |
+| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code; **Delete what I shared** removes the code once the server confirms the delete. |
 
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
 the account being visited, the handle muting runs as, and the id of the tab it
@@ -188,11 +188,12 @@ of five fields:
   which post page you were reading; none when you labelled it on another page,
   such as the home timeline, and the server then counts the post as its own
   thread;
-- a hash of the post's words: the first 16 hexadecimal characters of the
-  SHA-256 of the text, put in lower case, with links, @handles and extra spaces
-  taken out. The server checks that it has that form and does not keep it.
-  A hash cannot be turned back into the words, but someone who guesses a short
-  or common reply could check the guess against it on its way.
+- the day you labelled it, as a UTC date (`2026-11-22`), not the time of day.
+
+Version 0.10.0 also sent a hash of the post's words, which the server checked
+for its form and did not keep. Version 0.11.0 does not send it. A report that
+0.10.0 had queued and not yet sent goes without the hash and without a day, and
+the server then dates it by the hour it arrives.
 
 With them goes a random code, 32 hexadecimal characters made in your browser
 when you first turn sharing on, so that your reports count as one reader's and
@@ -207,18 +208,28 @@ boxes had the account, whether it was hidden), your settings, your lists and
 the muting record.
 
 **When.** A label is sent about 30 seconds or more after it is saved, so labels
-made close together go in one request of up to 50. When you turn sharing on,
-the labels already saved are sent too only if you tick **Also share the N
-labels already saved**. While sharing is on, clearing a label sends a
-retraction for its post, and **Delete all labels** sends one for every label.
-With sharing off neither does, so what was already sent stays on the server
-until 90 days after your newest label on that account, or until you click
-**Delete what I shared**. A request goes to
-`https://ai-anti-slop.startupbros.com/v1/reports` (`/v1/retract` for a
-retraction), as plain text with no cookies. If the server cannot be reached,
-the request is tried again 30 minutes later; if it asks to wait, as it does
-past a browser's 100 reports in a UTC day, it is tried again at the time it
-gives, at most 26 hours later.
+made close together go in one request of up to 50, the newest day first. When
+you turn sharing on, the labels already saved are sent too only if you tick
+**Also share the newest saved label for N accounts**: one report for each
+account, its newest label, from the last 88 days (the server takes none more
+than 90 days old). While sharing is on, a new label on the other side than your
+newest label on that account (slop after not slop, or the reverse) first takes
+back what the server keeps for the account, then sends the new one. Clearing a
+label takes back what the server keeps for that account, then sends your newest
+remaining label on it, if there is one from the last 88 days. **Delete all
+labels** takes back each account once. A retraction names the account's
+handle, or the post's id for a label that was not saved. With sharing off none
+of this is sent, so what was already sent stays on the server until 90 days
+after your newest label on that account, or until you click **Delete what I
+shared**. A request goes to `https://ai-anti-slop.startupbros.com/v1/reports`
+(`/v1/retract` for a retraction), as plain text with no cookies. If the server
+cannot be reached or answers with an error, the request is tried again 30
+minutes later, then after 1 hour, 2, 4 and at most 6 hours for each failure in
+a row, each wait made 25% shorter or longer at random so that browsers do not
+all come back together. If the server asks to wait, as it does past a browser's
+100 reports in a UTC day, it is tried again no sooner than the time it gives,
+at most 26 hours later, plus a random wait of up to an hour. When more than 4,000
+reports wait, those of the oldest days are dropped first.
 
 **The server.** `ai-anti-slop.startupbros.com` is AI Anti-Slop's own server, a
 Cloudflare Worker with a Cloudflare D1 database; its code is in this
