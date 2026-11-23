@@ -359,12 +359,13 @@
       id: 'recommended', name: 'Recommended', format: 'recommended', on: true, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/accounts.ndjson',
       sources: Object.freeze([
-        Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', about: 'https://clankwall.vogel.dev/?filter=ai' }),
-        Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', about: 'https://blockedforaireply.levels.io/' }),
+        Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', noteName: "clankwall's AI flags", about: 'https://clankwall.vogel.dev/?filter=ai' }),
+        Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', noteName: "levelsio's list", about: 'https://blockedforaireply.levels.io/' }),
         Object.freeze({
           url: `${DEFAULTS.crowdBase}/v1/list.ndjson`,
           format: 'crowd-ndjson',
           name: "the readers' list",
+          noteName: "the readers' list",
           about: `${DEFAULTS.crowdBase}/`,
           aboutText: "The readers' list page, with how it is made and where you can ask for a removal",
           allowEmpty: true,
@@ -394,6 +395,34 @@
     }),
   ]);
   const MUTE_LIST = 'clankwall-ai';
+  // For the note that stands in for a hidden post: the name of the first list
+  // that is on and holds each account, as { handle: name }. `records` maps a
+  // list's storage key (listKey) to its stored record. A list made of several
+  // sources (Recommended) is named by the source whose file holds the account
+  // (its noteName), when the record keeps its parts. Only handles are read, so
+  // the name never says how many readers reported an account.
+  function listNamesOf(settings, records) {
+    const out = {};
+    const recs = records || {};
+    for (const l of enabledLists(settings)) {
+      const rec = recs[listKey(l.id)];
+      if (!rec) continue;
+      const claim = (handles, name) => {
+        if (!Array.isArray(handles)) return;
+        for (const h of handles) if (typeof h === 'string' && h !== '__proto__' && !Object.prototype.hasOwnProperty.call(out, h)) out[h] = name;
+      };
+      if (l.sources && Array.isArray(rec.parts)) {
+        for (const src of l.sources) {
+          const part = rec.parts.find((p) => p && p.source === src.url);
+          if (part) claim(part.handles, src.noteName || src.name);
+        }
+      } else {
+        claim(rec.handles, l.name);
+      }
+    }
+    return out;
+  }
+
   // The built-in lists the userscript can fetch: its @connect names
   // clankwall's host alone.
   const USERSCRIPT_LISTS = new Set(BUILTIN_LISTS.filter((b) => b.userscript !== false).map((b) => b.id));
@@ -1207,6 +1236,14 @@
   const STATUS_PATH_RE = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d{1,25})(?:[/?#]|$)/;
   const X_ORIGIN_RE = /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com(?=\/)/i;
 
+  // Whether an address is a page the content script runs on, as the
+  // manifest's matches name them: https, on x.com or twitter.com (or their
+  // mobile hosts). Chrome gives a message's sender.url with the host in
+  // lower case, so nothing else counts: not x.com.example.com, not http.
+  function isXPageUrl(url) {
+    return typeof url === 'string' && /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com\//.test(url);
+  }
+
   // The author handle and post id in a post's path or x.com URL
   // (/h/status/123, https://x.com/h/status/123/photo/1), or null.
   function statusOf(href) {
@@ -1429,6 +1466,9 @@
       fails: int(s.fails),
       held: key ? heldOf(s.held) : {},
       legacy: !!key && (s.legacy === true || (!hadHeld && int(s.sent) > 0)),
+      // True once the user has answered the consent card, or turned sharing on
+      // or off on the settings page: they are not asked again.
+      asked: s.asked === true,
     };
   }
 
@@ -2000,6 +2040,8 @@
     checkListUrl,
     subscriptions,
     enabledLists,
+    listNamesOf,
+    isXPageUrl,
     addListPatch,
     removeListPatch,
     listOnPatch,

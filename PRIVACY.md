@@ -64,7 +64,7 @@ Sync does not copy it to other devices.
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
 | `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post. Labels are on unless you turn them off; nothing is saved until you click. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
-| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), for each account a report went for, the side and day the server last confirmed (or that it holds nothing, or that this is not known), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code and the confirmed sides; **Delete what I shared** removes them once the server confirms the delete. |
+| `xsh:share` | Sharing's record: whether sharing is on, whether you have answered the sharing card (one true or false value), the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), for each account a report went for, the side and day the server last confirmed (or that it holds nothing, or that this is not known), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code and the confirmed sides; **Delete what I shared** removes them once the server confirms the delete. |
 
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
 the account being visited, the handle muting runs as, and the id of the tab it
@@ -175,8 +175,21 @@ no remotely hosted code.
 
 Sharing is in the extension only, from 0.10.0; the userscript
 has no labels. It is off unless you turn it on under **Share your labels** on
-the settings page, which lists what is sent before the button. The popup says
-whether it is on.
+the settings page, which lists what is sent before the button, or by pressing
+**Share** on a card that appears once, after your first saved **Hide as slop**
+click while sharing is off and unanswered. The card lists the same things and
+turns sharing on for labels you make from then on only: it queues none of the
+labels already saved. **Not now** keeps sharing off and the card does not come
+back; turning sharing on or off on the settings page also counts as an answer.
+The card's answer is kept in the sharing record (`xsh:share`) as one true or
+false value, which **Delete what I shared** keeps. The popup says whether
+sharing is on.
+
+While sharing is on, **Not slop** on the note that stands in for a hidden post
+saves a Not slop label like any other, and so sends a report of it. **Show** on
+that note stores nothing and sends nothing: it only shows the post until you
+leave the page. Pressing **Details** on the card opens the settings page in a
+tab and sends nothing.
 
 **What is sent.** While sharing is on, each label you save is sent as a report
 of five fields:

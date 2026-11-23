@@ -601,6 +601,7 @@ async function startShare(backfill) {
     queued = reports.length;
   }
   st.on = true;
+  st.asked = true;
   await chrome.storage.local.set({ [K.share]: st });
   // The caller sends at once; the alarm is there if this worker stops first.
   if (st.queue.length) shareSoon(st.retryAt);
@@ -612,9 +613,29 @@ async function startShare(backfill) {
 // so that delete can name it.
 async function stopShare() {
   const st = await shareRec();
-  await chrome.storage.local.set({ [K.share]: Object.assign(st, { on: false, queue: [], retryAt: null }) });
+  await chrome.storage.local.set({ [K.share]: Object.assign(st, { on: false, asked: true, queue: [], retryAt: null }) });
   await chrome.alarms.clear(SHARE_ALARM);
   return { ok: true };
+}
+
+// Called inside serial(). The consent card's answer, from an x.com tab:
+// 'share' turns sharing on for labels made from now on (no label already
+// saved is queued), 'not-now' only records that the user answered. Refused
+// once an answer is recorded or sharing is on, with no label saved yet, or
+// while Delete what I shared runs. Nothing changes when it is refused.
+async function shareConsent(choice) {
+  if (choice !== 'share' && choice !== 'not-now') return { ok: false, reason: 'not a choice' };
+  if (forgetting) return { ok: false, reason: 'Delete what I shared is running' };
+  const st = await shareRec();
+  if (L.shareOn(st) || st.asked) return { ok: false, reason: 'already answered' };
+  const saved = Object.keys(await chrome.storage.local.get(null)).some((k) => k.startsWith(L.LABEL_PREFIX));
+  if (!saved) return { ok: false, reason: 'no label saved' };
+  if (choice === 'not-now') {
+    await chrome.storage.local.set({ [K.share]: Object.assign(st, { asked: true }) });
+    return { ok: true };
+  }
+  const r = await startShare(false);
+  return r.ok ? { ok: true } : r;
 }
 
 // Delete what I shared: sharing goes off first, so nothing more is sent; a
@@ -646,7 +667,9 @@ async function forgetOnce() {
     return { ok: false, reason: why };
   }
   await serial(async () => {
-    if ((await shareRec()).key === key) await chrome.storage.local.set({ [K.share]: L.shareState(null) });
+    // The answer to the consent card is kept: deleting what was shared is not a reason to ask again.
+    const now = await shareRec();
+    if (now.key === key) await chrome.storage.local.set({ [K.share]: Object.assign(L.shareState(null), { asked: now.asked }) });
   });
   return { ok: true, removed: Number(res.body.removed) || 0 };
 }
@@ -680,6 +703,14 @@ chrome.storage.onChanged.addListener((changes, area) => {
 function fromOwnPage(sender) {
   const own = chrome.runtime.getURL('');
   return !!sender && typeof sender.url === 'string' && sender.url.startsWith(own);
+}
+
+// A content script in an x.com or twitter.com tab: a tab, and the frame's
+// address on the manifest's matches. Only the consent card's two messages
+// accept it; everything about sharing that a page of the site could abuse
+// stays on fromOwnPage.
+function fromXTab(sender) {
+  return !!sender && !!sender.tab && L.isXPageUrl(sender.url);
 }
 
 chrome.alarms.onAlarm.addListener((a) => {
@@ -773,6 +804,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     );
     return true;
   }
+  // The consent card on x.com: the user's answer, or Details.
+  if (msg.type === 'xsh:share-consent') {
+    if (!fromXTab(sender)) return false;
+    serial(() => shareConsent(msg.choice)).then(sendResponse, (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
+    return true;
+  }
+  if (msg.type === 'xsh:open-settings') {
+    if (!fromXTab(sender)) return false;
+    Promise.resolve()
+      .then(() => chrome.tabs.create({ url: chrome.runtime.getURL('src/settings.html#share') }))
+      .then(() => sendResponse({ ok: true }), (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
+    return true;
+  }
   if (msg.type === 'xsh:share-forget') {
     if (!fromOwnPage(sender)) return false;
     forgetShare().then(sendResponse, (e) => sendResponse({ ok: false, reason: String((e && e.message) || e) }));
@@ -806,7 +850,8 @@ async function saveLabel(msg) {
   const key = id ? L.LABEL_PREFIX + id : null;
   const got = await chrome.storage.local.get([K.settings, K.list, K.labelCount, K.share, ...(key ? [key] : [])]);
   const s = got[K.settings] || {};
-  const sharing = L.shareOn(L.shareState(got[K.share]));
+  const shareRecord = L.shareState(got[K.share]);
+  const sharing = L.shareOn(shareRecord);
   if (!L.labelsOn(s)) return { ok: false, reason: 'labels are off' };
   const list = got[K.list];
   const ctx = { handles: list && list.handles, source: list && list.source, settings: s };
@@ -861,7 +906,11 @@ async function saveLabel(msg) {
     const report = L.reportOf(r.record);
     if (report) await queueShare([report]);
   }
-  return { ok: true, label: r.label, added: patch ? Object.keys(patch)[0] : null };
+  const out = { ok: true, label: r.label, added: patch ? Object.keys(patch)[0] : null };
+  // The page shows the consent card once: for a Slop label, while sharing is
+  // off, no answer is recorded and no Delete what I shared is running.
+  if (r.label === 'slop' && !sharing && !shareRecord.asked && !forgetting) out.askShare = true;
+  return out;
 }
 
 // Delete every label and the count. The two boxes are left as they are.

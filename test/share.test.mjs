@@ -51,7 +51,7 @@ test('a label makes a report of its label, account, post id, the id of the post 
 });
 
 test('the stored record is read defensively: a bad key, a bad item or a bad number is dropped', () => {
-  assert.deepEqual(L.shareState(null), { on: false, key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null, fails: 0, held: {}, legacy: false });
+  assert.deepEqual(L.shareState(null), { on: false, key: null, queue: [], seq: 0, sent: 0, lastSentAt: null, lastError: null, retryAt: null, fails: 0, held: {}, legacy: false, asked: false });
   const st = L.shareState({
     on: 'true',
     key: KEY.toUpperCase(),
@@ -85,9 +85,15 @@ test('the stored record is read defensively: a bad key, a bad item or a bad numb
     fails: 0,
     held: {},
     legacy: false,
+    asked: false,
   });
   assert.equal(L.shareState({ fails: 3 }).fails, 3);
   assert.equal(L.shareState({ fails: 1.5 }).fails, 0);
+  // asked is true only when it is exactly true.
+  for (const v of ['true', 1, {}, null, undefined, false]) assert.equal(L.shareState({ asked: v }).asked, false, String(v));
+  assert.equal(L.shareState({ asked: true }).asked, true);
+  // Queueing keeps it.
+  assert.equal(L.enqueueShare({ asked: true, key: KEY, on: true }, report('9')).asked, true);
 });
 
 test('a 0.10.0 queue item (a hash, no day) survives the update and is sent with neither; a bad day or hash is dropped', () => {
