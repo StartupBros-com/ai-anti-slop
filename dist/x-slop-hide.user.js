@@ -2316,8 +2316,8 @@
 // Labels, unless the user has turned them off (extension only): every post
 // X lists (home, search, profiles, lists, notifications, a post's page) gets
 // one icon button, Hide as slop, in its header, left of X's Grok and More
-// icons, except where a click could never hide it (labelTarget). A click
-// there, and the Undo it offers, are the only things this script acts on in
+// icons, except the user's own posts and in a mute job's tab (labelTarget).
+// A click there, and the Undo it offers, are the only things this script acts on in
 // the user's own tabs, and only a click the browser marks as the user's own.
 // A click shows on the page at once and is handed to the background worker
 // to save only when its 6-second Undo window ends, so an undone click is
@@ -2568,17 +2568,18 @@
   // ---------------------------------------------------------------- labels
 
   // The post a button would label, or null: any post with its own link and
-  // author, wherever X lists it, except where a click could never hide it:
-  // the user's own posts (`who` is whoAmI()), and posts by the account whose
-  // profile or post page is open, which hiding leaves alone (L.shouldHide's
-  // owner). On a post's own page that is the post itself and its author's
-  // replies under it.
+  // author, wherever X lists it, except the user's own (`who` is whoAmI()).
+  // That includes the post a page is about and every post on its author's
+  // profile: a click there labels the post and adds the account to Also hide,
+  // though its posts still show on its own pages (L.shouldHide's owner). A
+  // mute job's tab, which the user never sees, gets no button.
   function labelTarget(article, who) {
+    if (jobTab) return null;
     const url = postKey(article);
     const post = url && L.statusOf(url);
     if (!post) return null;
     const author = L.authorHandleOf(article);
-    if (!author || author === L.pageOwner(location.pathname)) return null;
+    if (!author) return null;
     if (who && who.me === author) return null;
     return { id: post.id, url, author };
   }
@@ -2614,17 +2615,21 @@
     return null;
   }
 
-  // One of the icons beside More: a box holding a button and no link, which
-  // the author's names beside them always hold (Grok's button is named only
-  // in X's own language, so it is found by its shape).
+  // One of the icons beside More: a box holding a button, no link (the
+  // author's names beside them always hold one) and no text (X's Follow and
+  // Subscribe buttons have theirs). Grok's button is named only in X's own
+  // language, so it is found by its shape.
   const BUTTONISH = 'button, [role="button"]';
-  const isIconBox = (el) => !!(el.matches(BUTTONISH) || el.querySelector(BUTTONISH)) && !el.querySelector('a[href]');
+  const isIconBox = (el) => !!(el.matches(BUTTONISH) || el.querySelector(BUTTONISH)) && !el.querySelector('a[href]') && !(el.textContent || '').trim();
 
-  // Where the button goes in a post's header: first in the group of icons at
-  // its top right (Grok, then More), or just before More when More stands
-  // alone. That group is the right end of the header and grows leftward, so
-  // none of X's icons moves, as each would in the action row. Returns
-  // { parent, before }, or null when the post has no More button (yet).
+  // Where the button goes in a post's header: first in the run of icons that
+  // ends with More at its top right (Grok, then More), or just before More
+  // when More stands alone. That run is the right end of the header and grows
+  // leftward, so none of X's icons moves, as each would in the action row.
+  // On the post a page is about, X may put its Follow button and an empty box
+  // in the same group, left of Grok (seen at 420 px on 2026-11-23): the run
+  // stops at them. Returns { parent, before }, or null when the post has no
+  // More button (yet).
   function headSpot(article, bar) {
     const caret = caretOf(article);
     if (!caret) return null;
@@ -2637,8 +2642,16 @@
       branch = box;
       box = box.parentElement;
     }
-    const others = box && box !== article ? [...box.children].filter((c) => c !== branch && c !== bar) : [];
-    if (others.length && others.every(isIconBox)) return { parent: box, before: [...box.children].find((c) => c !== bar) };
+    if (box && box !== article) {
+      // Left from More's branch, over the icons right before it.
+      let first = null;
+      for (let el = branch.previousElementSibling; el; el = el.previousElementSibling) {
+        if (el === bar) continue;
+        if (!isIconBox(el)) break;
+        first = el;
+      }
+      if (first) return { parent: box, before: first };
+    }
     return { parent: caret.parentElement, before: caret };
   }
 
@@ -2923,7 +2936,9 @@
     refreshView();
     rescanAll();
     renderId(t.id);
-    showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), label === 'slop' && viewAllowBox.has(t.author)), true);
+    const allowed = label === 'slop' && viewAllowBox.has(t.author);
+    const ownPage = label === 'slop' && t.author === L.pageOwner(location.pathname);
+    showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), allowed, ownPage), true);
     if (btn && btn.hasAttribute('data-xsh-note-act')) {
       // A click on the note: the note is gone if the post shows now.
       if (!document.contains(btn)) focusRevealed(article);
@@ -2937,13 +2952,15 @@
   // What the notice says a click did. gone: the post is hidden now (not so
   // while hiding is paused or the account is in Always show). allowed: the
   // account is in Always show, as one labelled Not slop before 0.9.0 is, so
-  // the label hides nothing.
-  function clickText(label, entry, handle, gone, allowed) {
+  // the label hides nothing. ownPage: the page open is the account's own
+  // profile or post page, where its posts still show.
+  function clickText(label, entry, handle, gone, allowed, ownPage) {
     if (label === null) return 'Slop label removed.';
     if (label === 'not_slop') return entry ? `Marked @${handle} not slop and added it to Always show.` : `Marked @${handle} not slop.`;
     const did = gone ? `Hid @${handle}` : `Labelled @${handle} as slop`;
     const text = entry ? `${did} and added it to Also hide.` : `${did}.`;
-    return allowed ? `${text} It still shows: it is in Always show.` : text;
+    if (allowed) return `${text} It still shows: it is in Always show.`;
+    return ownPage && !gone ? `${text} Its posts still show on its own pages.` : text;
   }
 
   // Put a post's label back as it was before a click.
