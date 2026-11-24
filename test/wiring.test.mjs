@@ -3263,7 +3263,7 @@ test('settings page: the Lists section is first, retitled, and shows the four bu
   assert.equal(lev.querySelector('label').textContent, 'levelsio: Blocked for AI reply');
   assert.equal(lev.querySelector('input').checked, false);
   assert.equal(stat(s, 'levelsio'), 'Off');
-  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Recommended includes the ones blocked with a public reply\. Hides replies only\./);
+  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Recommended includes the ones it marks confirmed, with AI or spam replies saved as evidence\. Hides replies only\./);
   assert.equal(lev.querySelector('a').getAttribute('href'), 'https://blockedforaireply.levels.io/');
   assert.equal(lev.querySelector('button'), null, 'a built-in list has no Remove');
   assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
@@ -4040,7 +4040,7 @@ test('Recommended: the settings page shows it first and on, with its note and a 
   assert.equal(stat(s, 'recommended'), '5 accounts · updated just now');
   assert.equal(s.$('summary').textContent, 'Hiding replies from 5 accounts on 2 lists.');
   assert.equal(rec.querySelector('details summary').textContent, 'About Recommended');
-  assert.match(rec.textContent, /AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop\. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either\. Hides replies only; muting uses clankwall's AI flags\./);
+  assert.match(rec.textContent, /AI Anti-Slop's pick: clankwall's AI flags; the accounts levelsio's list marks confirmed, each with the AI or spam replies it saved as evidence; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop\. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either\. Hides replies only; muting uses clankwall's AI flags\./);
   assert.deepEqual(
     [...rec.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent, a.getAttribute('target'), a.getAttribute('rel')]),
     [

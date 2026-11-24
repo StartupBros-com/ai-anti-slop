@@ -684,6 +684,45 @@ installs into a new folder. A direct download of both files right after, run
 through the branch's code in Node, gave the same 1,306, 786 and 521, with 1
 account in both files. levelsio's file was 965,689 bytes.
 
+On 2026-11-24 levelsio's `accounts.ndjson` (2,283,095 bytes, 3,422 rows,
+updated 18:28 UTC) named each row's tier in a new `status` field
+(1,486 confirmed, 569 likely, 1,223 unreviewed, 144 flagged) and no longer
+had a `levelsio` field. Main's code, given that file in Node, kept 0 of its
+rows, so levelsio's part was refused as "empty list" on every refresh. An
+install already holding levelsio's part kept it; the run gave "holding
+1,407" back unchanged. Recommended came to 785, clankwall's part alone, on a
+new install. The same file through the branch's code: levelsio's part 1,486,
+Recommended 2,270 (785 from AI flags, 1 account in both), no source refused,
+and an install holding 1,407 updated to 1,486. AI flags (785), All flags
+(2,807) and levelsio's whole list (3,422, from `usernames.txt`, which kept its
+shape) read the same on both. The readers' list was empty. The file's own
+rule, in `accounts.json` the same hour: "confirmed = AI or spam replies
+checked and saved as evidence". Of the 1,535 confirmed accounts on levelsio's
+page, 492 had a public "Blocked for AI reply" post; 881 of the rest were
+blocked on 2026-11-23 or later.
+
+A blind check of the confirmed tier the same day. Three judges (Sonnet, one
+lens each: writing tells, engagement with the post, and a skeptic told to
+default to human) saw 103 items, each one to three replies with no handle or
+list name, and said ai, human or unsure. An item counted as AI when 2 of 3
+said ai, as human when 2 of 3 said human, and as split otherwise. The items:
+20 confirmed accounts with a public block reply before 2026-11-23, 20
+confirmed accounts blocked on or after 2026-11-23 without one, and 63
+accounts that replied under three posts about AI reply spam that day, as
+controls. Every account in the first two groups had replies readable on
+levelsio's page and was not suspended or deleted.
+
+| Group | Items | AI | Human | Split |
+|---|---|---|---|---|
+| Confirmed, public block reply, before 2026-11-23 | 20 | 16 | 4 | 0 |
+| Confirmed, blocked on or after 2026-11-23 | 20 | 18 | 0 | 2 |
+| Repliers under three posts (controls) | 63 | 1 | 50 | 12 |
+
+The 4 judged human in the first group each had one readable reply. One of the
+63 controls was on any list (clankwall's AI flags, levelsio's list and
+nobots.fyi), and the judges called it human. Agreement between judges of one
+model is not independent evidence, and 20 is too few for a rate.
+
 ## An x.com tab left open across a reload, in Chromium
 
 On 2026-11-19, headless Chromium 157.0.8103.50 loaded the extension built from

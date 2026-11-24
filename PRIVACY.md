@@ -99,9 +99,9 @@ off is not downloaded.
   `https://blockedforaireply.levels.io/api/accounts.ndjson` (about 1 MB on
   2026-11-21) and `https://ai-anti-slop.startupbros.com/v1/list.ndjson`, the
   readers' list (see [Sharing labels](#sharing-labels)). From each row of
-  levelsio's file it reads the handle, the `levelsio` field and whether the
-  row lists any evidence, and keeps only the handles of accounts marked
-  `confirmed` with evidence. From the readers' list it keeps only the handles.
+  levelsio's file it reads the handle, the `status` field (`levelsio` in the
+  file's shape before 2026-11-24) and whether the row lists any evidence, and
+  keeps only the handles of accounts marked `confirmed` with evidence. From the readers' list it keeps only the handles.
   Nothing else in either file is kept. The readers' list is downloaded whether
   or not you share, and AI Anti-Slop's server keeps nothing about a download.
 - clankwall's AI flags list, `https://clankwall.vogel.dev/api/usernames.txt`,
