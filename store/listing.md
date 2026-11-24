@@ -19,11 +19,19 @@ review (since 2026-11-19) was cancelled; the store still served 0.8.0 that day.
 On 2026-11-23 (UTC) the store served 0.10.0: its package was the
 store package built from the v0.10.0 tag (69a72aa), 13 of its 14 files byte
 for byte, `manifest.json` the same once the store's `update_url` line is
-removed, and the store's `_metadata/verified_contents.json` added. 0.11.0 has
-not been submitted. Since 0.10.0's text, the note under HIDING and
-the card in the sharing line under LABELS are new, and the Website content row
-and the paragraph after the data-usage table name the day where they named a
-hash. Sharing labels is new
+removed, and the store's `_metadata/verified_contents.json` added.
+
+0.11.0 was submitted for review on 2026-11-24 at 00:32 UTC, with automatic
+publishing on. The package was the store zip built from the v0.11.0 tag
+(93f7282), 101,834 bytes. That submit changed the package, screenshots 1 and 2,
+the description and the `storage`, `alarms` and host permission justifications
+to what this file has; every other field already matched it. Since 0.10.0's
+description, the note under HIDING is new. The sharing line under LABELS adds
+the card, slop or not slop, the day and the random code, where it named a hash
+of the words. The PRIVACY section adds take-backs, the random code and the
+system in the Report a problem address.
+
+Sharing labels is new
 in 0.10.0, so these were written for the first submit that carries it: the
 readers' list in the first paragraph, the sharing line under LABELS, the
 PRIVACY section, the single purpose, the storage justification, the readers'
@@ -152,9 +160,11 @@ Hide posts on x.com by accounts on public lists of AI-reply spam accounts, among
 
 **Permission justifications:** the dashboard takes all host access, the
 clankwall host and the x.com content scripts, in a single **Host permission
-justification** field, which holds the last two rows of this table joined
-(938 of the field's 1,000 characters with the two joined by a line break,
-counted on 2026-11-23).
+justification** field, which holds the last two rows of this table joined by
+one line break, without the backticks: 936 of the field's 1,000 characters, as
+0.11.0 was submitted. Earlier submits put each row after its host and a colon,
+with a blank line between; with the Unmute clause that comes to 1,040
+characters, over the limit.
 
 | Permission | Justification |
 |---|---|
@@ -163,8 +173,8 @@ counted on 2026-11-23).
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads clankwall's public lists from `https://clankwall.vogel.dev/api/`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except on posts by the account whose page is open and, once X shows who is logged in, the user's own, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item, or Unmute for an account it muted that left the list, only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
-**Remote code:** the dashboard asked no remote-code question when 0.7.1 was
-submitted, so nothing was entered. If it asks, the answer is No: all
+**Remote code:** the dashboard asked no remote-code question when 0.7.1 or
+0.11.0 was submitted, so nothing was entered. If it asks, the answer is No: all
 JavaScript ships in the package, and the lists it downloads are data, read and
 never run: plain text with one handle per line, or JSON lines. Of clankwall's
 JSON lines only the `username` field is read; of levelsio's, which the
@@ -175,16 +185,18 @@ readers' list (`https://ai-anti-slop.startupbros.com/v1/list.ndjson`), the
 by address are fetched without any host permission, so only a host that lets other sites read the file (an
 `Access-Control-Allow-Origin` header) can serve one.
 
-**Data usage.** The docs show the checkbox labels only in a screenshot, so the
-names below may differ from the dashboard's; tick the dashboard's nearest box
-for each row. The stored fields are named by their keys in `PRIVACY.md`.
+**Data usage.** The rows use the dashboard's box names as it showed them on
+2026-11-24, with its Health information, Financial and payment information and
+Location boxes on one row. The dashboard has no field for the reasons; the Why
+column is for whoever ticks the boxes. The stored fields are named by their keys in
+`PRIVACY.md`.
 
 | Box | Tick | Why |
 |---|---|---|
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
 | Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, the text is not sent. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. With sharing on, the two post ids are sent, with the day, which says which post page the user was reading. |
-| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
+| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring. The dashboard's examples for this box are "network monitoring, clicks, mouse position, scroll, or keystroke logging"; 0.10.0 and 0.11.0 were submitted with it unticked. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
 | Personal communications | No | Public posts only; no messages or email. |
 | Health, financial and payment, location | No | None handled. |
@@ -222,6 +234,11 @@ carries the Limited Use statement on the project's own page.
   publish by hand after approval; an approved item not published within 30
   days goes back to draft and needs resubmitting. AI Anti-Slop leaves it
   ticked.
+- On 2026-11-24 the dialog's **Submit For Review** first answered "Error
+  submitting item." and left the draft as it was. After a page reload a second
+  press submitted. The Status page then read **Pending review**, and the item's
+  ⋮ menu offered **Defer publish**, which it shows only while automatic
+  publishing is on.
 - Decide before submitting. As the dashboard stood on 2026-11-17: while a
   review was pending with automatic publishing on, the item's ⋮ menu (in the
   header of its Store listing page; the Status page has none) offered **Defer
