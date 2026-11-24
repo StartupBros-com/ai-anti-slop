@@ -7,8 +7,8 @@ to both old repositories redirect here.
 
 AI Anti-Slop hides posts on x.com whose author is on
 [clankwall](https://clankwall.vogel.dev/)'s public list of AI-reply spam
-accounts (in the extension, also on @levelsio's list of accounts blocked
-with a public reply), and can also mute the accounts on clankwall's list on
+accounts (in the extension, also on @levelsio's list of accounts it marks
+confirmed), and can also mute the accounts on clankwall's list on
 your X account. You can add
 accounts of your own, choose Show, Hide or Mute for each of six answer bots
 such as @grok and @AskPerplexity, and hide posts that tag one of those bots.
@@ -38,8 +38,8 @@ The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
 extension the list that starts on is **Recommended**: that list plus the
-accounts levelsio blocked with a public reply, 1,306 accounts on 2026-11-21,
-plus the readers' list, which AI Anti-Slop builds from the labels readers
+accounts levelsio's list marks confirmed, 1,306 accounts on 2026-11-21 and
+2,270 on 2026-11-24, plus the readers' list, which AI Anti-Slop builds from the labels readers
 share and which starts empty.
 You can also switch on clankwall's wider "All flags" list (2,811
 accounts on 2026-11-19, AI and spam), the whole of levelsio's "Blocked for AI reply" list
@@ -285,14 +285,20 @@ seconds after.
 | A list you add | The address you type | On, once added |
 
 - **Recommended** is AI Anti-Slop's pick: every account on AI flags, plus the
-  accounts on levelsio's list that were blocked with a public reply, which
-  levelsio's page links to, plus the readers' list. The extension builds it
-  from the three files above: it keeps a row of levelsio's `accounts.ndjson`
-  only when the row says `"levelsio": "confirmed"` and has at least one item
-  under `evidence`, and every row of the readers' list. It held 1,306 accounts
-  on 2026-11-21, 786 from AI flags and 521 from levelsio's file, with 1 on
-  both, before the readers' list existed. levelsio's other accounts, blocked
-  with no reply or copied from clankwall, are left out. Each file is checked on
+  accounts levelsio's list marks confirmed, plus the readers' list. The
+  extension builds it from the three files above: it keeps a row of levelsio's
+  `accounts.ndjson` only when the row says `"status": "confirmed"` (until
+  2026-11-24 the file said `"levelsio": "confirmed"`, which still counts) and
+  has at least one item under `evidence`, and every row of the readers' list.
+  The file's own rule reads "confirmed = AI or spam replies checked and saved
+  as evidence" (2026-11-24). It held 1,306 accounts on 2026-11-21, 786 from AI
+  flags and 521 from levelsio's file, with 1 on both, before the readers' list
+  existed, and 2,270 on 2026-11-24, 785 and 1,486, with 1 on both. On
+  2026-11-21 levelsio's confirmed accounts were the ones blocked with a public
+  "Blocked for AI reply" reply. By 2026-11-24 about a third were, and the rest,
+  mostly added on 2026-11-23, were blocked after a check of their replies,
+  each with the replies it saved. levelsio's other accounts, blocked with no
+  reply or flagged by an outside check, are left out. Each file is checked on
   its own, against its own part of the stored copy, and one that fails keeps
   its previous part while the others update
   ([How list updates stay safe](#how-list-updates-stay-safe)). It hides only,

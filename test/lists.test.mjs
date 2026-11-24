@@ -26,7 +26,7 @@ test('subscriptions: by default the AI list is on, and All flags and levelsio\'s
   assert.equal(subs[3].url, LEVELS);
   assert.equal(subs[3].format, 'text');
   assert.equal(subs[3].about, 'https://blockedforaireply.levels.io/');
-  assert.match(subs[3].note, /judgment calls, not proof\. Recommended includes the ones blocked with a public reply\. Hides replies only\.$/);
+  assert.match(subs[3].note, /judgment calls, not proof\. Recommended includes the ones it marks confirmed, with AI or spam replies saved as evidence\. Hides replies only\.$/);
   assert.equal(subs[1].url, AI);
   assert.equal(subs[1].format, 'text');
   assert.equal(subs[2].url, ALL);
