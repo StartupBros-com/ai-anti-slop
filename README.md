@@ -295,9 +295,10 @@ seconds after.
   flags and 521 from levelsio's file, with 1 on both, before the readers' list
   existed, and 2,270 on 2026-11-24, 785 and 1,486, with 1 on both. On
   2026-11-21 levelsio's confirmed accounts were the ones blocked with a public
-  "Blocked for AI reply" reply. By 2026-11-24 about a third were, and the rest,
-  mostly added on 2026-11-23, were blocked after a check of their replies,
-  each with the replies it saved. levelsio's other accounts, blocked with no
+  "Blocked for AI reply" reply. On 2026-11-24 about a third of the accounts
+  levelsio's page showed as confirmed had one, and 881 of the 1,486 in the
+  file were blocked on 2026-11-23 or later, each with the replies the check
+  saved. levelsio's other accounts, blocked with no
   reply or flagged by an outside check, are left out. Each file is checked on
   its own, against its own part of the stored copy, and one that fails keeps
   its previous part while the others update
