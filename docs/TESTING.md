@@ -508,6 +508,28 @@ changed in X's display settings and set back to Lights out afterwards.
   promoted post came up, and there were no exceptions. The build of X read
   offered no Dim theme, only Default and Lights out.
 
+On 2026-11-23 the icon went onto the posts that had none: the post a page is
+about, its author's replies and every post on an account's profile. The same
+scripts and stand-in ran in the same browser (Chrome 158 on Windows), logged
+in to an X account, at the change's tree.
+
+- A reply's own page, at the window's 2,559 pixels: the reply got the icon
+  before Grok, 8.1 pixels from it, as did the post above it. X's icons moved
+  0 pixels and no height changed.
+- The same page at 420 pixels. X drew a Follow button and an empty box in the
+  same group as the reply's Grok and More. In a first run the icon went just
+  before More, between Grok and More, and Follow and Grok moved 27 pixels; the
+  placement then looked only for a group of icons and nothing else. After the
+  fix the order was Follow, the empty box, the icon, Grok, More, 8.1 pixels
+  before Grok, and X's icons moved 0 pixels. The icon cut the reply's handle
+  short there in each of 4 reads; it was whole with the icon hidden.
+- That reply's author's profile: 20 of 20 posts got the icon before Grok.
+- A search for the logged-in account's own posts: 25 of 25 got none.
+- `x.com/home` at 2,559 pixels, 8 screens: 24 of 24 before Grok. At 420
+  pixels, 6 screens: 21 of 21 just before More (X drew no Grok), and the icon
+  cut 3 of the 21 names or handles short. X's icons moved 0 pixels and no
+  post's height changed in any read, and there were no exceptions.
+
 ## Popup layout in Chromium
 
 On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
@@ -963,7 +985,9 @@ and 420 pixels, how X nests More when it draws no Grok (only where the icon
 landed was read), the line of its own under a post without More, promoted
 posts, the notifications page, a profile's posts by
 other accounts, and x.com drawing its sidebar after the posts (it was there
-first in every run above). For the shorter popup (0.9.0):
+first in every run above). For the icon on the post a page is about
+(2026-11-23): widths between 420 and 2,559 pixels, where X may or may not put
+Follow beside Grok, and a header with X's Subscribe button. For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
 measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on

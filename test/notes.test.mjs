@@ -551,7 +551,7 @@ test('a worker that does not ask gets no card; neither does the userscript or a 
   await hideClick(quiet, '2');
   assert.equal(card(quiet), null);
 
-  // A job tab never shows it, even when the answer asks.
+  // A job tab never shows it: it draws no button to click.
   const job = runContent(page(CELLS()), {
     pathname: PAGE,
     state: stateWith([], { labeling: true }),
@@ -560,7 +560,7 @@ test('a worker that does not ask gets no card; neither does the userscript or a 
     clock: true,
   });
   await settle();
-  await hideClick(job, '2');
+  assert.equal(job.document.querySelector('[data-xsh-label]') === null, true, 'no button in a job tab');
   assert.equal(card(job), null);
 
   // The userscript has no saveLabel, so no button to click and no card code path.

@@ -29,6 +29,24 @@ test('mute job: clicks the one exact Mute item and reports X\'s toast', async ()
   assert.deepEqual(t.confirms, ['j1'], 'the worker was asked once, just before the click');
 });
 
+// The job opens the account's own profile, whose posts get a Hide as slop
+// button in the user's tabs. A job's tab draws none and still mutes.
+test('mute job: with labels on, the job tab draws no Hide as slop button and clicks only Mute', async () => {
+  const t = runContent(profile([postWithCaret({ author: H })]), {
+    pathname: `/${H}`,
+    state: stateWith([H], { muteEnabled: true, muteAccount: ME, labeling: true }),
+    job: job(),
+    labels: {},
+  });
+  const clicks = wireMenu(t.document, { items: MENU, handle: H });
+  const r = await t.done;
+  assert.deepEqual(clicks, ['Mute']);
+  assert.equal(r.status, 'muted');
+  // A boolean: a failing assertion would print the node, which walks the whole document.
+  assert.equal(t.document.querySelector('[data-xsh-bar]') === null, true, 'no button in the job tab');
+  assert.deepEqual(t.saves, []);
+});
+
 // Planted negative: settings changed after the tab claimed the job, so the
 // worker says no; nothing is clicked and the open menu is left to the worker.
 test('mute job: no click when the worker does not confirm', async () => {

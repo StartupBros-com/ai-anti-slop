@@ -597,12 +597,13 @@ bubble with an ×, at the post's top right, just left of Grok's icon and ⋯
 (More), or of ⋯ alone where X shows no Grok icon (in a narrow window, say).
 None of X's icons moves to make room for it, but it takes room from the line
 of names, so a long name or handle is cut short sooner. A post without ⋯ gets
-the button on a line of its own under it. Two kinds of post get none, since a click could
-never hide them: your own, once x.com's sidebar shows who is logged in, and
-those by the account whose profile or post page is open, which hiding leaves
-alone there (see [What gets hidden](#what-gets-hidden)). On a post's own page
-(`x.com/handle/status/...`) that is the post itself and its author's replies
-under it; the posts above it, which it replies to, get one like any other.
+the button on a line of its own under it. Only your own posts get none, once
+x.com's sidebar shows who is logged in. A post's own page
+(`x.com/handle/status/...`) gives the button to the post itself, its author's
+replies and the posts above it alike, and a profile to every post on it. A
+click on the account's own profile or post page labels the post and adds the
+account to **Also hide** as anywhere else, but its posts still show on its own
+pages (see [What gets hidden](#what-gets-hidden)), and the notice says so.
 
 - **Hide as slop** labels the post slop and adds the account to **Also hide
   these accounts**, so its posts on the page hide at once and, with muting on,
