@@ -21,11 +21,13 @@ store package built from the v0.10.0 tag (69a72aa), 13 of its 14 files byte
 for byte, `manifest.json` the same once the store's `update_url` line is
 removed, and the store's `_metadata/verified_contents.json` added.
 
-0.11.0 was submitted for review on 2026-11-24 at 00:32 UTC, with automatic
-publishing on. The package was the store zip built from the v0.11.0 tag
-(93f7282), 101,834 bytes. That submit changed the package, screenshots 1 and 2,
-the description and the `storage`, `alarms` and host permission justifications
-to what this file has; every other field already matched it. Since 0.10.0's
+0.11.0 was first submitted for review on 2026-11-24 at 00:32 UTC. That review
+was cancelled at 00:43 UTC to tick the User activity box, and 0.11.0 was
+submitted again at 00:46 UTC, with automatic publishing on. The package was the
+store zip built from the v0.11.0 tag (93f7282), 101,834 bytes. The two submits
+changed the package, screenshots 1 and 2, the description, the `storage`,
+`alarms` and host permission justifications and the User activity box to what
+this file has; every other field already matched it. Since 0.10.0's
 description, the note under HIDING is new. The sharing line under LABELS adds
 the card, slop or not slop, the day and the random code, where it named a hash
 of the words. The PRIVACY section adds take-backs, the random code and the
@@ -194,9 +196,9 @@ column is for whoever ticks the boxes. The stored fields are named by their keys
 | Box | Tick | Why |
 |---|---|---|
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
-| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, the text is not sent. |
+| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo, or a Not slop click on the note that stands in for a hidden post. With sharing on, the text is not sent. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. With sharing on, the two post ids are sent, with the day, which says which post page the user was reading. |
-| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring. The dashboard's examples for this box are "network monitoring, clicks, mouse position, scroll, or keystroke logging"; 0.10.0 and 0.11.0 were submitted with it unticked. |
+| User activity | Yes | The dashboard's examples for this box are "network monitoring, clicks, mouse position, scroll, or keystroke logging". Each label records one of the user's own Hide as slop or Not slop clicks, with the time, and with sharing on the verdict and its day are sent. Nothing records keystrokes, mouse position or scrolling. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. 0.10.0 and 0.11.0's first submit went in with it unticked; it was ticked for 0.11.0's second submit on 2026-11-24. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
 | Personal communications | No | Public posts only; no messages or email. |
 | Health, financial and payment, location | No | None handled. |
