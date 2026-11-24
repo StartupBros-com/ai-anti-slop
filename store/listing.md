@@ -33,10 +33,14 @@ the card, slop or not slop, the day and the random code, where it named a hash
 of the words. The PRIVACY section adds take-backs, the random code and the
 system in the Report a problem address.
 
-0.11.1 has not been submitted. It goes in place of 0.11.0, whose review is to
-be cancelled: on 2026-11-24 levelsio's list file moved its tier to a field
-0.11.0 does not read, so 0.11.0's Recommended keeps none of levelsio's accounts
-(#108). Since 0.11.0's text, the description says the accounts levelsio's list
+0.11.1 was submitted for review on 2026-11-24 at 22:07 UTC, with automatic
+publishing on, in place of 0.11.0, whose review was cancelled at 21:59 UTC:
+that day levelsio's list file moved its tier to a field 0.11.0 does not read,
+so 0.11.0's Recommended keeps none of levelsio's accounts (#108). The package
+was the store zip built from the v0.11.1 tag (ebee38e), 102,213 bytes. The
+submit changed the package, the description and the `storage` and host
+permission justifications to what this file has; every other field already
+matched it. Since 0.11.0's text, the description says the accounts levelsio's list
 marks confirmed, where it said the ones blocked with a public reply, and gives
 the Hide as slop icon to every post but the user's own (#107). The `storage`
 justification adds the Not slop click on the note, which 0.11.0 already saved
@@ -172,8 +176,9 @@ Hide posts on x.com by accounts on public lists of AI-reply spam accounts, among
 **Permission justifications:** the dashboard takes all host access, the
 clankwall host and the x.com content scripts, in a single **Host permission
 justification** field, which holds the last two rows of this table joined by
-one line break, without the backticks: 936 of the field's 1,000 characters, as
-0.11.0 was submitted. Earlier submits put each row after its host and a colon,
+one line break, without the backticks: 898 of the field's 1,000 characters, as
+0.11.1 was submitted (0.11.0's was 936, with an exception for posts by the
+account whose page is open). Earlier submits put each row after its host and a colon,
 with a blank line between; with the Unmute clause that comes to 1,040
 characters, over the limit.
 
@@ -184,8 +189,8 @@ characters, over the limit.
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads clankwall's public lists from `https://clankwall.vogel.dev/api/`, without cookies. No other data is sent there. |
 | Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except, once X shows who is logged in, on the user's own posts, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item, or Unmute for an account it muted that left the list, only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
-**Remote code:** the dashboard asked no remote-code question when 0.7.1 or
-0.11.0 was submitted, so nothing was entered. If it asks, the answer is No: all
+**Remote code:** the dashboard asked no remote-code question when 0.7.1,
+0.11.0 or 0.11.1 was submitted, so nothing was entered. If it asks, the answer is No: all
 JavaScript ships in the package, and the lists it downloads are data, read and
 never run: plain text with one handle per line, or JSON lines. Of clankwall's
 JSON lines only the `username` field is read; of levelsio's, which the
@@ -250,7 +255,8 @@ carries the Limited Use statement on the project's own page.
   submitting item." and left the draft as it was. After a page reload a second
   press submitted. The Status page then read **Pending review**, and the item's
   ⋮ menu offered **Defer publish**, which it shows only while automatic
-  publishing is on.
+  publishing is on. 0.11.1's submit, later that day, went through on the first
+  press.
 - Decide before submitting. As the dashboard stood on 2026-11-17: while a
   review was pending with automatic publishing on, the item's ⋮ menu (in the
   header of its Store listing page; the Status page has none) offered **Defer
