@@ -508,6 +508,28 @@ changed in X's display settings and set back to Lights out afterwards.
   promoted post came up, and there were no exceptions. The build of X read
   offered no Dim theme, only Default and Lights out.
 
+On 2026-11-23 the icon went onto the posts that had none: the post a page is
+about, its author's replies and every post on an account's profile. The same
+scripts and stand-in ran in the same browser (Chrome 158 on Windows), logged
+in to an X account, at the change's tree.
+
+- A reply's own page, at the window's 2,559 pixels: the reply got the icon
+  before Grok, 8.1 pixels from it, as did the post above it. X's icons moved
+  0 pixels and no height changed.
+- The same page at 420 pixels. X drew a Follow button and an empty box in the
+  same group as the reply's Grok and More. In a first run the icon went just
+  before More, between Grok and More, and Follow and Grok moved 27 pixels; the
+  placement then looked only for a group of icons and nothing else. After the
+  fix the order was Follow, the empty box, the icon, Grok, More, 8.1 pixels
+  before Grok, and X's icons moved 0 pixels. The icon cut the reply's handle
+  short there in each of 4 reads; it was whole with the icon hidden.
+- That reply's author's profile: 20 of 20 posts got the icon before Grok.
+- A search for the logged-in account's own posts: 25 of 25 got none.
+- `x.com/home` at 2,559 pixels, 8 screens: 24 of 24 before Grok. At 420
+  pixels, 6 screens: 21 of 21 just before More (X drew no Grok), and the icon
+  cut 3 of the 21 names or handles short. X's icons moved 0 pixels and no
+  post's height changed in any read, and there were no exceptions.
+
 ## Popup layout in Chromium
 
 On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
@@ -661,6 +683,47 @@ reported version 0.9.1 but listed main's three built-in lists. A store update
 installs into a new folder. A direct download of both files right after, run
 through the branch's code in Node, gave the same 1,306, 786 and 521, with 1
 account in both files. levelsio's file was 965,689 bytes.
+
+On 2026-11-24 levelsio's `accounts.ndjson` (2,283,095 bytes, 3,422 rows,
+updated 18:28 UTC) named each row's tier in a new `status` field
+(1,486 confirmed, 569 likely, 1,223 unreviewed, 144 flagged) and no longer
+had a `levelsio` field. Main's code, given that file in Node, kept 0 of its
+rows, so levelsio's part was refused as "empty list" on every refresh. An
+install already holding levelsio's part kept it; the run gave "holding
+1,407" back unchanged. Recommended came to 785, clankwall's part alone, on a
+new install. The same file through the branch's code: levelsio's part 1,486,
+Recommended 2,270 (785 from AI flags, 1 account in both), no source refused,
+and an install holding 1,407 updated to 1,486. AI flags (785), All flags
+(2,807) and levelsio's whole list (3,422, from `usernames.txt`, which kept its
+shape) read the same on both. The readers' list was empty. The file's own
+rule, in `accounts.json` the same hour: "confirmed = AI or spam replies
+checked and saved as evidence". Of the file's 1,486 confirmed accounts, 881
+have a `blocked_at` of 2026-11-23 or later (800 on 2026-11-23, 81 on
+2026-11-24) and 605 an earlier one. levelsio's page, read the same hour, showed
+1,535 accounts as confirmed, and 492 of them had a public "Blocked for AI
+reply" post.
+
+A blind check of the confirmed tier the same day. Three judges (Sonnet, one
+lens each: writing tells, engagement with the post, and a skeptic told to
+default to human) saw 103 items, each one to three replies with no handle or
+list name, and said ai, human or unsure. An item counted as AI when 2 of 3
+said ai, as human when 2 of 3 said human, and as split otherwise. The items:
+20 confirmed accounts with a public block reply before 2026-11-23, 20
+confirmed accounts blocked on or after 2026-11-23 without one, and 63
+accounts that replied under three posts about AI reply spam that day, as
+controls. Every account in the first two groups had replies readable on
+levelsio's page and was not suspended or deleted.
+
+| Group | Items | AI | Human | Split |
+|---|---|---|---|---|
+| Confirmed, public block reply, before 2026-11-23 | 20 | 16 | 4 | 0 |
+| Confirmed, blocked on or after 2026-11-23 | 20 | 18 | 0 | 2 |
+| Repliers under three posts (controls) | 63 | 1 | 50 | 12 |
+
+The 4 judged human in the first group each had one readable reply. One of the
+63 controls was on any list (clankwall's AI flags, levelsio's list and
+nobots.fyi), and the judges called it human. Agreement between judges of one
+model is not independent evidence, and 20 is too few for a rate.
 
 ## An x.com tab left open across a reload, in Chromium
 
@@ -827,6 +890,33 @@ the real ones (785 and 613 accounts), and the popup read "1400 accounts on 2
 lists". Screenshots 3 and 4 and the tile came out byte-identical to the
 committed ones; the labels shot is taken with hiding paused.
 
+## Updating to 0.11.1, in Chromium
+
+On 2026-11-24 the 0.11.1 release branch (0.11.0 with #107, #108 and #109) was
+loaded over older versions in headless Chromium 157.0.8103.50 through
+playwright-core 1.65.1, each time in a fresh profile, by the same steps as the
+update to 0.11.0 above.
+
+**From 0.11.0** (the v0.11.0 release's extension files), against the real
+lists, with x.com mapped to a closed port. 0.11.0 installed and fetched
+Recommended as 785 accounts, clankwall's part alone, with levelsio's part 0 and
+the record marked partial with "blockedforaireply.levels.io: empty list": on a
+new install 0.11.0 keeps none of levelsio's accounts. After the files were
+replaced by the branch's, the worker reported 0.11.1, kept the extension's
+permissions and hosts, and refreshed within a second of starting: Recommended
+2,273 accounts (clankwall 785, levelsio 1,489, the readers' list 0), no error,
+not partial. The settings page showed "2,273 accounts · updated just now" and
+the new note text; the popup read "2273 accounts on 2 lists" with no error.
+The only addresses asked were the three files Recommended reads; clankwall's
+was asked again for the AI flags list.
+
+**From 0.10.0** (the v0.10.0 release's extension files), with every host
+answered by a local server: the same 28 checks as the update to 0.11.0, 28 of
+28 passed. The worker reported 0.11.1.
+
+`pnpm check` on the branch: 518 of 518 extension tests and 66 of 66 server
+tests.
+
 ## The hidden-post note and the sharing card in Chromium
 
 On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
@@ -963,7 +1053,9 @@ and 420 pixels, how X nests More when it draws no Grok (only where the icon
 landed was read), the line of its own under a post without More, promoted
 posts, the notifications page, a profile's posts by
 other accounts, and x.com drawing its sidebar after the posts (it was there
-first in every run above). For the shorter popup (0.9.0):
+first in every run above). For the icon on the post a page is about
+(2026-11-23): widths between 420 and 2,559 pixels, where X may or may not put
+Follow beside Grok, and a header with X's Subscribe button. For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
 measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on

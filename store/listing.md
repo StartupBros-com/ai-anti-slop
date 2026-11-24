@@ -13,17 +13,40 @@ the store added an `update_url` to `manifest.json` and a
 `_metadata/verified_contents.json`. The release zip also carries `PRIVACY.md`,
 `README.md` and `src/userscript-adapter.js`, which the store zip leaves out.
 
-What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.11.0,
+What to enter in the Chrome Web Store developer dashboard for AI Anti-Slop 0.11.1,
 field by field. 0.10.0 was submitted on 2026-11-21, in place of 0.9.0, whose
 review (since 2026-11-19) was cancelled; the store still served 0.8.0 that day.
 On 2026-11-23 (UTC) the store served 0.10.0: its package was the
 store package built from the v0.10.0 tag (69a72aa), 13 of its 14 files byte
 for byte, `manifest.json` the same once the store's `update_url` line is
-removed, and the store's `_metadata/verified_contents.json` added. 0.11.0 has
-not been submitted. Since 0.10.0's text, the note under HIDING and
-the card in the sharing line under LABELS are new, and the Website content row
-and the paragraph after the data-usage table name the day where they named a
-hash. Sharing labels is new
+removed, and the store's `_metadata/verified_contents.json` added.
+
+0.11.0 was first submitted for review on 2026-11-24 at 00:32 UTC. That review
+was cancelled at 00:43 UTC to tick the User activity box, and 0.11.0 was
+submitted again at 00:46 UTC, with automatic publishing on. The package was the
+store zip built from the v0.11.0 tag (93f7282), 101,834 bytes. The two submits
+changed the package, screenshots 1 and 2, the description, the `storage`,
+`alarms` and host permission justifications and the User activity box to what
+this file has; every other field already matched it. Since 0.10.0's
+description, the note under HIDING is new. The sharing line under LABELS adds
+the card, slop or not slop, the day and the random code, where it named a hash
+of the words. The PRIVACY section adds take-backs, the random code and the
+system in the Report a problem address.
+
+0.11.1 was submitted for review on 2026-11-24 at 22:07 UTC, with automatic
+publishing on, in place of 0.11.0, whose review was cancelled at 21:59 UTC:
+that day levelsio's list file moved its tier to a field 0.11.0 does not read,
+so 0.11.0's Recommended keeps none of levelsio's accounts (#108). The package
+was the store zip built from the v0.11.1 tag (ebee38e), 102,213 bytes. The
+submit changed the package, the description and the `storage` and host
+permission justifications to what this file has; every other field already
+matched it. Since 0.11.0's text, the description says the accounts levelsio's list
+marks confirmed, where it said the ones blocked with a public reply, and gives
+the Hide as slop icon to every post but the user's own (#107). The `storage`
+justification adds the Not slop click on the note, which 0.11.0 already saved
+as a label, and the host justification drops the page-owner exception.
+
+Sharing labels is new
 in 0.10.0, so these were written for the first submit that carries it: the
 readers' list in the first paragraph, the sharing line under LABELS, the
 PRIVACY section, the single purpose, the storage justification, the readers'
@@ -63,7 +86,7 @@ changing either takes a new upload:
 **Description** (plain text; the store shows line breaks but no formatting):
 
 ```
-AI Anti-Slop hides posts on x.com by accounts on its Recommended list: clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev), plus the accounts @levelsio blocked with a public "Blocked for AI reply" (blockedforaireply.levels.io), plus the readers' list, the accounts that three or more AI Anti-Slop readers who share their labels reported as slop. The lists refresh every 6 hours. On the settings page you can switch Recommended off, switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or the whole of levelsio's Blocked for AI reply list, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
+AI Anti-Slop hides posts on x.com by accounts on its Recommended list: clankwall's public list of AI-reply spam accounts (clankwall.vogel.dev), plus the accounts @levelsio's Blocked for AI reply list marks confirmed, with AI or spam replies saved as evidence (blockedforaireply.levels.io), plus the readers' list, the accounts that three or more AI Anti-Slop readers who share their labels reported as slop. The lists refresh every 6 hours. On the settings page you can switch Recommended off, switch on clankwall's wider All flags list, which adds accounts it flagged for spam, or the whole of levelsio's Blocked for AI reply list, or add a list of handles by its address. You can add accounts of your own, keep accounts you always want to see, and choose Show, Hide or Mute for six bots that answer when tagged, such as @grok and @AskPerplexity. A reply by any other account stays, however it was written, unless you turn on hiding posts that tag a bot set to Hide or Mute.
 
 HIDING
 - A post is hidden when its author is on a list you have switched on, in your Also hide box or a bot set to Hide or Mute, unless the author is in Always show or you opened that account's own page. Quotes and mentions stay visible, except that an optional setting hides posts that tag a bot set to Hide or Mute.
@@ -72,8 +95,8 @@ HIDING
 - Hiding works in this browser profile only. In your own tabs the extension never clicks anything on X's page and makes no network request.
 
 LABELS
-- A Hide as slop icon sits in the header of each post, beside X's More menu, on the home timeline, search, profiles, lists and post pages. Posts by the account whose page is open have none, nor do your own once X shows who is logged in. The icon is on by default; turn it off in the popup under Label posts.
-- A click hides the post and adds the account to Also hide, with 6 seconds to undo. An undone click is never saved. A click on a filled icon removes the label.
+- A Hide as slop icon sits in the header of each post, beside X's More menu, on the home timeline, search, profiles, lists and post pages. Only your own posts have none, once X shows who is logged in. The icon is on by default; turn it off in the popup under Label posts.
+- A click hides the post and adds the account to Also hide, with 6 seconds to undo. On the account's own profile or post page its posts still show, and the notice says so. An undone click is never saved. A click on a filled icon removes the label.
 - A saved label keeps the post's text and link in this browser. Export labels saves them to a file.
 - Sharing is off until you turn it on in settings, or press Share on the card that can appear after a saved Hide as slop, until you answer it. The card turns it on for labels you make from then on only. While it is on, each label is sent to AI Anti-Slop's server as slop or not slop, the author's handle, the post's id, the id of the post page it was on and the day it was made, with a random code made in this browser, never the words. Labels that agree across several readers put an account on the readers' list. Delete what I shared deletes them from the server.
 
@@ -152,39 +175,45 @@ Hide posts on x.com by accounts on public lists of AI-reply spam accounts, among
 
 **Permission justifications:** the dashboard takes all host access, the
 clankwall host and the x.com content scripts, in a single **Host permission
-justification** field, which holds the last two rows of this table joined
-(938 of the field's 1,000 characters with the two joined by a line break,
-counted on 2026-11-23).
+justification** field, which holds the last two rows of this table joined by
+one line break, without the backticks: 898 of the field's 1,000 characters, as
+0.11.1 was submitted (0.11.0's was 936, with an exception for posts by the
+account whose page is open). Earlier submits put each row after its host and a colon,
+with a blank line between; with the Unmute clause that comes to 1,040
+characters, over the limit.
 
 | Permission | Justification |
 |---|---|
-| `storage` | Keeps the downloaded lists and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on, and sharing's queue only if the user turns sharing on. All of it stays in the browser's extension storage; while sharing is on, a label's report (slop or not slop, handle, post id, page post id and the day it was made) is also sent to AI Anti-Slop's server, with a random code made in the browser. |
+| `storage` | Keeps the downloaded lists and the user's settings and account lists. Keeps a label (the post's text and link, with the author's handle and the time) only from a Hide as slop click, or a Not slop click on the note that stands in for a hidden post, that the user does not undo; the click is saved when its 6-second Undo window ends, or sooner if the user clicks another post's icon, opens another page, or switches away from or closes the tab. The icon is on by default, but nothing is saved without a click. Keeps the muting record only if the user turns muting on, and sharing's queue only if the user turns sharing on. All of it stays in the browser's extension storage; while sharing is on, a label's report (slop or not slop, handle, post id, page post id and the day it was made) is also sent to AI Anti-Slop's server, with a random code made in the browser. |
 | `alarms` | Refreshes the lists every 6 hours. When muting is on, a once-a-minute alarm checks whether a mute visit is due, and a 90-second alarm closes a visit tab that stalls. When sharing is on, an alarm sends saved reports at least 30 seconds after a label, and again after a failure. |
 | Host permission `https://clankwall.vogel.dev/*` | The service worker downloads clankwall's public lists from `https://clankwall.vogel.dev/api/`, without cookies. No other data is sent there. |
-| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except on posts by the account whose page is open and, once X shows who is logged in, the user's own, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item, or Unmute for an account it muted that left the list, only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
+| Content scripts on `x.com`, `twitter.com`, `mobile.x.com`, `mobile.twitter.com` | The content script reads each post's author handle to hide posts by listed accounts. X serves the same pages on all four hosts. It reads the user's own handle from X's navigation bar, so a post by the user is never hidden for tagging a bot and muting runs only as the account that turned it on. With labels on (the default), it adds a Hide as slop icon to each post's header, except, once X shows who is logged in, on the user's own posts, and reads a post's text only when the user clicks it. With muting on, it clicks X's own Mute item, or Unmute for an account it muted that left the list, only in a background tab the extension opened for one account, and reads the user's muted-accounts page in another tab the extension opened, to confirm earlier mutes. |
 
-**Remote code:** the dashboard asked no remote-code question when 0.7.1 was
-submitted, so nothing was entered. If it asks, the answer is No: all
+**Remote code:** the dashboard asked no remote-code question when 0.7.1,
+0.11.0 or 0.11.1 was submitted, so nothing was entered. If it asks, the answer is No: all
 JavaScript ships in the package, and the lists it downloads are data, read and
 never run: plain text with one handle per line, or JSON lines. Of clankwall's
 JSON lines only the `username` field is read; of levelsio's, which the
-Recommended list uses, the `username`, `levelsio` and `evidence` fields, to
-keep only the handles of accounts marked `confirmed` with evidence; of the
+Recommended list uses, the `username`, `status` (`levelsio` before
+2026-11-24) and `evidence` fields, to keep only the handles of accounts marked
+`confirmed` with evidence; of the
 readers' list (`https://ai-anti-slop.startupbros.com/v1/list.ndjson`), the
 `username` field. levelsio's files, the readers' list and a list the user adds
 by address are fetched without any host permission, so only a host that lets other sites read the file (an
 `Access-Control-Allow-Origin` header) can serve one.
 
-**Data usage.** The docs show the checkbox labels only in a screenshot, so the
-names below may differ from the dashboard's; tick the dashboard's nearest box
-for each row. The stored fields are named by their keys in `PRIVACY.md`.
+**Data usage.** The rows use the dashboard's box names as it showed them on
+2026-11-24, with its Health information, Financial and payment information and
+Location boxes on one row. The dashboard has no field for the reasons; the Why
+column is for whoever ticks the boxes. The stored fields are named by their keys in
+`PRIVACY.md`.
 
 | Box | Tick | Why |
 |---|---|---|
 | Personally identifiable information | Yes | X handles: the user's own handle, in `xsh:settings` while muting is on and in the muting record (`xsh:mutes`) on each mute it made, which stays after muting is turned off; and other people's handles in the user's lists, the muting record and labels (`xsh:label:<post id>`). |
-| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo. With sharing on, the text is not sent. |
+| Website content | Yes | A label keeps up to 1,000 characters of the labelled post's text. A label is saved only from a Hide as slop click the user does not undo, or a Not slop click on the note that stands in for a hidden post. With sharing on, the text is not sent. |
 | Web history (the FAQ's "web browsing activity": the sites and URLs a user visits) | Yes | Each label keeps the address of the post and of the page it was labelled on, with the time. With sharing on, the two post ids are sent, with the day, which says which post page the user was reading. |
-| User activity | No | Nothing records keystrokes or mouse movement. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. Labels record the user's own Hide as slop clicks, covered under Website content and Web history. This is the extension's own function, not monitoring; if the dashboard's wording for this box reads as covering it, tick it. |
+| User activity | Yes | The dashboard's examples for this box are "network monitoring, clicks, mouse position, scroll, or keystroke logging". Each label records one of the user's own Hide as slop or Not slop clicks, with the time, and with sharing on the verdict and its day are sent. Nothing records keystrokes, mouse position or scrolling. With muting on, the muting record keeps up to 50 accounts (listed, in Also hide, or a bot set to Mute on X) whose posts were hidden on the user's screen, so they are muted first. 0.10.0 and 0.11.0's first submit went in with it unticked; it was ticked for 0.11.0's second submit on 2026-11-24. |
 | Authentication information | No | The extension never reads passwords, cookies or tokens. Mute visits use the browser's own x.com login, as any page load does. |
 | Personal communications | No | Public posts only; no messages or email. |
 | Health, financial and payment, location | No | None handled. |
@@ -222,6 +251,12 @@ carries the Limited Use statement on the project's own page.
   publish by hand after approval; an approved item not published within 30
   days goes back to draft and needs resubmitting. AI Anti-Slop leaves it
   ticked.
+- On 2026-11-24 the dialog's **Submit For Review** first answered "Error
+  submitting item." and left the draft as it was. After a page reload a second
+  press submitted. The Status page then read **Pending review**, and the item's
+  ⋮ menu offered **Defer publish**, which it shows only while automatic
+  publishing is on. 0.11.1's submit, later that day, went through on the first
+  press.
 - Decide before submitting. As the dashboard stood on 2026-11-17: while a
   review was pending with automatic publishing on, the item's ⋮ menu (in the
   header of its Store listing page; the Status page has none) offered **Defer
