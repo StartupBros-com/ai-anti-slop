@@ -697,9 +697,11 @@ and an install holding 1,407 updated to 1,486. AI flags (785), All flags
 (2,807) and levelsio's whole list (3,422, from `usernames.txt`, which kept its
 shape) read the same on both. The readers' list was empty. The file's own
 rule, in `accounts.json` the same hour: "confirmed = AI or spam replies
-checked and saved as evidence". Of the 1,535 confirmed accounts on levelsio's
-page, 492 had a public "Blocked for AI reply" post; 881 of the rest were
-blocked on 2026-11-23 or later.
+checked and saved as evidence". Of the file's 1,486 confirmed accounts, 881
+have a `blocked_at` of 2026-11-23 or later (800 on 2026-11-23, 81 on
+2026-11-24) and 605 an earlier one. levelsio's page, read the same hour, showed
+1,535 accounts as confirmed, and 492 of them had a public "Blocked for AI
+reply" post.
 
 A blind check of the confirmed tier the same day. Three judges (Sonnet, one
 lens each: writing tells, engagement with the post, and a skeptic told to
