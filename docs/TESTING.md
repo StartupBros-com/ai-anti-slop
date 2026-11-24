@@ -890,6 +890,33 @@ the real ones (785 and 613 accounts), and the popup read "1400 accounts on 2
 lists". Screenshots 3 and 4 and the tile came out byte-identical to the
 committed ones; the labels shot is taken with hiding paused.
 
+## Updating to 0.11.1, in Chromium
+
+On 2026-11-24 the 0.11.1 release branch (0.11.0 with #107, #108 and #109) was
+loaded over older versions in headless Chromium 157.0.8103.50 through
+playwright-core 1.65.1, each time in a fresh profile, by the same steps as the
+update to 0.11.0 above.
+
+**From 0.11.0** (the v0.11.0 release's extension files), against the real
+lists, with x.com mapped to a closed port. 0.11.0 installed and fetched
+Recommended as 785 accounts, clankwall's part alone, with levelsio's part 0 and
+the record marked partial with "blockedforaireply.levels.io: empty list": on a
+new install 0.11.0 keeps none of levelsio's accounts. After the files were
+replaced by the branch's, the worker reported 0.11.1, kept the extension's
+permissions and hosts, and refreshed within a second of starting: Recommended
+2,273 accounts (clankwall 785, levelsio 1,489, the readers' list 0), no error,
+not partial. The settings page showed "2,273 accounts · updated just now" and
+the new note text; the popup read "2273 accounts on 2 lists" with no error.
+The only addresses asked were the three files Recommended reads; clankwall's
+was asked again for the AI flags list.
+
+**From 0.10.0** (the v0.10.0 release's extension files), with every host
+answered by a local server: the same 28 checks as the update to 0.11.0, 28 of
+28 passed. The worker reported 0.11.1.
+
+`pnpm check` on the branch: 518 of 518 extension tests and 66 of 66 server
+tests.
+
 ## The hidden-post note and the sharing card in Chromium
 
 On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
