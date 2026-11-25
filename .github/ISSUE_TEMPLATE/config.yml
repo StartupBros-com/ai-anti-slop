@@ -4,10 +4,10 @@ blank_issues_enabled: true
 contact_links:
   - name: An account on clankwall's lists shouldn't be there
     url: https://clankwall.vogel.dev/
-    about: clankwall runs the AI flags and All flags lists, and Recommended takes most of its accounts from AI flags. Ask for a removal there.
+    about: clankwall runs the AI flags and All flags lists, and Recommended includes every account on AI flags. Ask for a removal there.
   - name: An account on levelsio's list shouldn't be there
     url: https://blockedforaireply.levels.io/
-    about: "@levelsio runs the Blocked for AI reply list, and Recommended includes its accounts blocked with a public reply. Ask for a removal there."
+    about: "@levelsio runs the Blocked for AI reply list, and Recommended includes the accounts it marks confirmed, with AI or spam replies saved as evidence. Ask for a removal there."
   - name: Your account is on the readers' list
     url: https://ai-anti-slop.startupbros.com/
     about: The readers' list is this project's. Ask for a removal with the form on its page; a request takes a listed account off at the next build.
