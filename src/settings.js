@@ -347,6 +347,8 @@
       'A text file with one handle per line, such as an Also hide export or a raw Gist link. ' +
       `Lists you add hide replies only; muting uses clankwall's AI flags alone. ${own.length} of ${max} added.`;
 
+    $('hideFully').checked = s.hideFully === true;
+
     const bots = Object.keys(L.settingsExport(s, Date.now()).bots).length;
     $('have').textContent =
       `Always show ${num(L.parseAllowlist(s.allowlist).size)}, Also hide ${num(L.parseAllowlist(s.extraList).size)}, ` +
@@ -472,6 +474,11 @@
     $('addOpen').setAttribute('aria-expanded', String(open));
     if (open) $('listUrl').focus();
   }
+  // Not a list choice, and not part of a settings file: it stays on this browser.
+  $('hideFully').addEventListener('change', (e) => {
+    const on = e.target.checked === true;
+    update(() => ({ patch: { hideFully: on } })).catch(() => {});
+  });
   $('addOpen').addEventListener('click', () => setAdd($('addForm').hidden));
 
   let adding = false;

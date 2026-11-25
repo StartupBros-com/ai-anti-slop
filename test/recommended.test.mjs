@@ -61,6 +61,67 @@ test('levelsio rows: only confirmed rows with evidence are kept; the rest are le
   assert.deepEqual(L.parseNdjsonUsernames(body).handles, ['blocked_a', 'conf_a', 'conf_b', 'conf_none', 'copied_a', 'likely_a']);
 });
 
+// One row in the shape levelsio's file has had since 2026-11-24: the tier is
+// in `status` (confirmed, likely, unreviewed, flagged), and only confirmed
+// rows carry evidence.
+const row24 = (username, status, evidence = status === 'confirmed' ? 1 : 0) =>
+  JSON.stringify({
+    id: '1',
+    username,
+    status,
+    reason: status === 'confirmed' ? 'ai_reply' : null,
+    x_verified: false,
+    blocked_at: status === 'confirmed' ? '2026-11-23' : null,
+    denied_then_confirmed: false,
+    appeal_denied: false,
+    account_created: '2024-01',
+    blocked_reply_date: status === 'confirmed' ? '2026-11-23' : null,
+    evidence: Array.from({ length: evidence }, () => ({
+      date: '2026-11-22',
+      their_reply: 'reply text',
+      their_reply_status: 'ok',
+      their_post: 'https://x.com/i/status/2',
+    })),
+  });
+
+test('levelsio rows in the 2026-11-24 shape: the tier is read from `status`, and only confirmed rows with evidence are kept', () => {
+  const body = [
+    row24('conf_a', 'confirmed'),
+    row24('conf_b', 'confirmed', 5),
+    row24('conf_none', 'confirmed', 0),
+    row24('likely_a', 'likely'),
+    row24('unrev_a', 'unreviewed'),
+    row24('flag_a', 'flagged'),
+    // A likely row that somehow carries evidence is still not confirmed.
+    row24('likely_ev', 'likely', 1),
+  ].join('\n');
+  assert.deepEqual(L.parseNdjsonUsernames(body, { keep: L.levelsioConfirmed }), { handles: ['conf_a', 'conf_b'], rejected: 0, error: null });
+});
+
+test('levelsio rows: a file mixing both shapes keeps the confirmed rows of each', async () => {
+  const lines = [row('old_c', 'confirmed'), row('old_l', 'likely'), row24('new_c', 'confirmed'), row24('new_u', 'unreviewed')];
+  const r = await L.fetchList({ url: LV, format: 'levelsio-confirmed', fetchImpl: fetchFrom({ [LV]: lines.join('\n') }) });
+  assert.deepEqual(r, { ok: true, handles: ['new_c', 'old_c'], rejected: 0 });
+});
+
+test('levelsio rows in the 2026-11-24 shape: an install holding last week\'s levelsio part updates instead of refusing an empty list', async () => {
+  // On 2026-11-24 the file held 1,486 confirmed rows of 3,422; the rule that
+  // read only `levelsio` kept none of them, so every update was refused as
+  // "empty list" and installs kept the part they had.
+  const lines = [];
+  for (let i = 0; i < 40; i++) {
+    lines.push(row24(`c${i}`, 'confirmed', 1 + (i % 5)));
+    for (const t of ['likely', 'unreviewed', 'unreviewed', 'flagged']) lines.push(row24(`${t}${i}`, t));
+  }
+  const r = await L.fetchList({ url: LV, format: 'levelsio-confirmed', fetchImpl: fetchFrom({ [LV]: lines.join('\n') }), prevHandles: many(38, 'c') });
+  assert.equal(r.ok, true, r.reason);
+  assert.deepEqual(r.handles, many(40, 'c').sort());
+  const rec = await L.fetchList({ url: LV, format: 'recommended', sources: SOURCES, fetchImpl: fetchFrom({ [AI]: 'ai_a\n', [LV]: lines.join('\n') }) });
+  assert.equal(rec.ok, true);
+  assert.equal(rec.reason, null, 'no source refused');
+  assert.deepEqual(rec.parts[1], { source: LV, handles: many(40, 'c').sort() });
+});
+
 test('levelsio rows: a feed where the filter keeps few of many rows is not "mostly not handles"', async () => {
   // 6 of every 7 rows are other tiers, about the share on 2026-11-21 (3,229 of 3,750).
   const lines = [];

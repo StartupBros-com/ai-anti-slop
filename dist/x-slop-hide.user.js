@@ -2,7 +2,7 @@
 // @name         x-slop-hide
 // @name:en      AI Anti-Slop
 // @namespace    https://github.com/StartupBros-com/x-slop-hide
-// @version      0.10.0
+// @version      0.11.1
 // @description  Hides x.com posts by accounts on a self-updating AI-reply spam list. Hides only; muting is in the browser extension.
 // @license      MIT
 // @homepageURL  https://github.com/StartupBros-com/ai-anti-slop
@@ -199,10 +199,14 @@
   }
 
   // The rows of levelsio's accounts.ndjson that Recommended takes: the
-  // "confirmed" tier (blocked with a public reply) with at least one evidence
-  // item, the link to that reply. The file's other tiers carry no evidence.
+  // "confirmed" tier with at least one evidence item. The file's own rule
+  // (2026-11-24): "confirmed = AI or spam replies checked and saved as
+  // evidence"; its other tiers carry none. The file names the tier in
+  // `status` since 2026-11-24 and named it in `levelsio` before; either one
+  // counts, so a file in the old shape still reads the same.
   function levelsioConfirmed(row) {
-    return row.levelsio === 'confirmed' && Array.isArray(row.evidence) && row.evidence.length > 0;
+    const tier = row.status === 'confirmed' || row.levelsio === 'confirmed';
+    return tier && Array.isArray(row.evidence) && row.evidence.length > 0;
   }
 
   // The NDJSON list formats, each with the rows it keeps (null: every row).
@@ -384,19 +388,20 @@
       id: 'recommended', name: 'Recommended', format: 'recommended', on: true, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/accounts.ndjson',
       sources: Object.freeze([
-        Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', about: 'https://clankwall.vogel.dev/?filter=ai' }),
-        Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', about: 'https://blockedforaireply.levels.io/' }),
+        Object.freeze({ url: DEFAULTS.feedUrl, format: 'text', name: 'clankwall', noteName: "clankwall's AI flags", about: 'https://clankwall.vogel.dev/?filter=ai' }),
+        Object.freeze({ url: 'https://blockedforaireply.levels.io/api/accounts.ndjson', format: 'levelsio-confirmed', name: 'levelsio', noteName: "levelsio's list", about: 'https://blockedforaireply.levels.io/' }),
         Object.freeze({
           url: `${DEFAULTS.crowdBase}/v1/list.ndjson`,
           format: 'crowd-ndjson',
           name: "the readers' list",
+          noteName: "the readers' list",
           about: `${DEFAULTS.crowdBase}/`,
           aboutText: "The readers' list page, with how it is made and where you can ask for a removal",
           allowEmpty: true,
         }),
       ]),
       about: null,
-      note: "AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either. Hides replies only; muting uses clankwall's AI flags.",
+      note: "AI Anti-Slop's pick: clankwall's AI flags; the accounts levelsio's list marks confirmed, each with the AI or spam replies it saved as evidence; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either. Hides replies only; muting uses clankwall's AI flags.",
     }),
     Object.freeze({
       id: 'clankwall-ai', name: 'clankwall: AI flags', format: 'text', on: true, mute: true,
@@ -415,10 +420,40 @@
       id: 'levelsio', name: 'levelsio: Blocked for AI reply', format: 'text', on: false, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/usernames.txt',
       about: 'https://blockedforaireply.levels.io/',
-      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Recommended includes the ones blocked with a public reply. Hides replies only.',
+      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Recommended includes the ones it marks confirmed, with AI or spam replies saved as evidence. Hides replies only.',
     }),
   ]);
   const MUTE_LIST = 'clankwall-ai';
+  // For the note that stands in for a hidden post: the name of the first list
+  // that is on and holds each account, as { handle: name }. `records` maps a
+  // list's storage key (listKey) to its stored record. A list made of several
+  // sources (Recommended) is named by the source whose file holds the account
+  // (its noteName), when the record keeps its parts. A list added by address
+  // is named only "a list you added": the note is in x.com's page, where X's
+  // scripts can read it, and the address may hold a token. Only handles are
+  // read, so the name never says how many readers reported an account.
+  function listNamesOf(settings, records) {
+    const out = {};
+    const recs = records || {};
+    for (const l of enabledLists(settings)) {
+      const rec = recs[listKey(l.id)];
+      if (!rec) continue;
+      const claim = (handles, name) => {
+        if (!Array.isArray(handles)) return;
+        for (const h of handles) if (typeof h === 'string' && h !== '__proto__' && !Object.prototype.hasOwnProperty.call(out, h)) out[h] = name;
+      };
+      if (l.sources && Array.isArray(rec.parts)) {
+        for (const src of l.sources) {
+          const part = rec.parts.find((p) => p && p.source === src.url);
+          if (part) claim(part.handles, src.noteName || src.name);
+        }
+      } else {
+        claim(rec.handles, l.builtin ? l.name : 'a list you added');
+      }
+    }
+    return out;
+  }
+
   // The built-in lists the userscript can fetch: its @connect names
   // clankwall's host alone.
   const USERSCRIPT_LISTS = new Set(BUILTIN_LISTS.filter((b) => b.userscript !== false).map((b) => b.id));
@@ -1232,6 +1267,14 @@
   const STATUS_PATH_RE = /^\/([A-Za-z0-9_]{1,15})\/status\/(\d{1,25})(?:[/?#]|$)/;
   const X_ORIGIN_RE = /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com(?=\/)/i;
 
+  // Whether an address is a page the content script runs on, as the
+  // manifest's matches name them: https, on x.com or twitter.com (or their
+  // mobile hosts). Chrome gives a message's sender.url with the host in
+  // lower case, so nothing else counts: not x.com.example.com, not http.
+  function isXPageUrl(url) {
+    return typeof url === 'string' && /^https:\/\/(?:mobile\.)?(?:x|twitter)\.com\//.test(url);
+  }
+
   // The author handle and post id in a post's path or x.com URL
   // (/h/status/123, https://x.com/h/status/123/photo/1), or null.
   function statusOf(href) {
@@ -1454,6 +1497,11 @@
       fails: int(s.fails),
       held: key ? heldOf(s.held) : {},
       legacy: !!key && (s.legacy === true || (!hadHeld && int(s.sent) > 0)),
+      // True once the user has answered the consent card, or turned sharing on
+      // or off on the settings page: they are not asked again. A code means
+      // sharing was turned on once, so a record from 0.10.0, which kept no
+      // answer, counts as answered.
+      asked: s.asked === true || key !== null,
     };
   }
 
@@ -2025,6 +2073,8 @@
     checkListUrl,
     subscriptions,
     enabledLists,
+    listNamesOf,
+    isXPageUrl,
     addListPatch,
     removeListPatch,
     listOnPatch,
@@ -2270,12 +2320,22 @@
 // Labels, unless the user has turned them off (extension only): every post
 // X lists (home, search, profiles, lists, notifications, a post's page) gets
 // one icon button, Hide as slop, in its header, left of X's Grok and More
-// icons, except where a click could never hide it (labelTarget). A click
-// there, and the Undo it offers, are the only things this script acts on in
+// icons, except the user's own posts and in a mute job's tab (labelTarget).
+// A click there, and the Undo it offers, are the only things this script acts on in
 // the user's own tabs, and only a click the browser marks as the user's own.
 // A click shows on the page at once and is handed to the background worker
 // to save only when its 6-second Undo window ends, so an undone click is
 // never saved and never reaches muting.
+//
+// A post hidden because its author is on a list that is on shows a one-line
+// note in its place: "Hidden: on {list}", with Show (reveals that post on this
+// page only, stores nothing) and, when labels are on, Not slop (a label with
+// the same Undo window as Hide as slop). Posts hidden any other way stay fully
+// hidden, as does everything when the user turned the note off (hideFully),
+// in the userscript, which has no way to save a label, and in a mute job's tab.
+//
+// After a saved Hide as slop click the worker may ask for a one-time consent
+// card, which turns sharing on only if the user presses Share.
 //
 // State comes from an adapter: the extension adapter below (chrome.storage,
 // filled by background.js), or globalThis.XSlopHideAdapter when the userscript
@@ -2295,6 +2355,10 @@
   let mentions = new Set(); // bots whose tags hide a post
   let paused = false;
   let muting = false;
+  let hideFully = false; // the setting: hide listed posts with no note
+  let listNames = {}; // handle -> name of the first list that is on and holds it
+  let botHides = new Set(); // bots the user set to Hide or Mute: hidden by their choice, not by a list
+  let jobTab = false; // this tab was opened for a mute job
   let lastPath = location.pathname;
   let meUnknown = false; // a tagged post was left visible, or a button drawn, before whoAmI() answered
   const hiddenPosts = new Set(); // distinct posts hidden in this tab
@@ -2317,6 +2381,8 @@
   const UNDO_MS = 6000;
   // The one click still inside its Undo window, or null.
   let pending = null;
+  // A notice that waits for that window to end, so the click keeps its Undo.
+  let laterToast = null;
   // Accounts a click has put in a box that the stored settings do not show
   // there yet: { handle, field } with field 'extraList' (Also hide) or
   // 'allowlist' (Always show). Each stays until the stored settings have it,
@@ -2331,6 +2397,16 @@
   // a polite live region kept on the page while labelling is on.
   const TOAST = 'data-xsh-toast';
   let toastTimer = null;
+  // The note in a collapsed cell: COLLAPSED on the cell (which keeps ATTR), NOTE on the note.
+  const COLLAPSED = 'data-xsh-collapsed';
+  const NOTE = 'data-xsh-hidenote';
+  const CONSENT = 'data-xsh-consent';
+  // Post ids the user pressed Show on, for the page they were on.
+  let shownIds = new Set();
+  let shownPath = location.pathname;
+  let consentShown = false;
+  let consentEl = null;
+  let consentKey = null;
 
   function injectStyle() {
     if (document.getElementById('xsh-style')) return;
@@ -2373,10 +2449,86 @@
     (document.head || document.documentElement).appendChild(st);
   }
 
+  // The note's look. Added the first time a note is drawn, in a style of its
+  // own, so a page that never draws one gets nothing beyond the hide rule.
+  // One line, 32px high, with no layout outside the cell: X's virtual timeline
+  // measures each cell, and the post it stands for is taller. The colours are
+  // inherited or X's own blue, so it reads in X's light, dim and dark themes.
+  function injectNoteStyle() {
+    if (document.getElementById('xsh-note-style')) return;
+    const st = document.createElement('style');
+    st.id = 'xsh-note-style';
+    st.textContent =
+      `[${ATTR}][${COLLAPSED}]{display:block!important}` +
+      `[${ATTR}][${COLLAPSED}]>:not([${NOTE}]){display:none!important}` +
+      `[${NOTE}]{display:flex;align-items:center;gap:4px;box-sizing:border-box;height:32px;padding:0 16px;overflow:hidden;white-space:nowrap;font:inherit;font-size:13px;line-height:20px;color:inherit;border-bottom:1px solid rgba(113,118,123,.3)}` +
+      `[${NOTE}] [data-xsh-hidenote-text]{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;margin-right:8px;opacity:.75}` +
+      `[${NOTE}] button{flex:none;margin:0;padding:2px 6px;border:0;border-radius:4px;background:none;font:inherit;font-size:13px;font-weight:700;color:rgb(29,155,240);cursor:pointer}` +
+      `[${NOTE}] button:focus-visible{outline:2px solid rgb(29,155,240);outline-offset:1px}` +
+      `@media (forced-colors:active){[${NOTE}] button{color:LinkText}[${NOTE}] button:focus-visible{outline-color:Highlight}}`;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
   function postKey(article) {
     const t = article.querySelector('a[href*="/status/"] time');
     const a = t && t.closest('a');
     return (a && a.getAttribute('href')) || null;
+  }
+
+  // The name to put in the note for a hidden post, or null when it stays fully
+  // hidden: hiding is paused (nothing is hidden), the user chose to hide
+  // completely, the adapter cannot save a label (the userscript), this is a
+  // job's tab, the account is in Also hide (as typed or by a click still in
+  // its window) or hidden by a bot's row, or no list that is on holds it.
+  function noteName(author) {
+    if (hideFully || paused || jobTab || !adapter.saveLabel) return null;
+    if (viewExtraBox.has(author) || botHides.has(author)) return null;
+    return Object.prototype.hasOwnProperty.call(listNames, author) ? String(listNames[author]) : null;
+  }
+
+  const shownSet = () => {
+    if (shownPath !== location.pathname) {
+      shownPath = location.pathname;
+      shownIds = new Set();
+    }
+    return shownIds;
+  };
+
+  const noteOfCell = (cell) => {
+    for (const c of cell.children) if (c.hasAttribute(NOTE)) return c;
+    return null;
+  };
+
+  // The cell shows its post again: no hide, no collapse, no note.
+  function clearCell(cell) {
+    if (cell.hasAttribute(ATTR)) cell.removeAttribute(ATTR);
+    if (cell.hasAttribute(COLLAPSED)) cell.removeAttribute(COLLAPSED);
+    const n = noteOfCell(cell);
+    if (n) n.remove();
+  }
+
+  function hideCell(cell, value) {
+    if (cell.getAttribute(ATTR) !== value) cell.setAttribute(ATTR, value);
+    if (cell.hasAttribute(COLLAPSED)) cell.removeAttribute(COLLAPSED);
+    const n = noteOfCell(cell);
+    if (n) n.remove();
+  }
+
+  // Keep X's nodes in the cell, hidden by style, and put the note first.
+  // Writes only what differs, so its own mutations settle on the next pass.
+  function collapseCell(cell, author, name) {
+    injectNoteStyle();
+    if (cell.getAttribute(ATTR) !== author) cell.setAttribute(ATTR, author);
+    if (!cell.hasAttribute(COLLAPSED)) cell.setAttribute(COLLAPSED, '');
+    let note = noteOfCell(cell);
+    if (!note) note = makeNote();
+    if (cell.firstChild !== note) cell.insertBefore(note, cell.firstChild);
+    const text = note.querySelector('[data-xsh-hidenote-text]');
+    const want = `Hidden: on ${name}`;
+    if (text.textContent !== want) text.textContent = want;
+    const slop = note.querySelector('[data-xsh-note-act="not-slop"]');
+    if (labeling && !slop) note.appendChild(noteButton('not-slop', 'Not slop', 'Not slop: show this post and add the account to Always show'));
+    else if (!labeling && slop) slop.remove();
   }
 
   function evaluate(article, owner) {
@@ -2384,14 +2536,21 @@
     const cell = article.closest(CELL) || article;
     const hide = L.shouldHide(author, { list: viewList, allow: viewAllow, owner, paused });
     if (hide) {
-      if (cell.getAttribute(ATTR) !== author) cell.setAttribute(ATTR, author);
+      // What the stored state alone says: a hide that only a click still in
+      // its window causes is not a sighting, is not counted, and is no list's.
+      const stored = L.shouldHide(author, { list, allow, owner, paused });
+      const name = stored ? noteName(author) : null;
+      const k = postKey(article);
+      const post = k ? L.statusOf(k) : null;
+      if (name && post && shownSet().has(post.id)) clearCell(cell);
+      else if (name) collapseCell(cell, author, name);
+      else hideCell(cell, author);
       // Hidden only by a click not yet saved: not a sighting and not counted,
       // so an undone click leaves no trace and a saved one is counted then.
-      if (!L.shouldHide(author, { list, allow, owner, paused })) return;
+      if (!stored) return;
       // Seen while browsing: muted ahead of the rest of the list.
       if (muting && !hiddenAuthors.has(author) && adapter.noteSighting) adapter.noteSighting(author);
       hiddenAuthors.add(author);
-      const k = postKey(article);
       if (k) hiddenPosts.add(k);
       return;
     }
@@ -2402,29 +2561,29 @@
     const who = tagged ? whoAmI() : null;
     if (tagged && !who) meUnknown = true;
     if (who && L.shouldHideMention(author, tagged, { allow: viewAllow, owner, paused, me: who.me, mentions })) {
-      const v = `mention:${tagged}`;
-      if (cell.getAttribute(ATTR) !== v) cell.setAttribute(ATTR, v);
+      hideCell(cell, `mention:${tagged}`);
       const k = postKey(article);
       if (k) hiddenMentions.add(k);
     } else if (cell.hasAttribute(ATTR)) {
-      cell.removeAttribute(ATTR);
+      clearCell(cell);
     }
   }
 
   // ---------------------------------------------------------------- labels
 
   // The post a button would label, or null: any post with its own link and
-  // author, wherever X lists it, except where a click could never hide it:
-  // the user's own posts (`who` is whoAmI()), and posts by the account whose
-  // profile or post page is open, which hiding leaves alone (L.shouldHide's
-  // owner). On a post's own page that is the post itself and its author's
-  // replies under it.
+  // author, wherever X lists it, except the user's own (`who` is whoAmI()).
+  // That includes the post a page is about and every post on its author's
+  // profile: a click there labels the post and adds the account to Also hide,
+  // though its posts still show on its own pages (L.shouldHide's owner). A
+  // mute job's tab, which the user never sees, gets no button.
   function labelTarget(article, who) {
+    if (jobTab) return null;
     const url = postKey(article);
     const post = url && L.statusOf(url);
     if (!post) return null;
     const author = L.authorHandleOf(article);
-    if (!author || author === L.pageOwner(location.pathname)) return null;
+    if (!author) return null;
     if (who && who.me === author) return null;
     return { id: post.id, url, author };
   }
@@ -2460,17 +2619,21 @@
     return null;
   }
 
-  // One of the icons beside More: a box holding a button and no link, which
-  // the author's names beside them always hold (Grok's button is named only
-  // in X's own language, so it is found by its shape).
+  // One of the icons beside More: a box holding a button, no link (the
+  // author's names beside them always hold one) and no text (X's Follow and
+  // Subscribe buttons have theirs). Grok's button is named only in X's own
+  // language, so it is found by its shape.
   const BUTTONISH = 'button, [role="button"]';
-  const isIconBox = (el) => !!(el.matches(BUTTONISH) || el.querySelector(BUTTONISH)) && !el.querySelector('a[href]');
+  const isIconBox = (el) => !!(el.matches(BUTTONISH) || el.querySelector(BUTTONISH)) && !el.querySelector('a[href]') && !(el.textContent || '').trim();
 
-  // Where the button goes in a post's header: first in the group of icons at
-  // its top right (Grok, then More), or just before More when More stands
-  // alone. That group is the right end of the header and grows leftward, so
-  // none of X's icons moves, as each would in the action row. Returns
-  // { parent, before }, or null when the post has no More button (yet).
+  // Where the button goes in a post's header: first in the run of icons that
+  // ends with More at its top right (Grok, then More), or just before More
+  // when More stands alone. That run is the right end of the header and grows
+  // leftward, so none of X's icons moves, as each would in the action row.
+  // On the post a page is about, X may put its Follow button and an empty box
+  // in the same group, left of Grok (seen at 420 px on 2026-11-23): the run
+  // stops at them. Returns { parent, before }, or null when the post has no
+  // More button (yet).
   function headSpot(article, bar) {
     const caret = caretOf(article);
     if (!caret) return null;
@@ -2483,8 +2646,16 @@
       branch = box;
       box = box.parentElement;
     }
-    const others = box && box !== article ? [...box.children].filter((c) => c !== branch && c !== bar) : [];
-    if (others.length && others.every(isIconBox)) return { parent: box, before: [...box.children].find((c) => c !== bar) };
+    if (box && box !== article) {
+      // Left from More's branch, over the icons right before it.
+      let first = null;
+      for (let el = branch.previousElementSibling; el; el = el.previousElementSibling) {
+        if (el === bar) continue;
+        if (!isIconBox(el)) break;
+        first = el;
+      }
+      if (first) return { parent: box, before: first };
+    }
     return { parent: caret.parentElement, before: caret };
   }
 
@@ -2492,6 +2663,61 @@
   // none of these events, done on the button or in the notice, reaches its
   // handlers.
   const STOPPED = ['click', 'auxclick', 'dblclick', 'mousedown', 'mouseup', 'pointerdown', 'pointerup', 'touchstart', 'touchend', 'keydown', 'keyup'];
+
+  function noteButton(act, text, title) {
+    const b = document.createElement('button');
+    b.setAttribute('type', 'button');
+    b.setAttribute('data-xsh-note-act', act);
+    if (title) b.setAttribute('title', title);
+    b.textContent = text;
+    return b;
+  }
+
+  // The note: the text, Show and, when labels are on, Not slop (collapseCell
+  // adds or removes that one as labels are turned on and off).
+  function makeNote() {
+    const note = document.createElement('div');
+    note.setAttribute(NOTE, '');
+    const text = document.createElement('span');
+    text.setAttribute('data-xsh-hidenote-text', '');
+    note.appendChild(text);
+    note.appendChild(noteButton('show', 'Show', 'Show this post. It is hidden again when you leave the page.'));
+    for (const type of STOPPED) note.addEventListener(type, onNoteEvent);
+    return note;
+  }
+
+  function onNoteEvent(e) {
+    e.stopPropagation();
+    if (e.type !== 'click') return;
+    e.preventDefault();
+    // A click made by the page's own script, not the user: ignored.
+    if (e.isTrusted === false) return;
+    const btn = e.target && e.target.closest ? e.target.closest('[data-xsh-note-act]') : null;
+    const cell = btn && btn.closest(CELL);
+    const article = cell ? cell.querySelector(ARTICLE) : null;
+    if (!btn || !article) return;
+    if (btn.getAttribute('data-xsh-note-act') === 'show') showPost(article);
+    else labelClick(article, 'not_slop', btn, true);
+  }
+
+  // Show: this post, on this page, until the page changes. Nothing is stored.
+  function showPost(article) {
+    const k = postKey(article);
+    const post = k ? L.statusOf(k) : null;
+    if (!post) return;
+    shownSet().add(post.id);
+    evaluate(article, L.pageOwner(location.pathname));
+    focusRevealed(article);
+  }
+
+  // The note's button is gone with the note: focus goes to the revealed
+  // post's own Hide as slop button, or else to the notice's Undo.
+  function focusRevealed(article) {
+    const own = barOf(article);
+    const slop = own ? own.querySelector('[data-xsh-label="slop"]') : null;
+    const target = slop || (pending ? undoButton() : null);
+    if (target && typeof target.focus === 'function') target.focus();
+  }
 
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const BUBBLE = 'M5.5 4.5h13a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H12l-4.75 3.9V17H5.5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2z';
@@ -2573,6 +2799,11 @@
   function placeBar(article, bar) {
     const spot = headSpot(article, bar);
     if (spot ? bar.parentNode === spot.parent && bar.nextElementSibling === spot.before : bar.parentNode === article) return;
+    // Moving a node takes focus off anything in it. A button the user is on
+    // keeps focus: X fills in a revealed post's header icons a moment after
+    // Show, which moves the button focus was just given to.
+    const active = document.activeElement;
+    const focused = active && active !== document.body && bar.contains(active) ? active : null;
     if (spot) {
       spot.parent.insertBefore(bar, spot.before);
       bar.removeAttribute('data-xsh-own-row');
@@ -2584,6 +2815,7 @@
       bar.setAttribute('data-xsh-own-row', '');
       bar.removeAttribute('style');
     }
+    if (focused && document.activeElement !== focused && typeof focused.focus === 'function') focused.focus({ preventScroll: true });
   }
 
   // Add, update or remove the button on one post. X reuses a post's nodes
@@ -2676,7 +2908,9 @@
   // label; on one labelled Not slop (only older versions drew that button)
   // it labels it slop. The page changes now; the save waits for the window
   // to end.
-  function labelClick(article, which, btn) {
+  // force, for Not slop on a note: the label is saved as clicked, never
+  // cleared because the post already had it.
+  function labelClick(article, which, btn, force) {
     if (!labeling) return;
     // Until the sidebar shows who is logged in, the post may be the user's
     // own, and the click would put their own handle in Also hide.
@@ -2691,24 +2925,29 @@
     commit();
     const had = labels.has(t.id);
     const prev = had ? labels.get(t.id) : null;
-    const label = prev === which ? null : which;
+    const label = prev === which && !force ? null : which;
     // What will be saved is read now: by the time the window ends, X may
     // have reused this post's nodes, or the page may have changed.
     const msg = { label, handle: t.author, url: t.url, page: location.pathname, text: postText(article) };
     // The box the click adds the account to, as the worker's save will.
-    const field = label === 'slop' ? 'extraList' : null;
+    const field = label === 'slop' ? 'extraList' : label === 'not_slop' ? 'allowlist' : null;
     const entry = field && !(field === 'extraList' ? viewExtraBox : viewAllowBox).has(t.author) ? { handle: t.author, field } : null;
     if (entry) overlay.push(entry);
-    pending = { id: t.id, which, had, prev, note: notes.get(t.id), label, msg, entry, btn, timer: setTimeout(commit, UNDO_MS) };
+    const cell = article.closest(CELL) || article;
+    pending = { id: t.id, which, had, prev, note: notes.get(t.id), label, msg, entry, btn, cell, timer: setTimeout(commit, UNDO_MS) };
     notes.delete(t.id);
     labels.set(t.id, label);
     refreshView();
     rescanAll();
     renderId(t.id);
-    const cell = article.closest(CELL) || article;
-    showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), label === 'slop' && viewAllowBox.has(t.author)), true);
-    // A click that hides the post hides the button too: focus moves to Undo.
-    if (btn && document.activeElement === btn && btn.closest(`[${ATTR}]`)) {
+    const allowed = label === 'slop' && viewAllowBox.has(t.author);
+    const ownPage = label === 'slop' && t.author === L.pageOwner(location.pathname);
+    showToast(clickText(label, entry, t.author, cell.hasAttribute(ATTR), allowed, ownPage), true);
+    if (btn && btn.hasAttribute('data-xsh-note-act')) {
+      // A click on the note: the note is gone if the post shows now.
+      if (!document.contains(btn)) focusRevealed(article);
+    } else if (btn && document.activeElement === btn && btn.closest(`[${ATTR}]`)) {
+      // A click that hides the post hides the button too: focus moves to Undo.
       const u = undoButton();
       if (u) u.focus();
     }
@@ -2717,12 +2956,15 @@
   // What the notice says a click did. gone: the post is hidden now (not so
   // while hiding is paused or the account is in Always show). allowed: the
   // account is in Always show, as one labelled Not slop before 0.9.0 is, so
-  // the label hides nothing.
-  function clickText(label, entry, handle, gone, allowed) {
+  // the label hides nothing. ownPage: the page open is the account's own
+  // profile or post page, where its posts still show.
+  function clickText(label, entry, handle, gone, allowed, ownPage) {
     if (label === null) return 'Slop label removed.';
+    if (label === 'not_slop') return entry ? `Marked @${handle} not slop and added it to Always show.` : `Marked @${handle} not slop.`;
     const did = gone ? `Hid @${handle}` : `Labelled @${handle} as slop`;
     const text = entry ? `${did} and added it to Also hide.` : `${did}.`;
-    return allowed ? `${text} It still shows: it is in Always show.` : text;
+    if (allowed) return `${text} It still shows: it is in Always show.`;
+    return ownPage && !gone ? `${text} Its posts still show on its own pages.` : text;
   }
 
   // Put a post's label back as it was before a click.
@@ -2745,6 +2987,7 @@
     const undoHadFocus = isUndoFocused();
     closeToast();
     if (undoHadFocus) focusNext(p);
+    showLater('');
     let sent;
     try {
       sent = Promise.resolve(adapter.saveLabel(p.msg));
@@ -2753,7 +2996,12 @@
     }
     sent
       .catch((e) => ({ ok: false, reason: String((e && e.message) || e) }))
-      .then((res) => (res && res.ok ? saved(p) : refused(p, (res && res.reason) || 'no answer')));
+      .then((res) => {
+        if (!(res && res.ok)) return refused(p, (res && res.reason) || 'no answer');
+        const done = saved(p);
+        // The worker asks once, after a saved Hide as slop: see showConsent.
+        return res.askShare === true ? done.then(showConsent) : done;
+      });
   }
 
   // Saved. The click's own change is dropped only with the stored state read
@@ -2814,8 +3062,17 @@
     refreshView();
     rescanAll();
     renderId(p.id);
-    if (quiet) return;
-    showToast('Undone.', false);
+    if (quiet) {
+      laterToast = null;
+      return;
+    }
+    if (!showLater('Undone.')) showToast('Undone.', false);
+    // The click was on a note, which is back: its Not slop button.
+    if (p.btn && p.btn.hasAttribute('data-xsh-note-act') && p.cell && document.contains(p.cell)) {
+      const again = p.cell.querySelector(`[${NOTE}] [data-xsh-note-act="not-slop"]`);
+      if (again) again.focus();
+      return;
+    }
     // Back to the button the click was made with, if it shows again.
     const bar = p.btn && p.btn.closest(`[${BAR}]`);
     if (bar && bar.getAttribute(BAR) === p.id && document.contains(p.btn) && !p.btn.closest(`[${ATTR}]`)) p.btn.focus();
@@ -2860,6 +3117,16 @@
     if (e.target && e.target.closest && e.target.closest('[data-xsh-undo]')) undo(false);
   }
 
+  // Show the notice that waited for a click's Undo window, after prefix.
+  // Whether there was one.
+  function showLater(prefix) {
+    const text = laterToast;
+    laterToast = null;
+    if (!text) return false;
+    showToast(prefix ? `${prefix} ${text}` : text, false);
+    return true;
+  }
+
   function showToast(text, offerUndo) {
     if (!labeling) return;
     makeToast();
@@ -2892,6 +3159,121 @@
     if (next) next.focus();
   }
 
+  // ------------------------------------------------------- consent card
+
+  // The card's look: the notice's dark box, fixed at the bottom right, over X's
+  // sidebar. At the bottom left it covered X's Post button and account menu,
+  // and at widths up to 1,440 px the start of the posts as well (measured on
+  // x.com on 2026-11-22). When the disclosure is taller than the card allows, the text scrolls and the row of
+  // buttons stays at the card's bottom edge (on x.com at 1358 px high, the
+  // card's 560 px held the text but not the buttons). The card has no bottom
+  // padding: a sticky row stops at the padding's edge, and scrolled text
+  // showed through the strip below it.
+  function injectConsentStyle() {
+    if (document.getElementById('xsh-consent-style')) return;
+    const st = document.createElement('style');
+    st.id = 'xsh-consent-style';
+    st.textContent =
+      `[${CONSENT}]{position:fixed;right:16px;bottom:16px;z-index:2147483646;box-sizing:border-box;width:min(380px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;padding:14px 16px 0;border-radius:12px;background:rgb(15,20,25);color:#fff;box-shadow:0 2px 16px rgba(0,0,0,.4);font:14px/1.4 system-ui,sans-serif}` +
+      `[${CONSENT}] p{margin:0 0 8px}` +
+      `[${CONSENT}] [data-xsh-consent-title]{font-size:15px;font-weight:700}` +
+      `[${CONSENT}] h3{margin:12px 0 4px;font-size:13px;font-weight:700;color:rgb(180,185,190)}` +
+      `[${CONSENT}] ul{margin:0;padding-left:18px;font-size:13px}` +
+      `[${CONSENT}] li{margin:0 0 4px}` +
+      `[${CONSENT}] [data-xsh-consent-actions]{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;margin:12px -16px 0;padding:10px 16px 14px;background:rgb(15,20,25);border-top:1px solid rgba(255,255,255,.15)}` +
+      `[${CONSENT}] button{margin:0;padding:6px 14px;border:0;border-radius:9999px;background:none;font:inherit;font-weight:700;color:rgb(29,155,240);cursor:pointer}` +
+      `[${CONSENT}] button[data-xsh-consent-act="share"]{background:#fff;color:rgb(15,20,25)}` +
+      `[${CONSENT}] button[aria-disabled="true"]{opacity:.6;cursor:default}` +
+      `[${CONSENT}] button:focus-visible{outline:2px solid rgb(29,155,240);outline-offset:2px}` +
+      `@media (forced-colors:active){[${CONSENT}]{border:1px solid CanvasText}[${CONSENT}] button:focus-visible{outline-color:Highlight}}`;
+    (document.head || document.documentElement).appendChild(st);
+  }
+
+  function closeConsent() {
+    if (consentKey) document.removeEventListener('keydown', consentKey, true);
+    consentKey = null;
+    if (consentEl) consentEl.remove();
+    consentEl = null;
+  }
+
+  // Shown when the worker's answer to a saved Hide as slop says the user has
+  // not been asked: once per tab, never in the userscript (its adapter cannot
+  // answer) or a job's tab. It does nothing until a button is pressed; Escape
+  // closes it with no answer recorded.
+  function showConsent() {
+    if (consentShown || !labeling || jobTab || !adapter.shareConsent) return;
+    consentShown = true;
+    injectConsentStyle();
+    const host = String(L.DEFAULTS.crowdBase).replace(/^https?:\/\//, '').split('/')[0];
+    const el = document.createElement('div');
+    el.setAttribute(CONSENT, '');
+    el.setAttribute('role', 'dialog');
+    el.setAttribute('aria-label', 'Share your labels');
+    const add = (tag, text, attrs) => {
+      const n = document.createElement(tag);
+      n.textContent = text;
+      for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+      return n;
+    };
+    el.appendChild(add('p', 'Share your labels with other readers?', { 'data-xsh-consent-title': '' }));
+    el.appendChild(add('p', 'Your labels can help build the readers\' list. Nothing is sent unless you press Share, and then only labels you make from now on.'));
+    for (const sec of L.shareDisclosure(host)) {
+      el.appendChild(add('h3', sec.heading));
+      const ul = document.createElement('ul');
+      for (const item of sec.items) ul.appendChild(add('li', item));
+      el.appendChild(ul);
+    }
+    const row = document.createElement('div');
+    row.setAttribute('data-xsh-consent-actions', '');
+    for (const [act, text] of [['share', 'Share'], ['not-now', 'Not now'], ['details', 'Details']]) {
+      const b = add('button', text, { type: 'button', 'data-xsh-consent-act': act });
+      row.appendChild(b);
+    }
+    el.appendChild(row);
+    for (const type of STOPPED) el.addEventListener(type, onConsentEvent);
+    consentKey = (e) => {
+      if (e.key === 'Escape') closeConsent();
+    };
+    document.addEventListener('keydown', consentKey, true);
+    consentEl = el;
+    (document.body || document.documentElement).appendChild(el);
+  }
+
+  let consentBusy = false;
+  function onConsentEvent(e) {
+    e.stopPropagation();
+    if (e.type !== 'click') return;
+    e.preventDefault();
+    if (e.isTrusted === false) return;
+    const btn = e.target && e.target.closest ? e.target.closest('[data-xsh-consent-act]') : null;
+    if (!btn || consentBusy) return;
+    const act = btn.getAttribute('data-xsh-consent-act');
+    if (act === 'details') {
+      Promise.resolve(adapter.openSettings && adapter.openSettings()).catch(() => {});
+      return;
+    }
+    consentBusy = true;
+    Promise.resolve(adapter.shareConsent(act === 'share' ? 'share' : 'not-now'))
+      .catch((err) => ({ ok: false, reason: String((err && err.message) || err) }))
+      .then((res) => {
+        consentBusy = false;
+        closeConsent();
+        if (act === 'share') {
+          // 'already answered': another tab's card or the settings page got there first.
+          const why = (res && res.reason) || 'no answer';
+          const text = res && res.ok
+            ? 'Sharing is on for labels you make from now on. Turn it off any time in settings.'
+            : why === 'already answered'
+              ? 'You have already answered this. Sharing can be turned on or off in settings.'
+              : `Sharing was not turned on: ${why}`;
+          // A label click still in its window keeps its notice and its Undo:
+          // this one follows when the window ends.
+          if (pending) laterToast = text;
+          else showToast(text, false);
+        }
+      });
+  }
+
   function onLabelChange(id, label) {
     if (pending && pending.id === id) {
       // A click on this post is still in its window and stays shown. Its
@@ -2914,14 +3296,17 @@
     // Cells hidden earlier whose post has since been replaced or unlisted.
     for (const cell of document.querySelectorAll(`[${ATTR}]`)) {
       const art = cell.matches(ARTICLE) ? cell : cell.querySelector(ARTICLE);
-      if (!art) cell.removeAttribute(ATTR);
+      if (!art) clearCell(cell);
     }
   }
 
   function onMutations(records) {
     if (location.pathname !== lastPath) {
       lastPath = location.pathname;
-      // Leaving the page ends a label click's Undo window.
+      // Leaving the page forgets the posts Show revealed there, even when the
+      // page in between has no posts, and ends a label click's Undo window.
+      shownPath = location.pathname;
+      shownIds = new Set();
       commit();
       rescanAll();
       return;
@@ -2966,7 +3351,7 @@
     for (const cell of dirtyCells) {
       if (!document.contains(cell)) continue;
       const articles = cell.matches(ARTICLE) ? [cell] : cell.querySelectorAll(ARTICLE);
-      if (!articles.length) cell.removeAttribute(ATTR);
+      if (!articles.length) clearCell(cell);
       else for (const art of articles) touched.add(art);
     }
     // A node added then removed in the same batch must not affect live state or stats.
@@ -2987,6 +3372,9 @@
     mentions = L.mentionTargets(s.settings, handles);
     paused = !!st.paused;
     muting = L.mutingOn(st);
+    hideFully = st.hideFully === true;
+    listNames = s.list && s.list.names && typeof s.list.names === 'object' ? s.list.names : {};
+    botHides = new Set(L.BOTS.filter((b) => ['hide', 'mute'].includes(L.botChoice(st, b.handle))).map((b) => b.handle));
     listed = new Set(handles);
     allowBox = L.parseAllowlist(st.allowlist);
     extraBox = L.parseAllowlist(st.extraList);
@@ -3208,10 +3596,13 @@
         const keys = L.enabledLists(settings).map((l) => L.listKey(l.id));
         const rest = keys.filter((k) => k !== K.list);
         const more = rest.length ? chrome.storage.local.get(rest) : Promise.resolve({});
-        return more.then((recs) => ({
-          list: { handles: L.unionHandles(keys.map((k) => (k === K.list ? o[K.list] : recs[k]))) },
-          settings,
-        }));
+        return more.then((recs) => {
+          const byKey = Object.assign({}, recs, { [K.list]: o[K.list] });
+          return {
+            list: { handles: L.unionHandles(keys.map((k) => byKey[k])), names: L.listNamesOf(settings, byKey) },
+            settings,
+          };
+        });
       });
     return {
       load: read,
@@ -3248,6 +3639,10 @@
         chrome.runtime
           .sendMessage(Object.assign({}, m, { type: 'xsh:label' }))
           .catch((e) => ({ ok: false, reason: String((e && e.message) || e) })),
+      // The consent card's answer ('share' or 'not-now') and its Details link; the worker accepts them from an x.com tab only.
+      shareConsent: (choice) =>
+        send({ type: 'xsh:share-consent', choice }).catch((e) => ({ ok: false, reason: String((e && e.message) || e) })),
+      openSettings: () => send({ type: 'xsh:open-settings' }).catch(() => ({ ok: false })),
       getLabels(ids) {
         const keys = ids.map((id) => L.LABEL_PREFIX + id);
         return safe(() => chrome.storage.local.get(keys)).then((o) => {
@@ -3299,6 +3694,13 @@
   if (adapter.getJob && adapter.reportJob) {
     jobAsk = Promise.resolve(adapter.getJob()).catch(() => null);
     jobAsk.then((job) => job && runJob(job));
+    // A job's tab keeps its posts fully hidden, with no note.
+    jobAsk.then((job) => {
+      if (job) {
+        jobTab = true;
+        rescanAll();
+      }
+    });
   }
   if (adapter.answerPresent) adapter.answerPresent(() => jobAsk.then((job) => !job, () => false));
 

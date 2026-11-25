@@ -508,6 +508,28 @@ changed in X's display settings and set back to Lights out afterwards.
   promoted post came up, and there were no exceptions. The build of X read
   offered no Dim theme, only Default and Lights out.
 
+On 2026-11-23 the icon went onto the posts that had none: the post a page is
+about, its author's replies and every post on an account's profile. The same
+scripts and stand-in ran in the same browser (Chrome 158 on Windows), logged
+in to an X account, at the change's tree.
+
+- A reply's own page, at the window's 2,559 pixels: the reply got the icon
+  before Grok, 8.1 pixels from it, as did the post above it. X's icons moved
+  0 pixels and no height changed.
+- The same page at 420 pixels. X drew a Follow button and an empty box in the
+  same group as the reply's Grok and More. In a first run the icon went just
+  before More, between Grok and More, and Follow and Grok moved 27 pixels; the
+  placement then looked only for a group of icons and nothing else. After the
+  fix the order was Follow, the empty box, the icon, Grok, More, 8.1 pixels
+  before Grok, and X's icons moved 0 pixels. The icon cut the reply's handle
+  short there in each of 4 reads; it was whole with the icon hidden.
+- That reply's author's profile: 20 of 20 posts got the icon before Grok.
+- A search for the logged-in account's own posts: 25 of 25 got none.
+- `x.com/home` at 2,559 pixels, 8 screens: 24 of 24 before Grok. At 420
+  pixels, 6 screens: 21 of 21 just before More (X drew no Grok), and the icon
+  cut 3 of the 21 names or handles short. X's icons moved 0 pixels and no
+  post's height changed in any read, and there were no exceptions.
+
 ## Popup layout in Chromium
 
 On 2026-11-18 `src/popup.html` was opened at 400 pixels wide in headless
@@ -662,6 +684,47 @@ installs into a new folder. A direct download of both files right after, run
 through the branch's code in Node, gave the same 1,306, 786 and 521, with 1
 account in both files. levelsio's file was 965,689 bytes.
 
+On 2026-11-24 levelsio's `accounts.ndjson` (2,283,095 bytes, 3,422 rows,
+updated 18:28 UTC) named each row's tier in a new `status` field
+(1,486 confirmed, 569 likely, 1,223 unreviewed, 144 flagged) and no longer
+had a `levelsio` field. Main's code, given that file in Node, kept 0 of its
+rows, so levelsio's part was refused as "empty list" on every refresh. An
+install already holding levelsio's part kept it; the run gave "holding
+1,407" back unchanged. Recommended came to 785, clankwall's part alone, on a
+new install. The same file through the branch's code: levelsio's part 1,486,
+Recommended 2,270 (785 from AI flags, 1 account in both), no source refused,
+and an install holding 1,407 updated to 1,486. AI flags (785), All flags
+(2,807) and levelsio's whole list (3,422, from `usernames.txt`, which kept its
+shape) read the same on both. The readers' list was empty. The file's own
+rule, in `accounts.json` the same hour: "confirmed = AI or spam replies
+checked and saved as evidence". Of the file's 1,486 confirmed accounts, 881
+have a `blocked_at` of 2026-11-23 or later (800 on 2026-11-23, 81 on
+2026-11-24) and 605 an earlier one. levelsio's page, read the same hour, showed
+1,535 accounts as confirmed, and 492 of them had a public "Blocked for AI
+reply" post.
+
+A blind check of the confirmed tier the same day. Three judges (Sonnet, one
+lens each: writing tells, engagement with the post, and a skeptic told to
+default to human) saw 103 items, each one to three replies with no handle or
+list name, and said ai, human or unsure. An item counted as AI when 2 of 3
+said ai, as human when 2 of 3 said human, and as split otherwise. The items:
+20 confirmed accounts with a public block reply before 2026-11-23, 20
+confirmed accounts blocked on or after 2026-11-23 without one, and 63
+accounts that replied under three posts about AI reply spam that day, as
+controls. Every account in the first two groups had replies readable on
+levelsio's page and was not suspended or deleted.
+
+| Group | Items | AI | Human | Split |
+|---|---|---|---|---|
+| Confirmed, public block reply, before 2026-11-23 | 20 | 16 | 4 | 0 |
+| Confirmed, blocked on or after 2026-11-23 | 20 | 18 | 0 | 2 |
+| Repliers under three posts (controls) | 63 | 1 | 50 | 12 |
+
+The 4 judged human in the first group each had one readable reply. One of the
+63 controls was on any list (clankwall's AI flags, levelsio's list and
+nobots.fyi), and the judges called it human. Agreement between judges of one
+model is not independent evidence, and 20 is too few for a rate.
+
 ## An x.com tab left open across a reload, in Chromium
 
 On 2026-11-19, headless Chromium 157.0.8103.50 loaded the extension built from
@@ -770,6 +833,177 @@ The same day, on the same code, the run under
 `scripts/store-screenshots.mjs` made the store images again (1,350 accounts on
 2 lists), which were looked at by eye.
 
+## Updating to 0.11.0, in Chromium
+
+On 2026-11-22 (2026-11-23 UTC) the 0.11.0 release branch (b7952ab) was loaded over an older
+version in headless Chromium 157 through playwright-core 1.65.1, each time in a
+fresh profile, by the same steps as the update from 0.8.0 above: the old
+version's files, state given through its own worker code, the browser closed,
+the profile's Service Worker cache deleted, the folder's files replaced, and the
+browser started again.
+
+**From 0.10.0** (the v0.10.0 release's extension files), with x.com, clankwall,
+levelsio and `ai-anti-slop.startupbros.com` answered by a local server, so
+nothing reached the real hosts: 28 of 28 checks passed, in two profiles.
+
+- Sharing on: 0.10.0 sent one label's report, with its hash, and the browser
+  was closed with two more queued, each with a hash. After the update the
+  extension kept its id, its permissions and hosts, every label and the
+  sharing code. One `/v1/retract` named the two queued accounts, then their
+  reports went as label, handle, post and page, with no hash and no day, as
+  `text/plain` with no cookie, and the queue emptied. No request carried a hash
+  or a post's words. A Hide as slop click after the update saved its label,
+  showed no sharing card, and its report had five fields, with its day.
+- Sharing never turned on: the label was kept, sharing stayed off with no
+  code, the next saved label showed the card, and nothing was posted.
+- Neither profile had page errors, worker errors or a request to another host.
+
+**From 0.8.0** (the v0.8.0 release's extension files, which the store served
+byte for byte except for its `update_url` line), against the real lists, with
+x.com mapped to a closed port: labels on, two `slop` labels and one `not_slop`
+label saved by 0.8.0's `saveLabel`, muting on as an account, and three mute
+entries. After the update the extension kept its id; the three labels, the
+label count, Also hide, Always show, the muting switch and account, and the
+mute record read back exactly. Recommended fetched 1,397 accounts: clankwall
+785, levelsio 613 and the readers' list 0. The granted permissions were the
+same, the only hosts asked were the three lists, with GETs, and there were no
+errors. The popup read "Muting as @…", "Today (UTC): 0 of 25 mutes, 0 of 50
+visits" and "On · 3 saved". The same run with muting switched on and no
+account named also kept everything, and its popup showed muting off.
+
+The same day `scripts/store-screenshots.mjs` made the store images again from
+that branch. The labels shot first came out with the sharing card over the
+thread, since it saves a label while sharing is unanswered; the script now
+answers the card before that shot. After that, every image was byte-identical
+to the committed one except the popup shot, which differs only in the list
+count (1,397 accounts where the committed image has 1,350), so the committed
+images stay.
+
+On 2026-11-23 (UTC), for the 0.11.0 submit, screenshots 1 and 2 were made
+again to show the note. The script no longer puts the example's three spam
+accounts in Also hide, which hides a post completely: its local server answers
+the readers' list's address (`https://ai-anti-slop.startupbros.com/v1/list.ndjson`)
+with those three accounts, so each of their posts leaves the note "Hidden: on
+the readers' list" with Show and Not slop, and the captions say they were put
+on the readers' list for the picture. clankwall's and levelsio's files were
+the real ones (785 and 613 accounts), and the popup read "1400 accounts on 2
+lists". Screenshots 3 and 4 and the tile came out byte-identical to the
+committed ones; the labels shot is taken with hiding paused.
+
+## Updating to 0.11.1, in Chromium
+
+On 2026-11-24 the 0.11.1 release branch (0.11.0 with #107, #108 and #109) was
+loaded over older versions in headless Chromium 157.0.8103.50 through
+playwright-core 1.65.1, each time in a fresh profile, by the same steps as the
+update to 0.11.0 above.
+
+**From 0.11.0** (the v0.11.0 release's extension files), against the real
+lists, with x.com mapped to a closed port. 0.11.0 installed and fetched
+Recommended as 785 accounts, clankwall's part alone, with levelsio's part 0 and
+the record marked partial with "blockedforaireply.levels.io: empty list": on a
+new install 0.11.0 keeps none of levelsio's accounts. After the files were
+replaced by the branch's, the worker reported 0.11.1, kept the extension's
+permissions and hosts, and refreshed within a second of starting: Recommended
+2,273 accounts (clankwall 785, levelsio 1,489, the readers' list 0), no error,
+not partial. The settings page showed "2,273 accounts · updated just now" and
+the new note text; the popup read "2273 accounts on 2 lists" with no error.
+The only addresses asked were the three files Recommended reads; clankwall's
+was asked again for the AI flags list.
+
+**From 0.10.0** (the v0.10.0 release's extension files), with every host
+answered by a local server: the same 28 checks as the update to 0.11.0, 28 of
+28 passed. The worker reported 0.11.1.
+
+`pnpm check` on the branch: 518 of 518 extension tests and 66 of 66 server
+tests.
+
+## The hidden-post note and the sharing card in Chromium
+
+On 2026-11-22 (2026-11-23 UTC) the unpacked extension from the tree committed
+as 4f84145, again from c28d086 after the card moved to the bottom right, and
+from f1bacdd after the review fixes (manifest 0.10.0), ran in headless
+Chromium 157.0.8103.50 through
+playwright-core 1.65.1, in a fresh profile, with real clicks. A local HTTPS
+server answered x.com, clankwall, levelsio and `ai-anti-slop.startupbros.com`
+with fixtures: clankwall's file held one account, levelsio's one confirmed
+account with evidence, and the readers' list one row. The thread fixture had a
+post and five replies, one by each listed account and two by accounts on no
+list. Nothing reached the real hosts. Each tree passed all 33 checks at 900
+by 900 pixels and at 360 by 640, with the same results.
+
+| Step | Result |
+|---|---|
+| Install | Recommended stored its three parts, one account in each |
+| The thread | Each listed post was replaced by a 32 px note naming the source that holds its account: "Hidden: on clankwall's AI flags", "Hidden: on levelsio's list" and "Hidden: on the readers' list". The posts themselves were not rendered. The posts on no list showed, each with its Hide as slop button |
+| Show | The post showed and its note went. Focus was on that post's Hide as slop button. Nothing was stored |
+| Not slop, sharing off | After the Undo window a `not_slop` label was saved, the account was added to Always show, and the post showed. Nothing was posted |
+| Hide as slop on a post on no list | The label was saved, then the card appeared: 560 px high (448 px at 360 by 640), inside the window, its text scrolling and its three buttons reachable |
+| Details | Opened `src/settings.html#share` in a new tab. The card stayed, and no answer was stored |
+| The card's two messages, sent from the settings page instead of x.com | Neither was answered. The share record was unchanged and no tab opened |
+| Share | Sharing was on with the answer stored (`"on":true,"asked":true`) and nothing queued, so the label made before Share was not shared. The notice read "Sharing is on for labels you make from now on. Turn it off any time in settings." |
+| Not slop on the readers'-list post, sharing on | One POST to `/v1/reports`, 36 s after the click, as `text/plain` with no cookie. Its report was `{"label":"not_slop","handle":"xsh_demo_rl","status":"3003","thread":"3000","day":"2026-11-23"}`: five fields, no hash and none of the post's words. The share record counted 1 sent with nothing waiting |
+| Hide listed posts completely | Ticking the box on the settings page took the open page's notes away at once. In a new tab the listed post was hidden with no note, and the two accounts on Always show showed |
+| Page errors, and requests outside the four hosts | None |
+
+## The hidden-post note and the sharing card on x.com
+
+On 2026-11-22 (2026-11-23 UTC) `src/lib.js` and `src/content.js` from c28d086 were injected
+through the DevTools protocol into a tab of Chrome 158.0.8127.42 on Windows,
+logged in to X, in X's dark theme. A stand-in for the extension's worker put a
+few accounts picked from the page on a list, and recorded saves and card
+answers instead of storing them. Every click was real mouse input, made after
+checking that the point was on our own button. The run went through the home
+timeline and a reply thread (51 cells, then 74 after scrolling into more
+replies) three times: at the window's own 2,559 by 1,358 pixels, and at 1,366
+by 768 and 1,920 by 1,080, each set before x.com loaded. All 32 checks passed
+each time. From f1bacdd, after the review fixes, the run at the window's own
+size passed all 32 again. An earlier tree, 4f84145, passed the 31 checks it
+had then at all three sizes, with the card at the bottom left.
+
+- Each listed post on screen got a one-line note naming its list, and the post
+  itself was not rendered. No cell overlapped another after the notes were
+  drawn, after Show, after Not slop, or after scrolling down and back.
+- The note's text took the post's own text colour, rgb(231, 233, 234) on black.
+- Show brought the post back, and X re-measured its cell. Focus stayed on the
+  post's Hide as slop button; a separate run found the same after Enter, 1.2 s
+  later. X fills in a revealed post's header icons a moment after Show, and
+  before the fix in 8f80627, moving the button into them sent focus to the
+  page.
+- Not slop's notice named the account and Always show, and one `not_slop`
+  label was saved after the window.
+- The card appeared after a saved Hide as slop. Before 8f80627 its buttons sat
+  below its 560 px fold. The row of buttons is now sticky, and since 4f84145 no
+  text shows under it. Every button was reachable.
+- The card covered none of X's own controls and none of the timeline column at
+  any of the three sizes; at 1,366 and 1,920 it lay over the sidebar.
+- With the card open, a second Hide as slop click landed on our button, and
+  the notice's Undo was on top and undid it, with nothing more saved. Details
+  asked for the settings page and left the card; Not now answered and closed
+  it.
+- No exception came from the injected scripts.
+
+The card first sat at the bottom left. Before it moved, the same day, x.com's
+home page was measured at seven window sizes, with nothing injected: how much
+of the timeline column's width a card of its size (380 px wide, at most 70% of
+the window's height or 560 px) would cover in each bottom corner, 16 px from
+the edges.
+
+| Window | Bottom left | Bottom right |
+|---|---|---|
+| 1,024 by 768 | 307 px | 61 px |
+| 1,280 by 720 | 121 px | 0 |
+| 1,366 by 768 | 78 px | 0 |
+| 1,440 by 900 | 41 px | 0 |
+| 1,536 by 864 | 0 | 0 |
+| 1,920 by 1,080 | 0 | 0 |
+| 2,559 by 1,358 | 0 | 0 |
+
+At the bottom left, the card also covered X's Post button and account menu at
+every size but the widest. At the bottom right it covered the sidebar's news,
+trends and who-to-follow, and no fixed control of X's: the only fixed parts of
+the page there were the left column and a layer the size of the window. So the
+card moved to the bottom right in c28d086.
+
 ## In daily use
 
 Since 2026-11-07 (UTC) the extension has run in Brave on Windows, on the
@@ -819,7 +1053,9 @@ and 420 pixels, how X nests More when it draws no Grok (only where the icon
 landed was read), the line of its own under a post without More, promoted
 posts, the notifications page, a profile's posts by
 other accounts, and x.com drawing its sidebar after the posts (it was there
-first in every run above). For the shorter popup (0.9.0):
+first in every run above). For the icon on the post a page is about
+(2026-11-23): widths between 420 and 2,559 pixels, where X may or may not put
+Follow beside Grok, and a header with X's Subscribe button. For the shorter popup (0.9.0):
 its heights in Brave on Windows, whose system font is not the Linux one
 measured above. For the label Undo window: the save when a tab is
 hidden without being closed, in a real browser (see above), and any of it on
@@ -838,7 +1074,14 @@ shrink guard refusing an update of All flags or an added list over the network
 x.com, and a refresh of it after the first fetch. For Recommended: any of it in
 Brave or on real x.com, a real store update (the update above was made by hand
 in a scratch profile), a refresh after the first fetch, and its per-file
-guards over the network (the unit tests cover them). For the update from 0.8.0:
-the store's own update (files were swapped in one folder), a visit after it
-reaching x.com (the one above could not), and the userscript with the new lists
-in a userscript manager.
+guards over the network (the unit tests cover them). For the updates from 0.8.0
+and to 0.11.0: the store's own update (files were swapped in one folder), a
+visit after it reaching x.com (the one above could not), and the userscript with the new lists
+in a userscript manager. For the hidden-post note and the sharing card (after
+0.10.0): the loaded extension on real x.com (there the scripts were injected,
+and the loaded extension ran on fixtures), Brave, X's light and Dim themes (the
+note takes the post's text colour, read only on dark), X in other languages,
+x.com at phone widths (360 pixels was fixtures only), x.com in a right-to-left
+language (if X mirrors its layout there, its column with the Post button would
+be the one under the card), and the card's
+Share through the extension's own worker on real x.com.

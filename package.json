@@ -1,6 +1,6 @@
 {
   "name": "ai-anti-slop",
-  "version": "0.10.0",
+  "version": "0.11.1",
   "private": true,
   "license": "MIT",
   "description": "Hide x.com posts by accounts on a self-updating AI-reply spam list, and optionally mute them on X, daily or all at once. No X API.",
@@ -10,7 +10,7 @@
     "package:store": "node scripts/package-store.mjs",
     "check": "node scripts/build-userscript.mjs --check && node --check dist/x-slop-hide.user.js && node --test 'test/*.test.mjs' && node --test 'server/test/*.test.mjs'"
   },
-  "packageManager": "pnpm@12.21.0",
+  "packageManager": "pnpm@12.22.0",
   "devDependencies": {
     "linkedom": "^0.18.15",
     "playwright-core": "1.65.1"

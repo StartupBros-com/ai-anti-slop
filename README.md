@@ -7,8 +7,8 @@ to both old repositories redirect here.
 
 AI Anti-Slop hides posts on x.com whose author is on
 [clankwall](https://clankwall.vogel.dev/)'s public list of AI-reply spam
-accounts (in the extension, also on @levelsio's list of accounts blocked
-with a public reply), and can also mute the accounts on clankwall's list on
+accounts (in the extension, also on @levelsio's list of accounts it marks
+confirmed), and can also mute the accounts on clankwall's list on
 your X account. You can add
 accounts of your own, choose Show, Hide or Mute for each of six answer bots
 such as @grok and @AskPerplexity, and hide posts that tag one of those bots.
@@ -38,8 +38,8 @@ The list is read from `https://clankwall.vogel.dev/api/usernames.txt`, the
 "Plain text" link under clankwall's "AI flags" heading. It held 369 handles on
 2026-11-03, 767 on 2026-11-06, 773 on 2026-11-08 and 787 on 2026-11-19. In the
 extension the list that starts on is **Recommended**: that list plus the
-accounts levelsio blocked with a public reply, 1,306 accounts on 2026-11-21,
-plus the readers' list, which AI Anti-Slop builds from the labels readers
+accounts levelsio's list marks confirmed, 1,306 accounts on 2026-11-21 and
+2,270 on 2026-11-24, plus the readers' list, which AI Anti-Slop builds from the labels readers
 share and which starts empty.
 You can also switch on clankwall's wider "All flags" list (2,811
 accounts on 2026-11-19, AI and spam), the whole of levelsio's "Blocked for AI reply" list
@@ -212,6 +212,11 @@ userscript has no counter.
   listed accounts replying there are still hidden.
 - Handles in **Always show these accounts** are never hidden, and
   **Pause hiding** shows every post until you untick it.
+- In the extension, a post hidden because its author is on a list that is on
+  leaves a one-line note in its place (see [The note](#the-note)). Posts you
+  hid yourself with **Hide as slop**, accounts in **Also hide these accounts**
+  and posts that tag a hidden bot are hidden completely. The userscript has no
+  note; it hides completely.
 
 ### Bots
 
@@ -280,14 +285,21 @@ seconds after.
 | A list you add | The address you type | On, once added |
 
 - **Recommended** is AI Anti-Slop's pick: every account on AI flags, plus the
-  accounts on levelsio's list that were blocked with a public reply, which
-  levelsio's page links to, plus the readers' list. The extension builds it
-  from the three files above: it keeps a row of levelsio's `accounts.ndjson`
-  only when the row says `"levelsio": "confirmed"` and has at least one item
-  under `evidence`, and every row of the readers' list. It held 1,306 accounts
-  on 2026-11-21, 786 from AI flags and 521 from levelsio's file, with 1 on
-  both, before the readers' list existed. levelsio's other accounts, blocked
-  with no reply or copied from clankwall, are left out. Each file is checked on
+  accounts levelsio's list marks confirmed, plus the readers' list. The
+  extension builds it from the three files above: it keeps a row of levelsio's
+  `accounts.ndjson` only when the row says `"status": "confirmed"` (until
+  2026-11-24 the file said `"levelsio": "confirmed"`, which still counts) and
+  has at least one item under `evidence`, and every row of the readers' list.
+  The file's own rule reads "confirmed = AI or spam replies checked and saved
+  as evidence" (2026-11-24). It held 1,306 accounts on 2026-11-21, 786 from AI
+  flags and 521 from levelsio's file, with 1 on both, before the readers' list
+  existed, and 2,270 on 2026-11-24, 785 and 1,486, with 1 on both. On
+  2026-11-21 levelsio's confirmed accounts were the ones blocked with a public
+  "Blocked for AI reply" reply. On 2026-11-24 about a third of the accounts
+  levelsio's page showed as confirmed had one, and 881 of the 1,486 in the
+  file were blocked on 2026-11-23 or later, each with the replies the check
+  saved. levelsio's other accounts, blocked with no
+  reply or flagged by an outside check, are left out. Each file is checked on
   its own, against its own part of the stored copy, and one that fails keeps
   its previous part while the others update
   ([How list updates stay safe](#how-list-updates-stay-safe)). It hides only,
@@ -592,12 +604,13 @@ bubble with an ×, at the post's top right, just left of Grok's icon and ⋯
 (More), or of ⋯ alone where X shows no Grok icon (in a narrow window, say).
 None of X's icons moves to make room for it, but it takes room from the line
 of names, so a long name or handle is cut short sooner. A post without ⋯ gets
-the button on a line of its own under it. Two kinds of post get none, since a click could
-never hide them: your own, once x.com's sidebar shows who is logged in, and
-those by the account whose profile or post page is open, which hiding leaves
-alone there (see [What gets hidden](#what-gets-hidden)). On a post's own page
-(`x.com/handle/status/...`) that is the post itself and its author's replies
-under it; the posts above it, which it replies to, get one like any other.
+the button on a line of its own under it. Only your own posts get none, once
+x.com's sidebar shows who is logged in. A post's own page
+(`x.com/handle/status/...`) gives the button to the post itself, its author's
+replies and the posts above it alike, and a profile to every post on it. A
+click on the account's own profile or post page labels the post and adds the
+account to **Also hide** as anywhere else, but its posts still show on its own
+pages (see [What gets hidden](#what-gets-hidden)), and the notice says so.
 
 - **Hide as slop** labels the post slop and adds the account to **Also hide
   these accounts**, so its posts on the page hide at once and, with muting on,
@@ -620,10 +633,10 @@ under it; the posts above it, which it replies to, get one like any other.
 - A hidden post's button is hidden with it, so a click moves keyboard focus
   to **Undo**. To label a hidden post, or remove its label, tick **Pause
   hiding** first.
-- Versions before 0.9.0 also drew a **Not slop** button, which added the
-  account to **Always show these accounts**. To always see an account now, add
-  it to Always show under **Your accounts**. Labels saved as Not slop are kept,
-  counted and exported; on such a post the button is drawn empty, and
+- Versions before 0.9.0 drew a **Not slop** button beside each post's
+  **Hide as slop**. 0.11.0 brings **Not slop** back in one place only, on the
+  note (see [The note](#the-note)). Labels saved as Not slop are kept, counted
+  and exported; on such a post the **Hide as slop** button is drawn empty, and
   clicking it labels the post slop. The account stays in Always show, where
   the Not slop click put it, so the post still shows, and the notice says so,
   until you take it out of that box.
@@ -633,6 +646,47 @@ under it; the posts above it, which it replies to, get one like any other.
   your own included, and a click on any of them saves nothing and says "Not
   saved: x.com has not shown who is logged in yet. Try again in a moment."
   That way your own handle never goes into Also hide.
+
+### The note
+
+A post by an account that is on a list you have switched on does not vanish.
+In its place the extension draws one line, about 32 px high: **Hidden: on**
+and the name of the first list that holds the account (for Recommended, the
+file that does: clankwall's AI flags, levelsio's list or the readers' list),
+then two buttons. A list you added by address is named "a list you added",
+never by its address, since the note is part of x.com's page. The note never
+says how many readers reported an account.
+
+- **Show** shows that one post, on this page only. Nothing is stored: when you
+  open another page, or reload, the post is hidden again.
+- **Not slop** (only while labels are on) labels the post not slop and adds the
+  account to **Always show these accounts**, so the post shows at once. It has
+  the same notice and 6 seconds to **Undo** as **Hide as slop**; **Undo** puts
+  the note back and saves nothing. With sharing on, a Not slop label is sent as
+  a report like any other (see [Sharing labels](#sharing-labels)).
+- Both are real buttons you can reach with the keyboard, and they ignore a
+  click made by a page's own script. After either one, focus moves to the
+  post's **Hide as slop** button, or to **Undo**.
+
+A post gets no note, and is hidden completely, when you tick **Hide listed
+posts completely, with no note** on the settings page, under **Lists** (it
+stays on this browser and is not part of a settings file); when hiding is
+paused (nothing is hidden then); in the userscript, which cannot save a label;
+in the tab the extension opens to mute; and when the account is in **Also
+hide** or its hide comes from a bot's row or a tag of a bot. The note changes
+none of the counts in the popup.
+
+### The first time you share
+
+The first time you save a **Hide as slop** click while sharing is off and you
+have not answered before, a card appears at the bottom right of the page. It
+lists what sharing sends and what it never sends, with three buttons.
+**Share** turns sharing on for labels you make from now on, and sends none of
+the labels already saved. **Not now** keeps it off and does not ask again.
+**Details** opens the sharing section of the settings page. **Esc** closes the
+card without an answer. The card is not modal, shows once per tab, and never
+appears in the userscript or in a tab opened to mute. Turning sharing on or off
+on the settings page counts as an answer too.
 
 Each post has one label record, keyed by its post id; the latest click wins.
 A record holds:
@@ -659,7 +713,9 @@ more") while saved ones can still be changed.
 ### Sharing labels
 
 Sharing is off unless you turn it on under **Share your labels** on the
-settings page, which the popup's **Share your labels** button opens. While it
+settings page, which the popup's **Share your labels** button opens, or by
+pressing **Share** on the card that appears after your first saved **Hide as
+slop** (see [The first time you share](#the-first-time-you-share)). While it
 is on, each label you save is sent to AI Anti-Slop's server at
 `ai-anti-slop.startupbros.com`, where enough agreeing labels put an account on
 the [readers' list](#lists). Turning it on offers to send the labels already

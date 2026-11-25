@@ -3,9 +3,12 @@
 AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to posts.
-This policy covers the extension and the userscript, version 0.10.0, which adds
-the choice of lists, the Recommended list and sharing labels. Where an earlier
-version differs, it says so. Last updated 2026-11-22.
+This policy covers the extension and the userscript, version 0.11.1. 0.11.0
+sends the day a label was made where 0.10.0 sent a hash of the post's words,
+and adds a note on hidden posts with Not slop and a card on x.com that offers
+sharing after a saved Hide as slop until you answer it. 0.11.1 reads the tier
+of levelsio's list from the field that list now uses, and collects nothing
+new. Where an earlier version differs, it says so. Last updated 2026-11-24.
 
 ## In short
 
@@ -21,7 +24,9 @@ version differs, it says so. Last updated 2026-11-22.
   file at each of those two hosts and the readers' list from
   `ai-anti-slop.startupbros.com`, and any list you add yourself from the
   address you give. Only while sharing is on, it also sends your labels'
-  reports to `ai-anti-slop.startupbros.com`.
+  reports, and takes them back, at `ai-anti-slop.startupbros.com`;
+  **Delete what I shared** sends one more request there, with your browser's
+  random code, to delete them.
 - Everything it keeps is in your browser profile's extension storage, on your
   computer.
 - If you turn muting on (it is off by default), the extension opens x.com pages
@@ -44,7 +49,8 @@ in the page:
 - with hiding posts that tag a bot turned on, the @-links in each post's own
   text, to see whether it tags a bot set to Hide or Mute;
 - with labels on (they are unless you turn them off), the text of a post
-  when you click **Hide as slop** on it.
+  when you click **Hide as slop** on it, or **Not slop** on the note that
+  stands in for it when it is hidden.
 
 None of this is sent anywhere, except the parts of a label that sharing
 sends while it is on ([Sharing labels](#sharing-labels)). What is kept is
@@ -59,12 +65,12 @@ Sync does not copy it to other devices.
 |---|---|---|
 | `xsh:list` | clankwall's AI flags list: its handles, when it was fetched and last tried, the address it was fetched from, and the last error, if any. | Once that list has been fetched. It is on unless you switch it off. |
 | `xsh:list:<id>` | The same for each other list: the Recommended list (`xsh:list:recommended`, which also keeps the handles from each of its three files apart, under the file's address), clankwall's All flags list (`xsh:list:clankwall-all`), levelsio's list (`xsh:list:levelsio`) and each list you add. | Once that list has been switched on and fetched. The Recommended list is on unless you switch it off. A list you remove has its key removed. |
-| `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, which built-in lists are switched on, the address of each list you add and whether it is on, and an optional address for the AI flags list (no page has a setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
-| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
+| `xsh:settings` | Your settings: paused or not, your **Always show** and **Also hide** accounts, your choice for each bot, whether to hide posts that tag a bot, muting on or off, the daily mute cap, labels on or off, whether listed posts are hidden completely with no note, which built-in lists are switched on, the address of each list you add and whether it is on, and an optional address for the AI flags list (no page has a setting for it; it is empty unless set by hand). While muting is on, also the x.com handle muting runs as. | Always; the muting handle only while muting is on. Turning muting off removes it. |
+| `xsh:mutes` | The muting record. For each account muted or tried: the outcome, the time, the handle it was muted as, X's notice text (up to 120 characters), the reason it failed (up to 200 characters), whether a later check found it on your muted list and when that check ran, and the number of attempts; once it is unmuted or tried for that, when it was muted and the number of unmute attempts. The accounts muted since the last check of your muted list, and, when a check failed, when it may be tried again, as which account and why. For each UTC day: the number of mutes, unmutes and visits, and why muting stopped, which can name an account and the handle you were logged in as. Up to 50 accounts muting may visit whose posts were hidden on your screen, to be muted first. The time of the next visit. | Only once you turn muting on. |
 | `xsh:visit` | While a mute, unmute or check visit runs: the ids of the background tab the extension opened for it and of that tab's window, and the time the visit started. | Removed when the visit ends or is dropped, and at browser start. After an extension update it is used once to close that tab, if the visit is under 90 seconds old and the tab is still in that window and not the tab you are looking at, then removed. |
-| `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post. Labels are on unless you turn them off; nothing is saved until you click. |
+| `xsh:label:<post id>` | One saved label: the time, the label, the author's handle, the post's address, up to 1,000 characters of the post's own text, the address of the post page you labelled it on (none when it was another page, such as the home timeline), whether the author was on a list that was switched on (the list's host, and, when a list other than clankwall's AI flags was on, which of those lists held the author), in **Also hide** or in **Always show**, and whether the post was hidden. At most 2,000 labels. | Only when labels are on and you click **Hide as slop** on a post, or **Not slop** on the note that stands in for a hidden post. Labels are on unless you turn them off; nothing is saved until you click. |
 | `xsh:labelCount` | The number of saved labels. | Same as above. |
-| `xsh:share` | Sharing's record: whether sharing is on, the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), for each account a report went for, the side and day the server last confirmed (or that it holds nothing, or that this is not known), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on. Turning it off empties what is waiting and keeps the code and the confirmed sides; **Delete what I shared** removes them once the server confirms the delete. |
+| `xsh:share` | Sharing's record: whether sharing is on, whether you have answered the sharing card (one true or false value), the random code made for this browser when sharing is first turned on, the reports and retractions waiting to be sent (a report is the label, the author's handle, the post's id, the id of the post page it was labelled on and the UTC day it was labelled; a retraction names a post or an account; at most 4,000), for each account a report went for, the side and day the server last confirmed (or that it holds nothing, or that this is not known), how many reports were sent, when a send last went through, the last error, how many sends in a row failed and when sending tries again. | Once you turn sharing on or off or answer the sharing card; until sharing is first turned on, it holds only that answer. Turning it off empties what is waiting and keeps the code and the confirmed sides; **Delete what I shared** removes them once the server confirms the delete. |
 
 While a mute visit is running, the extension also keeps, in `chrome.storage.session`,
 the account being visited, the handle muting runs as, and the id of the tab it
@@ -94,9 +100,9 @@ off is not downloaded.
   `https://blockedforaireply.levels.io/api/accounts.ndjson` (about 1 MB on
   2026-11-21) and `https://ai-anti-slop.startupbros.com/v1/list.ndjson`, the
   readers' list (see [Sharing labels](#sharing-labels)). From each row of
-  levelsio's file it reads the handle, the `levelsio` field and whether the
-  row lists any evidence, and keeps only the handles of accounts marked
-  `confirmed` with evidence. From the readers' list it keeps only the handles.
+  levelsio's file it reads the handle, the `status` field (`levelsio` in the
+  file's shape before 2026-11-24) and whether the row lists any evidence, and
+  keeps only the handles of accounts marked `confirmed` with evidence. From the readers' list it keeps only the handles.
   Nothing else in either file is kept. The readers' list is downloaded whether
   or not you share, and AI Anti-Slop's server keeps nothing about a download.
 - clankwall's AI flags list, `https://clankwall.vogel.dev/api/usernames.txt`,
@@ -136,8 +142,9 @@ whether one of them is an x.com tab. It uses only each tab's id and whether
 the browser has unloaded it; it does not read tab addresses or titles.
 
 A slop label, made with **Hide as slop**, adds the account to **Also hide**.
-Versions before 0.9.0 also had **Not slop**, which added it to **Always
-show**. With muting on, an account in **Also hide** can be visited
+A not slop label, made with **Not slop** on the note that stands in for a
+hidden post, adds it to **Always show**. Versions before 0.9.0 had **Not
+slop** on every post; 0.9.0 and 0.10.0 had none. With muting on, an account in **Also hide** can be visited
 and muted like a listed one.
 
 **Sharing labels, only if you turn it on.** See
@@ -175,13 +182,29 @@ no remotely hosted code.
 
 Sharing is in the extension only, from 0.10.0; the userscript
 has no labels. It is off unless you turn it on under **Share your labels** on
-the settings page, which lists what is sent before the button. The popup says
-whether it is on.
+the settings page, which lists what is sent before the button, or by pressing
+**Share** on a card that appears after a saved **Hide as slop** click while
+sharing is off and unanswered, at most once each time x.com loads in a tab.
+The card lists the same things and turns sharing on for labels you make from
+then on only: it queues none of the labels already saved. **Not now** keeps
+sharing off and the card does not come back; closing it with Escape is not an
+answer, so it can appear again. Turning sharing on or off on the settings page
+also counts as an answer.
+The card's answer is kept in the sharing record (`xsh:share`) as one true or
+false value, which **Delete what I shared** keeps. The popup says whether
+sharing is on.
+
+While sharing is on, **Not slop** on the note that stands in for a hidden post
+saves a Not slop label like any other, and so sends a report of it. **Show** on
+that note stores nothing and sends nothing: it only shows the post until you
+leave the page. Pressing **Details** on the card opens the settings page in a
+tab and sends nothing.
 
 **What is sent.** While sharing is on, each label you save is sent as a report
 of five fields:
 
-- the label: `slop`, or `not_slop` for a label saved before 0.9.0;
+- the label: `slop`, or `not_slop` from **Not slop** on a hidden post's note
+  or a label saved before 0.9.0;
 - the author's handle;
 - the post's id, the number at the end of its address;
 - the id of the post whose page you labelled it on, which tells the server
@@ -226,8 +249,8 @@ of this is sent, so what was already sent stays on the server until 90 days
 after your newest label on that account, or until you click **Delete what I
 shared**. A request goes to `https://ai-anti-slop.startupbros.com/v1/reports`
 (`/v1/retract` for a retraction), as plain text with no cookies. If the server
-cannot be reached or answers with an error, the request is tried again 30
-minutes later, then after 1 hour, 2, 4 and at most 6 hours for each failure in
+cannot be reached or answers with an error other than a 400 or 413, which
+drops the request as refused, the request is tried again 30 minutes later, then after 1 hour, 2, 4 and at most 6 hours for each failure in
 a row, each wait made 25% shorter or longer at random so that browsers do not
 all come back together. If the server asks to wait, as it does past a browser's
 100 reports in a UTC day, it is tried again no sooner than the time it gives,
@@ -312,10 +335,12 @@ file you exported stays where you saved it.
 
 ## Selling and sharing
 
-AI Anti-Slop does not sell or transfer user data. Its developers receive only
-the reports sharing sends, which you turn on, and use them only to build the
+AI Anti-Slop does not sell or transfer user data. From the extension, its
+developers receive only what sharing sends, which you turn on: reports, the
+taking back of reports, and the delete. They use the reports only to build the
 readers' list; what is published from them is the list of accounts with their
-counts. The use of information received from the extension's handling of
+counts. A removal request, sent from the readers' list page and never by the
+extension, is used only to take that account off the list. The use of information received from the extension's handling of
 user data complies with the
 [Chrome Web Store User Data Policy](https://developer.chrome.com/docs/webstore/program-policies),
 including the Limited Use requirements.
