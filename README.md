@@ -305,8 +305,8 @@ seconds after.
   ([How list updates stay safe](#how-list-updates-stay-safe)). It hides only,
   and only in the extension: the userscript cannot fetch levelsio's file or
   the readers' list. It is on after the update that adds it, as on a new
-  install, until you switch it off. AI flags is on too, so its file is
-  downloaded once for each list.
+  install, until you switch it off. When AI flags is on too, the extension
+  downloads their shared file once per refresh and checks it for both lists.
 - **The readers' list** is the part of Recommended that AI Anti-Slop's server
   builds from the labels readers chose to [share](#sharing-labels). Each
   install counts once per account, by its newest label on any of the account's
@@ -845,8 +845,8 @@ AI Anti-Slop is not affiliated with X Corp, with clankwall or with levelsio.
 
 ## How list updates stay safe
 
-Each list is fetched and checked on its own, and an update replaces that
-list's stored copy only if it looks like a list. If the fetch
+Each list is checked on its own, even if it shares a download with another
+list. An update replaces that list's stored copy only if it looks like a list. If the fetch
 fails, times out, returns HTML, is over 1 MB (8 MB for All flags and
 levelsio's `accounts.ndjson`, whose lines are JSON) or 50,000 handles, is mostly lines
 that are not handles, is empty, or has fewer than half as many handles as the

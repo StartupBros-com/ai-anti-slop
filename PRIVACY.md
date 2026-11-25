@@ -92,10 +92,11 @@ so when the extension is installed, at browser start when a refresh is due,
 every 6 hours, when you click **Refresh list now** in the popup, when you add
 a list, and when you switch one on that has no stored copy or one 6 hours old
 or more, unless its last try failed less than 30 minutes ago. A list that is
-off is not downloaded.
+off is not downloaded for that list. If two enabled lists use the same address,
+the extension shares the download within that refresh.
 
 - The Recommended list is on unless you switch it off (0.9.0 and earlier do
-  not have it). Each download fetches three files:
+  not have it). It uses three files:
   `https://clankwall.vogel.dev/api/usernames.txt`,
   `https://blockedforaireply.levels.io/api/accounts.ndjson` (about 1 MB on
   2026-11-21) and `https://ai-anti-slop.startupbros.com/v1/list.ndjson`, the
