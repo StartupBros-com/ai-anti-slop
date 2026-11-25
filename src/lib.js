@@ -174,10 +174,14 @@
   }
 
   // The rows of levelsio's accounts.ndjson that Recommended takes: the
-  // "confirmed" tier (blocked with a public reply) with at least one evidence
-  // item, the link to that reply. The file's other tiers carry no evidence.
+  // "confirmed" tier with at least one evidence item. The file's own rule
+  // (2026-11-24): "confirmed = AI or spam replies checked and saved as
+  // evidence"; its other tiers carry none. The file names the tier in
+  // `status` since 2026-11-24 and named it in `levelsio` before; either one
+  // counts, so a file in the old shape still reads the same.
   function levelsioConfirmed(row) {
-    return row.levelsio === 'confirmed' && Array.isArray(row.evidence) && row.evidence.length > 0;
+    const tier = row.status === 'confirmed' || row.levelsio === 'confirmed';
+    return tier && Array.isArray(row.evidence) && row.evidence.length > 0;
   }
 
   // The NDJSON list formats, each with the rows it keeps (null: every row).
@@ -372,7 +376,7 @@
         }),
       ]),
       about: null,
-      note: "AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either. Hides replies only; muting uses clankwall's AI flags.",
+      note: "AI Anti-Slop's pick: clankwall's AI flags; the accounts levelsio's list marks confirmed, each with the AI or spam replies it saved as evidence; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either. Hides replies only; muting uses clankwall's AI flags.",
     }),
     Object.freeze({
       id: 'clankwall-ai', name: 'clankwall: AI flags', format: 'text', on: true, mute: true,
@@ -391,7 +395,7 @@
       id: 'levelsio', name: 'levelsio: Blocked for AI reply', format: 'text', on: false, mute: false, userscript: false,
       url: 'https://blockedforaireply.levels.io/api/usernames.txt',
       about: 'https://blockedforaireply.levels.io/',
-      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Recommended includes the ones blocked with a public reply. Hides replies only.',
+      note: 'Accounts @levelsio blocked, plus accounts clankwall flagged as AI. Some were blocked with a public "Blocked for AI reply" reply; most without one, many of them older blocks not yet reviewed. The list\'s page calls its flags judgment calls, not proof. Recommended includes the ones it marks confirmed, with AI or spam replies saved as evidence. Hides replies only.',
     }),
   ]);
   const MUTE_LIST = 'clankwall-ai';

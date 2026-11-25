@@ -3,11 +3,12 @@
 AI Anti-Slop (formerly Human Replies Only and x-slop-hide) hides posts on x.com
 by accounts on a public list of AI-reply spam accounts. The browser extension
 can also mute those accounts on X, and can save labels you give to posts.
-This policy covers the extension and the userscript, version 0.11.0, which
+This policy covers the extension and the userscript, version 0.11.1. 0.11.0
 sends the day a label was made where 0.10.0 sent a hash of the post's words,
 and adds a note on hidden posts with Not slop and a card on x.com that offers
-sharing after a saved Hide as slop until you answer it. Where an earlier
-version differs, it says so. Last updated 2026-11-23.
+sharing after a saved Hide as slop until you answer it. 0.11.1 reads the tier
+of levelsio's list from the field that list now uses, and collects nothing
+new. Where an earlier version differs, it says so. Last updated 2026-11-24.
 
 ## In short
 
@@ -99,9 +100,9 @@ off is not downloaded.
   `https://blockedforaireply.levels.io/api/accounts.ndjson` (about 1 MB on
   2026-11-21) and `https://ai-anti-slop.startupbros.com/v1/list.ndjson`, the
   readers' list (see [Sharing labels](#sharing-labels)). From each row of
-  levelsio's file it reads the handle, the `levelsio` field and whether the
-  row lists any evidence, and keeps only the handles of accounts marked
-  `confirmed` with evidence. From the readers' list it keeps only the handles.
+  levelsio's file it reads the handle, the `status` field (`levelsio` in the
+  file's shape before 2026-11-24) and whether the row lists any evidence, and
+  keeps only the handles of accounts marked `confirmed` with evidence. From the readers' list it keeps only the handles.
   Nothing else in either file is kept. The readers' list is downloaded whether
   or not you share, and AI Anti-Slop's server keeps nothing about a download.
 - clankwall's AI flags list, `https://clankwall.vogel.dev/api/usernames.txt`,

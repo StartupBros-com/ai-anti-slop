@@ -48,10 +48,15 @@ export function post({ author, quote = null, mention = null, quoteMention = null
 // The icons at a post's top right, nested as on x.com on 2026-11-18: a group
 // ([data-icons] here) holding Grok's button ('grok') and then More (⋯), or
 // More alone ('more'). The group is the right end of the header row.
+// 'follow' is the post a page is about as x.com drew it at 420 px on
+// 2026-11-23: X's Follow button and an empty box in the same group, left of
+// Grok and More.
 export function headIcons(kind) {
   const grok = '<div><button aria-label="Grok actions" type="button"><svg viewBox="0 0 24 24"></svg></button></div>';
   const more = '<div><div><div><button data-testid="caret" aria-label="More" type="button"><svg viewBox="0 0 24 24"></svg></button></div></div></div>';
-  return `<div><div data-icons>${kind === 'grok' ? grok : ''}${more}</div></div>`;
+  const follow = '<div><button data-testid="100-follow" aria-label="Follow" type="button"><span>Follow</span></button></div><div></div>';
+  const before = kind === 'grok' ? grok : kind === 'follow' ? follow + grok : '';
+  return `<div><div data-icons>${before}${more}</div></div>`;
 }
 
 export function page(cells) {

@@ -3263,7 +3263,7 @@ test('settings page: the Lists section is first, retitled, and shows the four bu
   assert.equal(lev.querySelector('label').textContent, 'levelsio: Blocked for AI reply');
   assert.equal(lev.querySelector('input').checked, false);
   assert.equal(stat(s, 'levelsio'), 'Off');
-  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Recommended includes the ones blocked with a public reply\. Hides replies only\./);
+  assert.match(lev.textContent, /The list's page calls its flags judgment calls, not proof\. Recommended includes the ones it marks confirmed, with AI or spam replies saved as evidence\. Hides replies only\./);
   assert.equal(lev.querySelector('a').getAttribute('href'), 'https://blockedforaireply.levels.io/');
   assert.equal(lev.querySelector('button'), null, 'a built-in list has no Remove');
   assert.equal(ai.querySelector('label').textContent, 'clankwall: AI flags');
@@ -3704,6 +3704,54 @@ test('settings page: Try again that cannot reach the background says so', async 
   assert.equal(stat(s, 'uone'), 'Download failed');
 });
 
+test('settings page: Try again unlocks when the failed refresh result cannot be checked', async () => {
+  const url = 'https://a.example/one.txt';
+  const key = 'xsh:list:uone';
+  const s = loadSettings({
+    'xsh:settings': { customLists: [{ id: 'uone', url, on: true }] },
+    [key]: record([], url, { fetchedAt: 0, lastAttemptAt: 1, lastError: 'HTTP 500' }),
+  });
+  const get = s.chrome.storage.local.get;
+  let targetedReads = 0;
+  let failReadback;
+  s.chrome.storage.local.get = (keys) => {
+    if (keys === key && ++targetedReads === 2) {
+      return new Promise((_, reject) => { failReadback = reject; });
+    }
+    return get(keys);
+  };
+  let requests = 0;
+  s.chrome.runtime.sendMessage = async ({ type }) => {
+    assert.equal(type, 'xsh:refresh');
+    requests += 1;
+    if (requests === 1) return { ok: false, reason: 'HTTP 500' };
+    await s.chrome.storage.local.set({ [key]: record(['h1'], url) });
+    return { ok: true, count: 1 };
+  };
+
+  await settle();
+  s.click('retry-uone');
+  await settle();
+  assert.equal(targetedReads, 2, 'the targeted post-response read is pending');
+  assert.equal(s.$('retry-uone').getAttribute('aria-disabled'), 'true');
+  s.click('retry-uone');
+  await settle();
+  assert.equal(requests, 1, 'a second click cannot start a refresh during the result read');
+
+  failReadback(new Error('synthetic storage error'));
+  await settle();
+  assert.equal(s.$('listMsg').textContent, 'Could not check whether this list downloaded. Try again.');
+  assert.equal(s.$('listMsg').classList.contains('bad'), true);
+  assert.equal(s.$('retry-uone').hasAttribute('aria-disabled'), false);
+
+  s.click('retry-uone');
+  await settle();
+  assert.equal(requests, 2);
+  assert.equal(targetedReads, 3, 'a confirmed success does not need a result read');
+  assert.equal(s.$('listMsg').textContent, 'Downloaded. Every list that is on is up to date.');
+  assert.equal(s.$('retry-uone'), null);
+});
+
 // The background answers ok:false with a reason both when a list failed and
 // when the refresh itself threw; the list's own record tells them apart.
 test('settings page: Try again tells a download that did not run from another list failing', async () => {
@@ -4040,7 +4088,7 @@ test('Recommended: the settings page shows it first and on, with its note and a 
   assert.equal(stat(s, 'recommended'), '5 accounts · updated just now');
   assert.equal(s.$('summary').textContent, 'Hiding replies from 5 accounts on 2 lists.');
   assert.equal(rec.querySelector('details summary').textContent, 'About Recommended');
-  assert.match(rec.textContent, /AI Anti-Slop's pick: clankwall's AI flags; the accounts @levelsio blocked with a public reply, each linked on levelsio's page; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop\. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either\. Hides replies only; muting uses clankwall's AI flags\./);
+  assert.match(rec.textContent, /AI Anti-Slop's pick: clankwall's AI flags; the accounts levelsio's list marks confirmed, each with the AI or spam replies it saved as evidence; and the readers' list, the accounts three or more AI Anti-Slop readers who share their labels reported as slop\. Both sites say their flags are not proof, and the readers' list counts reports, which are not proof either\. Hides replies only; muting uses clankwall's AI flags\./);
   assert.deepEqual(
     [...rec.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent, a.getAttribute('target'), a.getAttribute('rel')]),
     [
