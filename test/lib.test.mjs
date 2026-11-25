@@ -812,3 +812,33 @@ test('recordCheckFailed: a failure long after the second try was due is a first 
   // Within that time after it was due, it is the second try failing.
   assert.equal(lib.recordCheckFailed(r, NO_ROWS, due + 15 * 60000 - 1, ACCT).days[DAY].stopped, NO_ROWS_STOP);
 });
+
+test('daily mute writes add the same defaults on a new UTC day without mutating history', () => {
+  const midnight = Date.parse('2026-10-10T00:00:00.000Z');
+  const older = Object.freeze({ mutes: 7, visits: 8, stopped: 'yesterday', unmutes: 1 });
+  const start = { ...lib.emptyMutes(), days: Object.freeze({ '2026-10-09': older }) };
+  const edits = [
+    [r => lib.recordOutcome(r, 'example', { status: 'muted' }, midnight), { mutes: 1, visits: 0, stopped: null }],
+    [r => lib.countVisit(r, midnight), { mutes: 0, visits: 1, stopped: null }],
+    [r => lib.stopDay(r, midnight, 'today'), { mutes: 0, visits: 0, stopped: 'today' }],
+  ];
+  for (const [edit, today] of edits) {
+    const result = edit(start);
+    assert.deepEqual(result.days, { '2026-10-09': older, '2026-10-10': today });
+    assert.notStrictEqual(result.days['2026-10-09'], older);
+    assert.deepEqual(start.days, { '2026-10-09': older });
+  }
+});
+
+test('daily mute writes preserve previously recorded counts, stop reason and extension fields', () => {
+  const now = Date.parse('2026-10-09T23:59:59.999Z');
+  const day = { mutes: 2, visits: 3, stopped: 'earlier', unmutes: 1, extra: { retained: true } };
+  const start = { ...lib.emptyMutes(), days: { '2026-10-09': day } };
+  let state = lib.countVisit(start, now);
+  state = lib.recordOutcome(state, 'example', { status: 'muted' }, now);
+  assert.deepEqual(state.days['2026-10-09'], { ...day, mutes: 3, visits: 4 });
+  assert.deepEqual(lib.stopDay(state, now, 'other').days, {
+    '2026-10-09': { ...day, mutes: 3, visits: 4, stopped: 'other' },
+  });
+  assert.deepEqual(start.days, { '2026-10-09': { ...day, mutes: 2, visits: 3, stopped: 'earlier' } });
+});
