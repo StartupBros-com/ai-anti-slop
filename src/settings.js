@@ -159,12 +159,23 @@
   function failHelp(sub, rec, count) {
     const reason = rec && rec.lastError ? String(rec.lastError) : '';
     if (!reason) return null;
+    // "kept none of N accounts" (lib's fetchList): the file downloaded and
+    // lists accounts, but none in the form this version reads. A list of
+    // several sources joins each refused source's "host: reason" with "; ",
+    // so this wording is used only when every refused source had this reason.
+    const unread = reason.split('; ').every((part) => /kept none of \d+ accounts/.test(part));
     if (rec.partial && rec.fetchedAt) {
-      return {
-        what: 'Not every one of its sources could be downloaded. The rest updated.',
-        next: 'A source that failed keeps its last good copy until a download of it works. It tries again at its next refresh, or press Try again.',
-        reason,
-      };
+      return unread
+        ? {
+            what: 'A source downloaded, but none of the accounts in its file were in a form this version reads. The rest updated.',
+            next: 'Its file may have changed shape. That source keeps its last good copy until a download of it works or an update of the extension reads the new shape. It tries again at its next refresh, or press Try again.',
+            reason,
+          }
+        : {
+            what: 'Not every one of its sources could be downloaded. The rest updated.',
+            next: 'A source that failed keeps its last good copy until a download of it works. It tries again at its next refresh, or press Try again.',
+            reason,
+          };
     }
     const stale = !!rec.fetchedAt;
     const own = !sub.builtin;
@@ -172,7 +183,12 @@
     const retry = `${later}, or press Try again.`;
     let what;
     let next;
-    if (/^network error/.test(reason)) {
+    if (unread) {
+      what = 'The file downloaded, but none of the accounts in it were in a form this version reads.';
+      next = own
+        ? 'Check that the address points at the list itself, one handle per line.'
+        : `Its file may have changed shape, so an update of the extension may be needed. ${retry}`;
+    } else if (/^network error/.test(reason)) {
       what = own ? 'The extension could not read the file at this address.' : "The list's site could not be reached.";
       next = own
         ? "Its host may not let other sites read it, or you may be offline. A raw GitHub or Gist link to the same file works."
