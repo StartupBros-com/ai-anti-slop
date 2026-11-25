@@ -375,6 +375,16 @@
     return !last || now - last >= DEFAULTS.retryMinutes * 60 * 1000;
   }
 
+  // The popup and Settings use the same relative age for their status text.
+  function relativeAge(ms) {
+    if (!ms) return 'never';
+    const m = Math.round((Date.now() - ms) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m} min ago`;
+    const h = Math.round(m / 60);
+    return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
+  }
+
   function parseAllowlist(text) {
     const out = new Set();
     for (const tok of String(text || '').split(/[\s,]+/)) {
@@ -2105,6 +2115,7 @@
     nextRecord,
     commitRecord,
     isRefreshDue,
+    relativeAge,
     parseAllowlist,
     GROK,
     BOTS,

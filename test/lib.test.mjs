@@ -4,6 +4,40 @@ import { lib } from './helpers.mjs';
 
 const many = (n, prefix = 'h') => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
 
+test('relativeAge keeps the status wording, rounding and per-call clock reads', (t) => {
+  const fixed = Date.UTC(2026, 10, 25, 9);
+  let now = fixed;
+  const clock = t.mock.method(Date, 'now', () => now);
+  for (const ms of [0, null, undefined, '', false, NaN]) {
+    assert.equal(lib.relativeAge(ms), 'never');
+  }
+  assert.equal(clock.mock.callCount(), 0, 'empty age does not read the clock');
+
+  const minute = 60_000;
+  const cases = [
+    [-minute, 'just now'],
+    [29_999, 'just now'],
+    [30_000, '1 min ago'],
+    [59.5 * minute - 1, '59 min ago'],
+    [59.5 * minute, '1 h ago'],
+    [(47 * 60 + 29.5) * minute - 1, '47 h ago'],
+    [(47 * 60 + 29.5) * minute, '2 days ago'],
+  ];
+  for (const [elapsed, wording] of cases) {
+    assert.equal(lib.relativeAge(fixed - elapsed), wording);
+  }
+  assert.equal(clock.mock.callCount(), cases.length);
+  assert.equal(lib.relativeAge(String(fixed - minute)), '1 min ago');
+  assert.equal(lib.relativeAge('not-a-number'), 'NaN days ago');
+  assert.equal(lib.relativeAge(Infinity), 'just now');
+  assert.equal(lib.relativeAge(-Infinity), 'Infinity days ago');
+
+  const sameTimestamp = fixed - 29_999;
+  assert.equal(lib.relativeAge(sameTimestamp), 'just now');
+  now += 1;
+  assert.equal(lib.relativeAge(sameTimestamp), '1 min ago');
+});
+
 test('normalizeHandle lowercases, strips @ and rejects non-handles', () => {
   assert.equal(lib.normalizeHandle(' @Known_Slop '), 'known_slop');
   assert.equal(lib.normalizeHandle('user_7234'), 'user_7234');

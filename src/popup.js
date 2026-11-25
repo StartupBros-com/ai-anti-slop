@@ -13,15 +13,6 @@
     if (el.hidden !== hidden) el.hidden = hidden;
   }
 
-  function ago(ms) {
-    if (!ms) return 'never';
-    const m = Math.round((Date.now() - ms) / 60000);
-    if (m < 1) return 'just now';
-    if (m < 60) return `${m} min ago`;
-    const h = Math.round(m / 60);
-    return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
-  }
-
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   // The daily number, and why none goes past the top one: hiding already
@@ -205,9 +196,9 @@
         host = String(rec.source || '');
       }
       setText($('list'), `${plural(rec.handles.length, 'account', 'accounts')} on the list`);
-      setText($('listAge'), `From ${host}, ${rec.fetchedAt ? `updated ${ago(rec.fetchedAt)}` : 'not fetched yet'}`);
+      setText($('listAge'), `From ${host}, ${rec.fetchedAt ? `updated ${L.relativeAge(rec.fetchedAt)}` : 'not fetched yet'}`);
       setHidden($('err'), !rec.lastError);
-      setText($('err'), rec.lastError ? `Last refresh failed (${ago(rec.lastAttemptAt)}): ${rec.lastError}.${rec.fetchedAt ? ' Still using the previous list.' : ''}` : '');
+      setText($('err'), rec.lastError ? `Last refresh failed (${L.relativeAge(rec.lastAttemptAt)}): ${rec.lastError}.${rec.fetchedAt ? ' Still using the previous list.' : ''}` : '');
       return rec.handles;
     }
     const recs = keys.length ? await chrome.storage.local.get(keys) : {};
@@ -222,7 +213,7 @@
     const k = plural(on.length, 'list', 'lists');
     setText($('list'), `${plural(handles.length, 'account', 'accounts')} on ${k}`);
     const times = keys.map((key) => (recs[key] && recs[key].fetchedAt) || 0);
-    setText($('listAge'), times.includes(0) ? `From ${k}, not all fetched yet` : `From ${k}, oldest updated ${ago(Math.min(...times))}`);
+    setText($('listAge'), times.includes(0) ? `From ${k}, not all fetched yet` : `From ${k}, oldest updated ${L.relativeAge(Math.min(...times))}`);
     const i = keys.findIndex((key) => recs[key] && recs[key].lastError);
     const bad = i >= 0 ? recs[keys[i]] : null;
     setHidden($('err'), !bad);
@@ -231,8 +222,8 @@
       !bad
         ? ''
         : bad.partial && bad.fetchedAt
-          ? `${on[i].name}: part of the last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}. The rest updated.`
-          : `${on[i].name}: last refresh failed (${ago(bad.lastAttemptAt)}): ${bad.lastError}.${bad.fetchedAt ? ' Still using the previous list.' : ''}`,
+          ? `${on[i].name}: part of the last refresh failed (${L.relativeAge(bad.lastAttemptAt)}): ${bad.lastError}. The rest updated.`
+          : `${on[i].name}: last refresh failed (${L.relativeAge(bad.lastAttemptAt)}): ${bad.lastError}.${bad.fetchedAt ? ' Still using the previous list.' : ''}`,
     );
     return handles;
   }
