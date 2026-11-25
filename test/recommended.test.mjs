@@ -56,7 +56,7 @@ test('levelsio rows: only confirmed rows with evidence are kept; the rest are le
     JSON.stringify({ username: 'bad handle!', levelsio: 'confirmed', evidence: [{}] }),
   ].join('\n');
   const parsed = L.parseNdjsonUsernames(body, { keep: L.levelsioConfirmed });
-  assert.deepEqual(parsed, { handles: ['conf_a', 'conf_b'], rejected: 2, error: null });
+  assert.deepEqual(parsed, { handles: ['conf_a', 'conf_b'], rejected: 2, declined: 4, error: null });
   // Without a filter every row with a handle is kept, as for clankwall's file.
   assert.deepEqual(L.parseNdjsonUsernames(body).handles, ['blocked_a', 'conf_a', 'conf_b', 'conf_none', 'copied_a', 'likely_a']);
 });
@@ -95,7 +95,7 @@ test('levelsio rows in the 2026-11-24 shape: the tier is read from `status`, and
     // A likely row that somehow carries evidence is still not confirmed.
     row24('likely_ev', 'likely', 1),
   ].join('\n');
-  assert.deepEqual(L.parseNdjsonUsernames(body, { keep: L.levelsioConfirmed }), { handles: ['conf_a', 'conf_b'], rejected: 0, error: null });
+  assert.deepEqual(L.parseNdjsonUsernames(body, { keep: L.levelsioConfirmed }), { handles: ['conf_a', 'conf_b'], rejected: 0, declined: 5, error: null });
 });
 
 test('levelsio rows: a file mixing both shapes keeps the confirmed rows of each', async () => {
@@ -208,7 +208,22 @@ test('Recommended: levelsio\'s rows losing the tier field refuse levelsio\'s par
   const renamed = [1, 2, 3].map((i) => JSON.stringify({ username: `lv_${i}`, tier: 'confirmed', evidence: [{}] })).join('\n');
   const prevParts = [{ source: LV, handles: ['lv_x', 'lv_y'] }];
   const r = await L.fetchList({ url: LV, sources: SOURCES, prevParts, fetchImpl: fetchFrom({ [AI]: many(40).join('\n'), [LV]: renamed }) });
-  assert.deepEqual([r.ok, r.handles.length, r.parts[0].handles, r.parts[1].handles, r.reason], [true, 42, [...many(40)].sort(), ['lv_x', 'lv_y'], 'blockedforaireply.levels.io: empty list']);
+  assert.deepEqual([r.ok, r.handles.length, r.parts[0].handles, r.parts[1].handles, r.reason], [true, 42, [...many(40)].sort(), ['lv_x', 'lv_y'], 'blockedforaireply.levels.io: kept none of 3 accounts']);
+});
+
+test('fetchList: a file whose filter keeps none of its accounts is refused as before, with a reason that says so', async () => {
+  // The rows name accounts, but none is in the confirmed tier with evidence.
+  const unread = [1, 2, 3].map((i) => JSON.stringify({ username: `lv_${i}`, status: 'likely', evidence: [] }));
+  const one = (body) => L.fetchList({ url: LV, format: 'levelsio-confirmed', fetchImpl: fetchFrom({ [LV]: body }) });
+  assert.deepEqual(await one(unread.join('\n')), { ok: false, reason: 'kept none of 3 accounts' });
+  // With invalid lines too, it still says how many accounts the file listed.
+  assert.deepEqual(await one([...unread, 'not json'].join('\n')), { ok: false, reason: 'kept none of 3 accounts (1 invalid lines)' });
+  // A file with no rows at all is still an empty list, and mostly-invalid with nothing declined reads as before.
+  assert.deepEqual(await one(''), { ok: false, reason: 'empty list' });
+  assert.deepEqual(await one('not json\n{}'), { ok: false, reason: 'feed is mostly not handles (2 invalid lines)' });
+  // One confirmed row is kept, so a file the filter keeps something of is accepted as before.
+  const r = await one([...unread, JSON.stringify({ username: 'lv_ok', status: 'confirmed', evidence: [{}] })].join('\n'));
+  assert.deepEqual([r.ok, r.handles], [true, ['lv_ok']]);
 });
 
 test('Recommended: each source is held to the shrink guard against its own part, not the union', async () => {

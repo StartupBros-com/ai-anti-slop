@@ -3886,6 +3886,7 @@ test('settings page: every download failure reason gets its own explanation', as
     ['unexpected content-type text/html', 'That address opens a web page, not a list.', 'on GitHub, the Raw button'],
     ['feed is mostly not handles (7 invalid lines)', "The file there isn't a list of X handles.", 'one handle per line'],
     ['empty list', "The file there isn't a list of X handles.", 'one handle per line'],
+    ['kept none of 12 accounts', 'The file downloaded, but none of the accounts in it were in a form this version reads.', 'one handle per line'],
     ['list shrank from 100 to 10', 'The new copy was much shorter than the last one, so it was not used.', 'remove it and add it again'],
     ['feed larger than 1000000 bytes', 'The list is bigger than the extension reads.', 'Ask its owner for a smaller file'],
     ['too many handles', 'The list is bigger than the extension reads.', 'Ask its owner for a smaller file'],
@@ -4010,6 +4011,31 @@ test('Recommended: an update with one source refused reads as part of a refresh 
   const all = loadPopup({ ...structuredClone(store), [REC_KEY]: recRecord(['aionly'], ['lv_b'], { fetchedAt: at - 3600e3, lastError: 'clankwall.vogel.dev: HTTP 503; blockedforaireply.levels.io: HTTP 503' }) });
   await settle();
   assert.equal(all.document.getElementById('err').textContent, 'Recommended: last refresh failed (just now): clankwall.vogel.dev: HTTP 503; blockedforaireply.levels.io: HTTP 503. Still using the previous list.');
+});
+
+test('Recommended: a source whose file kept none of its accounts says the file may have changed shape; a mix of reasons keeps the general words', async () => {
+  const reason = 'blockedforaireply.levels.io: kept none of 3429 accounts';
+  const store = {
+    'xsh:list': record(['aionly'], AI_URL),
+    [REC_KEY]: recRecord(['aionly'], ['lv_b'], { lastError: reason, partial: true }),
+    'xsh:settings': {},
+  };
+  const p = loadPopup(store);
+  await settle();
+  assert.equal(p.document.getElementById('err').textContent, `Recommended: part of the last refresh failed (just now): ${reason}. The rest updated.`);
+  const s = loadSettings(structuredClone(store));
+  await settle();
+  assert.equal(stat(s, 'recommended'), '2 accounts · updated just now · a source failed');
+  assert.deepEqual(failNote(s, 'recommended'), {
+    what: 'A source downloaded, but none of the accounts in its file were in a form this version reads. The rest updated.',
+    text: 'A source downloaded, but none of the accounts in its file were in a form this version reads. The rest updated. Its file may have changed shape. That source keeps its last good copy until a download of it works or an update of the extension reads the new shape. It tries again at its next refresh, or press Try again.',
+    reported: `Reported: ${reason}`,
+  });
+  // Another source failing for another reason: the general words, since not every refused source was unread.
+  const mixed = `${reason}; ai-anti-slop.startupbros.com: HTTP 503`;
+  const m = loadSettings({ ...structuredClone(store), [REC_KEY]: recRecord(['aionly'], ['lv_b'], { lastError: mixed, partial: true }) });
+  await settle();
+  assert.equal(failNote(m, 'recommended').what, 'Not every one of its sources could be downloaded. The rest updated.');
 });
 
 test('Recommended: on by default, so install fetches its three files and stores each part; a part that halves keeps its old copy', async () => {

@@ -991,6 +991,7 @@ after the colon says why the update was refused:
 | `unexpected content-type …` | The feed URL returned a web page, not a list. |
 | `feed larger than 1000000 bytes`, `too many handles`, `feed is mostly not handles (N invalid lines)` | The response does not look like a handle list. |
 | `empty list`, `list shrank from X to Y` | The new list was empty, or under half the size of the stored one. |
+| `kept none of N accounts` | The file listed N accounts, but none in the form this version reads, such as levelsio's confirmed tier with its evidence. The file has probably changed shape, and an update of the extension may be needed. |
 
 Click the circular arrow beside the list's count (**Refresh list now**) to try
 again. Otherwise the extension tries again at

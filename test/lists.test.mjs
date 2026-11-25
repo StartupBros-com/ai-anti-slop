@@ -301,12 +301,12 @@ test('parseNdjsonUsernames: reads each line username, counts the rest as rejecte
     JSON.stringify(null),
     JSON.stringify({ username: 'spam1' }),
   ].join('\r\n');
-  assert.deepEqual(L.parseNdjsonUsernames(text), { handles: ['aionly', 'spam1'], rejected: 6, error: null });
-  assert.deepEqual(L.parseNdjsonUsernames(''), { handles: [], rejected: 0, error: null });
+  assert.deepEqual(L.parseNdjsonUsernames(text), { handles: ['aionly', 'spam1'], rejected: 6, declined: 0, error: null });
+  assert.deepEqual(L.parseNdjsonUsernames(''), { handles: [], rejected: 0, declined: 0, error: null });
 });
 
 test('parseNdjsonUsernames: more than maxHandles is an error', () => {
-  assert.deepEqual(L.parseNdjsonUsernames(nd(...many(4)), { maxHandles: 3 }), { handles: [], rejected: 0, error: 'too many handles' });
+  assert.deepEqual(L.parseNdjsonUsernames(nd(...many(4)), { maxHandles: 3 }), { handles: [], rejected: 0, declined: 0, error: 'too many handles' });
   assert.equal(L.parseNdjsonUsernames(nd(...many(3)), { maxHandles: 3 }).handles.length, 3);
 });
 

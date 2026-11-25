@@ -144,12 +144,14 @@
   // not JSON, or has no username that is a handle, counts as rejected. With
   // opts.keep, a row it returns false for is left out and not counted as
   // rejected: a filter that keeps a few rows of many is not a broken feed.
-  // Same limit and return shape as parseList.
+  // Those rows are counted as declined. Same limit and return shape as
+  // parseList, plus `declined`.
   function parseNdjsonUsernames(text, opts) {
     const maxHandles = (opts && opts.maxHandles) || DEFAULTS.maxHandles;
     const keep = opts && typeof opts.keep === 'function' ? opts.keep : null;
     const seen = new Set();
     let rejected = 0;
+    let declined = 0;
     for (const line of String(text).split(/\r?\n/)) {
       const t = line.trim();
       if (!t) continue;
@@ -166,11 +168,12 @@
       }
       if (!h) rejected++;
       else if (!keep || keep(row)) seen.add(h);
+      else declined++;
       if (seen.size > maxHandles) {
-        return { handles: [], rejected, error: 'too many handles' };
+        return { handles: [], rejected, declined, error: 'too many handles' };
       }
     }
-    return { handles: [...seen].sort(), rejected, error: null };
+    return { handles: [...seen].sort(), rejected, declined, error: null };
   }
 
   // The rows of levelsio's accounts.ndjson that Recommended takes: the
@@ -249,11 +252,22 @@
       ? parseNdjsonUsernames(text, { maxHandles: args.maxHandles, keep: NDJSON_FORMATS[args.format] })
       : parseList(text, { maxHandles: args.maxHandles });
     if (parsed.error) return { ok: false, reason: parsed.error };
+    // A file whose filter kept none of the accounts it lists is not empty,
+    // and "empty list" hides the likely cause: the file changed shape (on
+    // 2026-11-24 levelsio's tier moved to a field 0.11.0 did not read, #108).
+    // Only the reason changes; what is refused is refused as before.
+    const refuse = (reason) => ({
+      ok: false,
+      reason:
+        parsed.handles.length === 0 && parsed.declined > 0
+          ? `kept none of ${parsed.declined} accounts${parsed.rejected ? ` (${parsed.rejected} invalid lines)` : ''}`
+          : reason,
+    });
     if (parsed.rejected > parsed.handles.length) {
-      return { ok: false, reason: `feed is mostly not handles (${parsed.rejected} invalid lines)` };
+      return refuse(`feed is mostly not handles (${parsed.rejected} invalid lines)`);
     }
     const verdict = acceptUpdate(args.prevHandles, parsed.handles, args);
-    if (!verdict.ok) return { ok: false, reason: verdict.reason };
+    if (!verdict.ok) return refuse(verdict.reason);
     return { ok: true, handles: parsed.handles, rejected: parsed.rejected };
   }
 
