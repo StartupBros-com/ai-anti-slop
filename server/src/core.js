@@ -684,15 +684,19 @@ async function adminCandidates(db, url, now) {
   });
 }
 
+async function rebuildAdminList(db, env, now, requestUrl) {
+  const stats = await build(db, env, now);
+  const cache = getCache();
+  if (cache) await cache.delete(listCacheKey(requestUrl));
+  return json(200, { ok: true, ...stats });
+}
+
 async function adminRoute(db, env, request, url, path, now) {
   const m = request.method;
   if (path === '/v1/admin/candidates' && m === 'GET') return adminCandidates(db, url, now);
   if (m !== 'POST') return null;
   if (path === '/v1/admin/rebuild') {
-    const stats = await build(db, env, now);
-    const cache = getCache();
-    if (cache) await cache.delete(listCacheKey(request.url));
-    return json(200, { ok: true, ...stats });
+    return rebuildAdminList(db, env, now, request.url);
   }
   if (path === '/v1/admin/override') {
     const { text, tooBig } = await readBody(request);
@@ -713,10 +717,7 @@ async function adminRoute(db, env, request, url, path, now) {
       // Every listed account is listed by readers, so there is no "list" override.
       return fail(400, 'bad action');
     }
-    const stats = await build(db, env, now);
-    const cache = getCache();
-    if (cache) await cache.delete(listCacheKey(request.url));
-    return json(200, { ok: true, ...stats });
+    return rebuildAdminList(db, env, now, request.url);
   }
   return null;
 }
