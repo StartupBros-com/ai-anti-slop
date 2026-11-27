@@ -31,16 +31,37 @@ const stored = async () => (await chrome.storage.local.get(K.list))[K.list];
 // list's (stored() above), never a union with the others.
 const recordOf = async (id) => (await chrome.storage.local.get(L.listKey(id)))[L.listKey(id)];
 
+// One refresh batch uses the same fetch policy for every list. Share the
+// response and its one body read by URL; each caller still parses and checks
+// it against its own record. A new batch always gets a fresh transport.
+function refreshFetch() {
+  const responses = new Map();
+  return (url, init) => {
+    if (!responses.has(url)) {
+      responses.set(url, fetch(url, init).then((response) => {
+        if (!response || !response.ok) return response;
+        let body;
+        return {
+          ok: response.ok,
+          headers: response.headers,
+          text: () => body ??= Promise.resolve().then(() => response.text()),
+        };
+      }));
+    }
+    return responses.get(url);
+  };
+}
+
 // Install, alarm, startup, popup and settings triggers can overlap. They share
 // one in-flight refresh per list, so only one fetch and one write happen at a
 // time for each. A call for another address (the AI list's feedUrl changed)
 // waits for the one in flight and then fetches the new address.
 const inflight = new Map();
-function refreshList(sub) {
+function refreshList(sub, fetchImpl) {
   const cur = inflight.get(sub.id);
   if (cur && cur.url === sub.url) return cur.p;
   const p = (cur ? cur.p.catch(() => {}) : Promise.resolve())
-    .then(() => runRefresh(sub))
+    .then(() => runRefresh(sub, fetchImpl))
     .finally(() => {
       if (inflight.get(sub.id) === entry) inflight.delete(sub.id);
     });
@@ -49,7 +70,7 @@ function refreshList(sub) {
   return p;
 }
 
-async function runRefresh(sub) {
+async function runRefresh(sub, fetchImpl) {
   const key = L.listKey(sub.id);
   const prev = await recordOf(sub.id);
   const startSeq = (prev && prev.seq) || 0;
@@ -57,7 +78,7 @@ async function runRefresh(sub) {
     url: sub.url,
     format: sub.format,
     sources: sub.sources,
-    fetchImpl: fetch,
+    fetchImpl,
     prevHandles: prev && prev.handles,
     prevParts: prev && prev.parts,
   });
@@ -78,7 +99,8 @@ async function runRefresh(sub) {
 // when more than one is on), count the size of the union of their records.
 async function refresh() {
   const subs = L.enabledLists(await settings());
-  const results = await Promise.all(subs.map((sub) => refreshList(sub)));
+  const fetchImpl = refreshFetch();
+  const results = await Promise.all(subs.map((sub) => refreshList(sub, fetchImpl)));
   const failed = results.findIndex((r) => !r.ok);
   let reason = null;
   if (failed >= 0) reason = subs.length > 1 ? `${subs[failed].name}: ${results[failed].reason}` : results[failed].reason;
@@ -87,9 +109,10 @@ async function refresh() {
 
 async function refreshIfDue() {
   const now = Date.now();
+  const fetchImpl = refreshFetch();
   for (const sub of L.enabledLists(await settings())) {
     const rec = await recordOf(sub.id);
-    if (L.isDue(rec && rec.fetchedAt, now, L.DEFAULTS.refreshMinutes)) refreshList(sub).catch(() => {});
+    if (L.isDue(rec && rec.fetchedAt, now, L.DEFAULTS.refreshMinutes)) refreshList(sub, fetchImpl).catch(() => {});
   }
 }
 
@@ -101,9 +124,10 @@ async function listsChanged(change) {
   const { on, gone } = L.listChanges((change && change.oldValue) || {}, (change && change.newValue) || {});
   if (gone.length) await chrome.storage.local.remove(gone.map((id) => L.listKey(id)));
   const now = Date.now();
+  const fetchImpl = refreshFetch();
   for (const sub of L.enabledLists((change && change.newValue) || {}).filter((l) => on.includes(l.id))) {
     const rec = await recordOf(sub.id);
-    if (!rec || rec.source !== sub.url || L.isRefreshDue(rec, now)) refreshList(sub).catch(() => {});
+    if (!rec || rec.source !== sub.url || L.isRefreshDue(rec, now)) refreshList(sub, fetchImpl).catch(() => {});
   }
 }
 

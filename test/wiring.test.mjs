@@ -152,6 +152,51 @@ test('background: install fetches the feed, stores it and schedules a 6-hour ala
   assert.equal(bg.chrome.alarmTable['xsh-refresh'].periodInMinutes, 360);
 });
 
+test('background: a refresh reads the shared feed once but checks each previous copy', async () => {
+  const sharedUrl = lib.DEFAULTS.feedUrl;
+  const prev = many(369);
+  let sharedBody = 'fresh_handle';
+  let reads = 0;
+  const bg = loadBackground((url) => url === sharedUrl
+    ? { ...ok(''), text: async () => { reads++; return sharedBody; } }
+    : ok(''));
+  bg.chrome.store['xsh:list'] = { handles: prev, fetchedAt: 1, source: sharedUrl };
+  bg.chrome.runtime.onInstalled.fire({ reason: 'install' });
+  await settle();
+  assert.equal(bg.requests.filter(({ url }) => url === sharedUrl).length, 1);
+  assert.equal(reads, 1);
+  const recommended = () => bg.chrome.store[lib.listKey('recommended')];
+  const sharedPart = () => recommended().parts.find(({ source }) => source === sharedUrl);
+  assert.deepEqual(sharedPart().handles, ['fresh_handle']);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, prev);
+  assert.match(bg.chrome.store['xsh:list'].lastError, /shrank from 369 to 1/);
+
+  sharedBody = prev.join('\n');
+  bg.chrome.alarms.onAlarm.fire({ name: 'xsh-refresh' });
+  await settle();
+  assert.equal(bg.requests.filter(({ url }) => url === sharedUrl).length, 2);
+  assert.equal(reads, 2);
+  assert.equal(sharedPart().handles.length, 369);
+  assert.equal(bg.chrome.store['xsh:list'].lastError, null);
+});
+
+test('background: startup shares the due download without fetching a fresh list', async () => {
+  const sharedUrl = lib.DEFAULTS.feedUrl;
+  const bg = loadBackground((url) => ok(url === sharedUrl ? 'fresh_handle' : ''));
+  bg.chrome.store['xsh:list'] = { handles: ['kept_handle'], fetchedAt: Date.now(), source: sharedUrl };
+  bg.chrome.runtime.onStartup.fire();
+  await settle();
+  assert.equal(bg.requests.filter(({ url }) => url === sharedUrl).length, 1);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['kept_handle']);
+
+  bg.chrome.store['xsh:list'].fetchedAt = 1;
+  bg.chrome.store[lib.listKey('recommended')].fetchedAt = 1;
+  bg.chrome.runtime.onStartup.fire();
+  await settle();
+  assert.equal(bg.requests.filter(({ url }) => url === sharedUrl).length, 2);
+  assert.deepEqual(bg.chrome.store['xsh:list'].handles, ['fresh_handle']);
+});
+
 test('background: a failed or shrunken refresh keeps the stored list', async () => {
   let body = many(369).join('\n');
   let status = 200;
@@ -4045,8 +4090,8 @@ test('Recommended: on by default, so install fetches its three files and stores 
   const bg = loadBackground((url) => ok(url === AI_URL ? 'aionly\nboth\n' : url === LV_ND ? body : url === CR_ND ? '' : 'nope'));
   bg.chrome.runtime.onInstalled.fire({ reason: 'install' });
   await settle();
-  // AI flags is on too, so clankwall's file is fetched once for each list.
-  assert.deepEqual(bg.requests.map((r) => r.url).sort(), [AI_URL, AI_URL, LV_ND, CR_ND].sort());
+  // AI flags and Recommended share one download of clankwall's file.
+  assert.deepEqual(bg.requests.map((r) => r.url).sort(), [AI_URL, LV_ND, CR_ND].sort());
   const rec = bg.chrome.store[REC_KEY];
   assert.deepEqual(rec.handles, ['aionly', 'both', ...lv]);
   assert.deepEqual(rec.parts, [
