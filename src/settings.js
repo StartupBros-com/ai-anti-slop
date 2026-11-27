@@ -22,15 +22,6 @@
   const num = (n) => n.toLocaleString('en-US');
   const plural = (n, one, many) => `${num(n)} ${n === 1 ? one : many}`;
 
-  function ago(ms) {
-    if (!ms) return 'never';
-    const m = Math.round((Date.now() - ms) / 60000);
-    if (m < 1) return 'just now';
-    if (m < 60) return `${m} min ago`;
-    const h = Math.round(m / 60);
-    return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`;
-  }
-
   // h('p', { class: 'x', onclick: fn }, child, 'text', ...): text goes in as
   // text nodes, never as markup.
   function h(tag, attrs, ...kids) {
@@ -144,11 +135,11 @@
       case 'stale':
         return `${plural(count, 'account', 'accounts')} · last download failed`;
       case 'partial':
-        return `${plural(count, 'account', 'accounts')} · updated ${ago(rec.fetchedAt)} · a source failed`;
+        return `${plural(count, 'account', 'accounts')} · updated ${L.relativeAge(rec.fetchedAt)} · a source failed`;
       case 'waiting':
         return 'Not downloaded yet';
       default:
-        return `${plural(count, 'account', 'accounts')} · updated ${ago(rec.fetchedAt)}`;
+        return `${plural(count, 'account', 'accounts')} · updated ${L.relativeAge(rec.fetchedAt)}`;
     }
   }
 
@@ -761,7 +752,7 @@
     if (on) {
       const parts = [plural(st.sent, 'report sent', 'reports sent')];
       if (st.queue.length) parts.push(`${num(st.queue.length)} waiting`);
-      if (st.lastSentAt) parts.push(`last sent ${ago(st.lastSentAt)}`);
+      if (st.lastSentAt) parts.push(`last sent ${L.relativeAge(st.lastSentAt)}`);
       nodes.push(h('p', { class: 'shareState' }, h('strong', {}, 'Sharing is on.'), ` ${parts.join(' · ')}.`));
       if (st.lastError) {
         const when = st.retryAt && st.retryAt > Date.now() ? ` after ${clockTime(st.retryAt)}` : '';
