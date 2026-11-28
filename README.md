@@ -622,7 +622,9 @@ pages (see [What gets hidden](#what-gets-hidden)), and the notice says so.
   never stored and never reaches muting. The click is saved sooner when you
   click another post's button, open another page, or switch away from or
   close the tab. If the save is refused, the page goes back and the button's
-  tooltip says why ("not saved: ...").
+  tooltip says why ("not saved: ..."). If the notice says it is checking the
+  saved label, wait a moment and click again; the first click does not start
+  an Undo window or save a label.
 - An account already in Also hide is not added again. The button's tooltip
   says when the account is "on the list", "in Also hide" or "in Always show".
   An account in both boxes is shown: Always show wins.
