@@ -119,18 +119,31 @@ test('admin rebuild and accepted overrides invalidate the list once, after rebui
   const deleted = [];
   const real = globalThis.caches;
   const readBuildAt = () => w.db.raw.prepare("SELECT v FROM meta WHERE k = 'builtAt'").get()?.v;
+  const deleting = Promise.withResolvers();
+  const releaseDelete = Promise.withResolvers();
   globalThis.caches = { default: {
     delete: async (key) => {
       deleted.push([key.url, readBuildAt()]);
+      deleting.resolve();
+      await releaseDelete.promise;
       return true;
     },
   } };
   try {
     const expected = { ok: true, listed: 0, reporters: 0 };
-    const rebuild = await w.admin('POST', '/v1/admin/rebuild?ignored=1', undefined, T0);
+    let settled = false;
+    const pending = w.admin('POST', '/v1/admin/rebuild?ignored=1', undefined, T0).then((response) => {
+      settled = true;
+      return response;
+    });
+    await Promise.race([deleting.promise, pending]);
+    await new Promise(setImmediate);
+    assert.deepEqual(deleted, [['https://t.example/v1/list.ndjson', String(T0)]]);
+    assert.equal(settled, false, 'the response must wait until cache deletion finishes');
+    releaseDelete.resolve();
+    const rebuild = await pending;
     assert.equal(rebuild.status, 200);
     assert.deepEqual(rebuild.json, expected);
-    assert.deepEqual(deleted, [['https://t.example/v1/list.ndjson', String(T0)]]);
     const override = (action, now) => w.admin('POST', '/v1/admin/override', { handle: 'fixture', action }, now);
     assert.equal((await override('list', T0 + HOUR)).status, 400);
     assert.equal(readBuildAt(), String(T0));
@@ -144,6 +157,7 @@ test('admin rebuild and accepted overrides invalidate the list once, after rebui
       (now) => ['https://t.example/v1/list.ndjson', String(now)],
     ));
   } finally {
+    releaseDelete.resolve();
     if (real === undefined) delete globalThis.caches;
     else globalThis.caches = real;
   }
