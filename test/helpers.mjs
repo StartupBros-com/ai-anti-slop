@@ -74,7 +74,8 @@ export function page(cells) {
 //
 // With `labels`, the adapter can save and read labels as the extension's
 // does: `labels.stored` maps post ids to labels already saved, `labels.answer`
-// gives the worker's reply to a save (default: saved), `saves` records each
+// gives the worker's reply to a save (default: saved), `labels.read` can hold or
+// reject a read, `saves` records each
 // save and `labelChange(id, label)` stands in for a change in another tab.
 // With `labels.worker`, a save that is answered ok also stores the box change
 // the worker's would (lib.labelPatch) without telling the page: `notify()`
@@ -135,7 +136,7 @@ export function runContent(html, { pathname = '/home', state = {}, job = null, c
       }
       return Promise.resolve(res);
     };
-    adapter.getLabels = (ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, stored[id] || null])));
+    adapter.getLabels = labels.read || ((ids) => Promise.resolve(Object.fromEntries(ids.map((id) => [id, stored[id] || null]))));
     adapter.subscribeLabels = (cb) => {
       labelSub = cb;
     };

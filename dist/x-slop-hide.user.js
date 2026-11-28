@@ -2388,7 +2388,8 @@
   let allowBox = new Set(); // Always show, as typed
   let extraBox = new Set(); // Also hide, as typed
   const labels = new Map(); // post id -> 'slop' | 'not_slop' | null, once read
-  const asked = new Set(); // post ids whose label was read or is being read
+  const asked = new Set(); // post ids already asked, including failed reads
+  const reading = new Set(); // post ids queued or in flight
   const toRead = new Set();
   const notes = new Map(); // post id -> why the last click was not saved
 
@@ -2870,18 +2871,25 @@
 
   // Read stored labels for posts as their buttons appear, a batch at a time.
   function readLabel(id) {
+    if (reading.has(id)) return;
     asked.add(id);
+    reading.add(id);
     toRead.add(id);
     if (toRead.size > 1) return;
     setTimeout(() => {
       const ids = [...toRead];
       toRead.clear();
-      Promise.resolve(adapter.getLabels ? adapter.getLabels(ids) : {})
+      Promise.resolve()
+        .then(() => adapter.getLabels ? adapter.getLabels(ids) : {})
         .then((got) => {
           for (const id of ids) if (!labels.has(id)) labels.set(id, (got && got[id]) || null);
           for (const id of ids) renderId(id);
         })
-        .catch(() => {});
+        // Leave failed reads unknown. Rescans do not retry them; the user's next click does.
+        .catch(() => {})
+        .finally(() => {
+          for (const id of ids) reading.delete(id);
+        });
     }, 0);
   }
 
@@ -2936,6 +2944,13 @@
     }
     const t = labelTarget(article, who);
     if (!t) return;
+    // An unread label is not a known empty one. Retry a failed read, but do
+    // not replay the click once it answers or disturb a different click's Undo.
+    if (!force && !labels.has(t.id)) {
+      readLabel(t.id);
+      if (!pending) showToast('Checking the saved label. Try again in a moment.', false);
+      return;
+    }
     // One click at a time: one still in its window is saved first.
     commit();
     const had = labels.has(t.id);

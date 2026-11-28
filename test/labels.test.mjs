@@ -58,6 +58,52 @@ async function changesOver(t, ticks = 5) {
   return seen.length;
 }
 
+test('waiting for a saved label does not turn a clear into a repeat Slop label', async () => {
+  let finish;
+  const stored = new Promise((resolve) => { finish = resolve; });
+  let reads = 0;
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), clock: true, labels: {
+    read: () => { reads++; return stored; },
+  } });
+  await settle();
+  assert.equal(reads, 1);
+  click(t, button(t, '2', 'slop'));
+  click(t, button(t, '2', 'slop'));
+  t.advance(UNDO_MS);
+  assert.deepEqual(t.saves, [], 'a lookup in flight is neither a label nor an Undo timer');
+  assert.equal(reads, 1, 'clicking while waiting does not start duplicate reads');
+  finish({ 2: 'slop' });
+  await settle();
+  assert.deepEqual(pressed(t, '2'), ['slop']);
+  click(t, button(t, '2', 'slop'));
+  assert.deepEqual(pressed(t, '2'), []);
+  t.advance(UNDO_MS);
+  assert.deepEqual(t.saves.map(({ label }) => label), [null]);
+});
+
+test('a failed saved-label read can retry on a click without guessing or polling', async () => {
+  const reads = [];
+  const t = runContent(page(THREAD), { pathname: PAGE, state: on(), clock: true, labels: {
+    read: (ids) => {
+      reads.push([...ids]);
+      return reads.length === 1 ? Promise.reject(new Error('temporary storage error')) : { 2: 'slop' };
+    },
+  } });
+  await settle();
+  t.notify();
+  await settle();
+  assert.deepEqual(reads, [['1', '2', '3']], 'a rescan does not repeat a rejected batch');
+  click(t, button(t, '2', 'slop'));
+  await settle();
+  t.advance(UNDO_MS);
+  assert.deepEqual(t.saves, [], 'the retry cannot save a guessed label');
+  assert.deepEqual(reads, [['1', '2', '3'], ['2']]);
+  assert.deepEqual(pressed(t, '2'), ['slop']);
+  click(t, button(t, '2', 'slop'));
+  t.advance(UNDO_MS);
+  assert.deepEqual(t.saves.map(({ label }) => label), [null]);
+});
+
 test("with labelling on, a post's page gets one Hide as slop button on every post, the post it is about included, left of Grok and More at its top right", async () => {
   const t = runContent(page(THREAD), { pathname: PAGE, state: on(), labels: {} });
   await settle();
