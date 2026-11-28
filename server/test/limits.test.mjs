@@ -114,15 +114,50 @@ test('list cache: nothing is cached before the first build; the built list is ca
   }
 });
 
-test('admin rebuild clears the list cache entry', async () => {
+test('admin rebuild and accepted overrides invalidate the list once, after rebuilding', async () => {
   const w = world();
   const deleted = [];
   const real = globalThis.caches;
-  globalThis.caches = { default: { match: async () => undefined, put: async () => {}, delete: async (k) => { deleted.push(k.url); return true; } } };
+  const readBuildAt = () => w.db.raw.prepare("SELECT v FROM meta WHERE k = 'builtAt'").get()?.v;
+  const deleting = Promise.withResolvers();
+  const releaseDelete = Promise.withResolvers();
+  globalThis.caches = { default: {
+    delete: async (key) => {
+      deleted.push([key.url, readBuildAt()]);
+      deleting.resolve();
+      await releaseDelete.promise;
+      return true;
+    },
+  } };
   try {
-    assert.equal((await w.admin('POST', '/v1/admin/rebuild')).status, 200);
-    assert.deepEqual(deleted, ['https://t.example/v1/list.ndjson']);
+    const expected = { ok: true, listed: 0, reporters: 0 };
+    let settled = false;
+    const pending = w.admin('POST', '/v1/admin/rebuild?ignored=1', undefined, T0).then((response) => {
+      settled = true;
+      return response;
+    });
+    await Promise.race([deleting.promise, pending]);
+    await new Promise(setImmediate);
+    assert.deepEqual(deleted, [['https://t.example/v1/list.ndjson', String(T0)]]);
+    assert.equal(settled, false, 'the response must wait until cache deletion finishes');
+    releaseDelete.resolve();
+    const rebuild = await pending;
+    assert.equal(rebuild.status, 200);
+    assert.deepEqual(rebuild.json, expected);
+    const override = (action, now) => w.admin('POST', '/v1/admin/override', { handle: 'fixture', action }, now);
+    assert.equal((await override('list', T0 + HOUR)).status, 400);
+    assert.equal(readBuildAt(), String(T0));
+    assert.equal(deleted.length, 1);
+    for (const [action, now] of [['delist', T0 + 2 * HOUR], ['clear', T0 + 3 * HOUR]]) {
+      const response = await override(action, now);
+      assert.equal(response.status, 200);
+      assert.deepEqual(response.json, expected);
+    }
+    assert.deepEqual(deleted, [T0, T0 + 2 * HOUR, T0 + 3 * HOUR].map(
+      (now) => ['https://t.example/v1/list.ndjson', String(now)],
+    ));
   } finally {
+    releaseDelete.resolve();
     if (real === undefined) delete globalThis.caches;
     else globalThis.caches = real;
   }
